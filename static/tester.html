@@ -1051,17 +1051,20 @@
         <div class="card-title">⑤ 双指缩放、旋转与热流转</div>
         <span class="badge badge-emerald">WebKit Gesture</span>
       </div>
-      <div class="card-desc">双指张开/捏合（缩放）或旋转。双通道 Native 事件派发，支持 360° 旋转与中途平滑热切换。</div>
+      <div class="card-desc">双指张开/捏合（缩放）或圆周旋转。系统级派发 <strong>kIOHIDEventTypeRotation</strong>，支持 360° 旋转与中途平滑热流转。</div>
       <div class="pinch-stage" id="pinchStage">
         <div class="transformable-box" id="transformBox">
           <span>Pinch / Rotate</span>
           <span id="transformMetrics" style="font-size:10px; opacity:0.8">100% | 0°</span>
         </div>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>当前缩放: <strong id="zoomVal" style="color:var(--cyan)">1.00×</strong></span>
-        <span>当前角度: <strong id="rotVal" style="color:var(--emerald)">0.0°</strong></span>
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-muted); font-family:monospace; margin-top:4px;">
+        <span>缩放: <strong id="zoomVal" style="color:var(--cyan)">1.00×</strong></span>
+        <span>角度: <strong id="rotVal" style="color:var(--emerald)">0.0°</strong></span>
         <button class="btn-action" id="btnResetTransform" style="padding:2px 8px; font-size:11px;">重置变换</button>
+      </div>
+      <div style="font-size:11px; color:#94a3b8; background:rgba(255,255,255,0.04); padding:6px 10px; border-radius:6px; margin-top:6px;">
+        💡 <strong>测试建议</strong>：macOS 的 WebKit/Safari 原生支持网页旋转；若在 Chrome 中，Chrome 内核未向 Web DOM 暴露原生旋转事件，推荐直接切到 Mac <strong>「预览 Preview」</strong>（打开任意图片）或<strong>「Apple 地图 Maps」</strong>中双指旋转，可体验原生的 360° 画布无极旋转！
       </div>
     </div>
 
