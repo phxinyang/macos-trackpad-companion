@@ -12,6 +12,12 @@
 //! # vid = 0x1234
 //! # pid = 0x5678
 //!
+//! [net]                   # companion-net network input transport
+//! # listen_ip = "0.0.0.0" # UDP+TCP bind address
+//! # port      = 4242      # UDP frames arrive here; the touchpad web
+//!                         # page is served over TCP on the same port
+//! # token     = ""        # reserved (v1 ships unauthenticated)
+//!
 //! [log]
 //! level = "info"
 //! # file  = "~/Library/Logs/macos-trackpad-companion.log"
@@ -49,11 +55,36 @@ use std::path::{Path, PathBuf};
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
     pub device: Device,
+    pub net: Net,
     pub log: Log,
     pub cursor: Cursor,
     pub scroll: Scroll,
     pub gestures: Gestures,
     pub overlay: Overlay,
+}
+
+/// `[net]` — companion-net's transport bindings. HID-device ingestion
+/// ([`Device`]) and network ingestion are exclusive by instance lock.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct Net {
+    /// Bind address for both the UDP frame port and the TCP listener
+    /// that serves the touchpad web page + WebSocket endpoint.
+    pub listen_ip: Option<String>,
+    pub port: u16,
+    /// Reserved. v1 ships without authentication; setting this is a
+    /// no-op and warns at startup.
+    pub token: Option<String>,
+}
+
+impl Default for Net {
+    fn default() -> Self {
+        Self {
+            listen_ip: None,
+            port: 4242,
+            token: None,
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -109,9 +140,9 @@ pub struct Cursor {
 impl Default for Cursor {
     fn default() -> Self {
         Self {
-            sensitivity: 25.0,
-            accel_exponent: 1.0,
-            accel_ref: 80.0,
+            sensitivity: 28.0,
+            accel_exponent: 1.35,
+            accel_ref: 70.0,
         }
     }
 }
@@ -138,6 +169,37 @@ pub struct Gestures {
     pub pinch: Pinch,
     pub rotate: Rotate,
     pub swipe: Swipe,
+    pub three_finger_drag: ThreeFingerDrag,
+    pub one_finger_tap_drag: OneFingerTapDrag,
+}
+
+/// `[gestures.one_finger_tap_drag]` — companion-net's 拖移样式 = 单指双击拖移.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct OneFingerTapDrag {
+    pub enable: GestureEnable,
+}
+
+impl Default for OneFingerTapDrag {
+    fn default() -> Self {
+        Self { enable: GestureEnable::Off }
+    }
+}
+
+/// `[gestures.three_finger_drag]` — companion-net's 拖移样式 = 三指拖移.
+/// While on, three-finger motion drags (left-button held) instead of firing
+/// Dock swipes; four fingers keep the full swipe surface. The HID daemon
+/// keeps its historical three-finger swipe behavior via `State::new`.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct ThreeFingerDrag {
+    pub enable: GestureEnable,
+}
+
+impl Default for ThreeFingerDrag {
+    fn default() -> Self {
+        Self { enable: GestureEnable::On }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -168,11 +230,26 @@ impl Default for Rotate {
     }
 }
 
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Swipe {
     pub horizontal: SwipeAxisCfg,
     pub vertical: SwipeAxisCfg,
+}
+
+impl Default for Swipe {
+    fn default() -> Self {
+        Self {
+            horizontal: SwipeAxisCfg {
+                enable: GestureEnable::On,
+                backend: SwipeBackend::Synthetic,
+            },
+            vertical: SwipeAxisCfg {
+                enable: GestureEnable::On,
+                backend: SwipeBackend::Notification,
+            },
+        }
+    }
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -434,7 +511,7 @@ mod tests {
 
     #[test]
     fn device_hex_literals() {
-        let cfg: Config = toml::from_str(
+        let cfg = toml::from_str::<Config>(
             r#"
             [device]
             vid = 0x1234
@@ -444,5 +521,24 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.device.vid, Some(0x1234));
         assert_eq!(cfg.device.pid, Some(0x5678));
+    }
+
+    #[test]
+    fn net_defaults_and_overrides() {
+        let cfg = toml::from_str::<Config>("").unwrap();
+        assert_eq!(cfg.net.port, 4242);
+        assert!(cfg.net.listen_ip.is_none());
+
+        let cfg = toml::from_str::<Config>(
+            r#"
+            [net]
+            port = 5000
+            listen_ip = "127.0.0.1"
+        "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.net.listen_ip.as_deref(), Some("127.0.0.1"));
+        assert_eq!(cfg.net.port, 5000);
+        assert!(cfg.net.token.is_none());
     }
 }

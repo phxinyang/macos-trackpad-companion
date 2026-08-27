@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<!-- Phone-as-trackpad web client for companion-net.
+     Served at http://<mac>:4242/ ; streams touch frames via WebSocket to /ws.
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Mac 触控板</title>
+<style>
+  :root {
+    --bg-dark: #090a0f;
+    --pad-border: rgba(255, 255, 255, 0.08);
+    --glass-bg: rgba(18, 20, 29, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --accent-blue: #007aff;
+    --accent-green: #3ddc84;
+    --accent-red: #e5484d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg-dark); touch-action: none; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", Roboto, sans-serif;
+  }
+  #pad-container {
+    position: fixed; inset: 0;
+    background: radial-gradient(circle at 50% 30%, #171926 0%, #090a0f 85%);
+    cursor: none;
+  }
+  #pad-canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
+  }
+  #pad-frame {
+    position: absolute; left: 6%; right: 6%; top: 8%; bottom: 8%;
+    border-radius: 24px; border: 1.5px solid var(--pad-border);
+    box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.8), 0 8px 32px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+  }
+  #bar {
+    position: fixed; left: 16px; right: 16px; top: calc(env(safe-area-inset-top) + 12px);
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 16px; border-radius: 16px;
+    background: var(--glass-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+    color: #eee; font-size: 13px; z-index: 100; transition: opacity 0.25s, transform 0.25s;
+  }
+  #bar.hidden { opacity: 0; transform: translateY(-30px); pointer-events: none; }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: #666; flex: none; transition: background 0.3s; }
+  #dot.on { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
+  #dot.off { background: var(--accent-red); }
+  #st { font-weight: 500; letter-spacing: 0.2px; }
+  .sp { flex: 1; }
+  .btn {
+    border: 1px solid var(--glass-border); border-radius: 10px;
+    background: rgba(255, 255, 255, 0.08); color: #fff;
+    padding: 6px 12px; font-size: 13px; font-weight: 500;
+    cursor: pointer; display: flex; align-items: center; gap: 4px;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn:active { background: rgba(255, 255, 255, 0.2); transform: scale(0.96); }
+  #float-btn {
+    position: fixed; right: 16px; top: calc(env(safe-area-inset-top) + 12px);
+    border-radius: 20px; padding: 6px 14px; font-size: 12px;
+    background: var(--glass-bg); border: 1px solid var(--glass-border);
+    color: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px);
+    z-index: 99; opacity: 0.6; transition: opacity 0.2s;
+  }
+  #float-btn:active { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="pad-container">
+  <div id="pad-frame"></div>
+  <canvas id="pad-canvas"></canvas>
+</div>
+
+<div id="bar">
+  <span id="dot"></span>
+  <span id="st">连接中…</span>
+  <span class="sp"></span>
+  <a class="btn" href="/test" style="text-decoration:none; color:inherit;">🛠 诊断测试</a>
+  <button class="btn" id="haptic-btn">震动: 开</button>
+  <button class="btn" id="fs-btn">⛶ 全屏</button>
+  <button class="btn" id="smaller">A−</button>
+  <button class="btn" id="bigger">A＋</button>
+</div>
+
+<button id="float-btn" style="display:none;">⚙ 设置</button>
+
+<script>
+"use strict";
+(() => {
+  const MM_PER_CSS_PX = 25.4 / 96;
+  const $ = id => document.getElementById(id);
+  const dot = $("dot"), st = $("st"), bar = $("bar"), floatBtn = $("float-btn");
+  const canvas = $("pad-canvas"), ctx = canvas.getContext("2d");
+
+  let scale = parseFloat(localStorage.getItem("atp_scale") || "1") || 1;
+  let hapticEnabled = localStorage.getItem("atp_haptic") !== "false";
+
+  const clampScale = () => { scale = Math.min(1.6, Math.max(0.55, scale)); };
+  $("smaller").onclick = () => { scale /= 1.15; clampScale(); save(); };
+  $("bigger").onclick  = () => { scale *= 1.15; clampScale(); save(); };
+
+  const hapticBtn = $("haptic-btn");
+  const updateHapticBtn = () => { hapticBtn.textContent = hapticEnabled ? "震动: 开" : "震动: 关"; };
+  updateHapticBtn();
+  hapticBtn.onclick = () => {
+    hapticEnabled = !hapticEnabled;
+    localStorage.setItem("atp_haptic", String(hapticEnabled));
+    updateHapticBtn();
+    vibrate(15);
+  };
+
+  const save = () => localStorage.setItem("atp_scale", String(scale));
+
+  // Fullscreen toggle
+  function toggleFullscreen(fs) {
+    if (fs) {
+      bar.classList.add("hidden");
+      floatBtn.style.display = "block";
+      try { document.documentElement.requestFullscreen(); } catch (_) {}
+    } else {
+      bar.classList.remove("hidden");
+      floatBtn.style.display = "none";
+      try { if (document.fullscreenElement) document.exitFullscreen(); } catch (_) {}
+    }
+  }
+  $("fs-btn").onclick = () => toggleFullscreen(true);
+  floatBtn.onclick = () => toggleFullscreen(false);
+
+  function vibrate(pattern) {
+    if (hapticEnabled && navigator.vibrate) {
+      try { navigator.vibrate(pattern); } catch (_) {}
+    }
+  }
+
+  // Canvas resize
+  function resizeCanvas() {
+    canvas.width = window.innerWidth * window.devicePixelRatio;
+    canvas.height = window.innerHeight * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  // Multi-touch visualizer
+  const visualTouches = new Map(); // pid -> {x, y, cid}
+  function drawVisualizer() {
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    const n = visualTouches.size;
+    if (n === 0) return;
+
+    const colors = {
+      1: { stroke: "#00E5FF", fill: "rgba(0, 229, 255, 0.15)" },
+      2: { stroke: "#A855F7", fill: "rgba(168, 85, 247, 0.15)" },
+      3: { stroke: "#10B981", fill: "rgba(16, 185, 129, 0.15)" },
+      4: { stroke: "#F59E0B", fill: "rgba(245, 158, 11, 0.15)" }
+    };
+    const curColor = colors[Math.min(n, 4)] || colors[4];
+
+    for (const [pid, t] of visualTouches) {
+      // Glowing outer ripple
+      const grad = ctx.createRadialGradient(t.x, t.y, 10, t.x, t.y, 45);
+      grad.addColorStop(0, curColor.fill);
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 45, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Halo ring
+      ctx.strokeStyle = curColor.stroke;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 24, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Center dot
+      ctx.fillStyle = curColor.stroke;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ---- Wire Protocol (docs/wire-protocol.md) --------------------------
+  let seq = (crypto.getRandomValues(new Uint32Array(1))[0]) >>> 0;
+  const MAGIC = [0x41, 0x54, 0x50, 0x31];           // "ATP1"
+  const TIP = 1, CONF = 2;
+
+  function encodeFrame(contacts) {                   // [{id,x,y}] mm
+    const n = contacts.length;
+    const buf = new ArrayBuffer(15 + 10 * n);
+    const v = new DataView(buf);
+    MAGIC.forEach((b, i) => v.setUint8(i, b));
+    v.setUint8(4, 1);                                // version
+    v.setUint8(5, 0);                                // flags: no button
+    v.setUint8(6, n);
+    seq = (seq + 1) >>> 0;                           v.setUint32(7, seq, true);
+    const ticks = (performance.now() * 10) >>> 0;    // 100 µs ticks
+    v.setUint32(11, ticks, true);
+    contacts.forEach((c, i) => {
+      const o = 15 + 10 * i;
+      v.setUint8(o, c.id & 0xff);
+      v.setUint8(o + 1, TIP | CONF);
+      v.setFloat32(o + 2, c.x, true);
+      v.setFloat32(o + 6, c.y, true);
+    });
+    return buf;
+  }
+
+  // ---- WebSocket ------------------------------------------------------
+  let ws = null, wsTimer = 0, backoff = 1000;
+  function setStatus(state) {
+    dot.className = state === "on" ? "on" : state === "off" ? "off" : "";
+    st.textContent = state === "on" ? "已连接" : state === "off" ? "断开" : "连接中…";
+  }
+  function connect() {
+    setStatus("wait");
+    const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+    try { ws = new WebSocket(url); } catch (e) { retry(); return; }
+    ws.binaryType = "arraybuffer";
+    ws.onopen = () => { setStatus("on"); backoff = 1000; };
+    ws.onclose = () => { setStatus("off"); ws = null; retry(); };
+    ws.onerror = () => { try { ws && ws.close(); } catch (_) {} };
+  }
+  function retry() { clearTimeout(wsTimer); wsTimer = setTimeout(connect, backoff); backoff = Math.min(5000, backoff * 1.5); }
+  function sendRaw(data) { if (ws && ws.readyState === 1) { try { ws.send(data); } catch (_) {} } }
+
+  connect();
+  setInterval(() => sendRaw("p"), 15000);            // keepalive text ping
+
+  // ---- Touch Capture --------------------------------------------------
+  const pointers = new Map();                        // pointerId -> cid
+  let nextCid = 1;
+  const freeIds = [];
+  const pos = new Map();                             // pointerId -> {x,y} mm
+  let touchStartTime = 0, initialPos = { x: 0, y: 0 }, maxFingers = 0;
+
+  function toMm(ev) {
+    return {
+      x: ev.clientX * MM_PER_CSS_PX * scale,
+      y: ev.clientY * MM_PER_CSS_PX * scale,
+    };
+  }
+
+  let dirty = false, rafId = 0;
+  function snapshot() {
+    const out = [];
+    for (const [pid, cid] of pointers) {
+      const p = pos.get(pid);
+      if (p) out.push({ id: cid, x: p.x, y: p.y });
+    }
+    return out;
+  }
+  function loop() {
+    rafId = 0;
+    drawVisualizer();
+    if (!dirty) return;
+    dirty = false;
+    if (pointers.size > 0) {
+      sendRaw(encodeFrame(snapshot()));
+      rafId = requestAnimationFrame(loop);
+    } else {
+      echoLift();
+    }
+  }
+  function kick() {
+    dirty = true;
+    if (!rafId) rafId = requestAnimationFrame(loop);
+  }
+
+  let liftTimers = [];
+  function echoLift() {
+    liftTimers.forEach(clearTimeout); liftTimers = [];
+    sendRaw(encodeFrame([]));
+    liftTimers.push(setTimeout(() => sendRaw(encodeFrame([])), 30));
+    liftTimers.push(setTimeout(() => sendRaw(encodeFrame([])), 90));
+  }
+
+  const pad = $("pad-container");
+  function acquireCid() { return freeIds.length ? freeIds.pop() : (nextCid++ % 256); }
+  function releaseCid(cid) { freeIds.push(cid); }
+
+  pad.addEventListener("pointerdown", e => {
+    e.preventDefault(); wake();
+    if (pointers.size === 0) {
+      touchStartTime = performance.now();
+      maxFingers = 1;
+      initialPos = { x: e.clientX, y: e.clientY };
+    }
+    if (pointers.has(e.pointerId)) return;
+    const cid = acquireCid();
+    pointers.set(e.pointerId, cid);
+    pos.set(e.pointerId, toMm(e));
+    visualTouches.set(e.pointerId, { x: e.clientX, y: e.clientY, cid });
+    if (pointers.size > maxFingers) maxFingers = pointers.size;
+
+    sendRaw(encodeFrame(snapshot()));
+    kick();
+  }, { passive: false });
+
+  pad.addEventListener("pointermove", e => {
+    e.preventDefault();
+    if (!pointers.has(e.pointerId)) return;
+    pos.set(e.pointerId, toMm(e));
+    visualTouches.set(e.pointerId, { x: e.clientX, y: e.clientY, cid: pointers.get(e.pointerId) });
+    if (pointers.size > maxFingers) maxFingers = pointers.size;
+    kick();
+  }, { passive: false });
+
+  function releasePointer(e) {
+    if (!pointers.has(e.pointerId)) return;
+    releaseCid(pointers.get(e.pointerId));
+    pointers.delete(e.pointerId);
+    pos.delete(e.pointerId);
+    visualTouches.delete(e.pointerId);
+    kick();
+  }
+
+  pad.addEventListener("pointerup", e => {
+    e.preventDefault();
+    const dur = performance.now() - touchStartTime;
+    const dx = Math.abs(e.clientX - initialPos.x);
+    const dy = Math.abs(e.clientY - initialPos.y);
+    if (dur < 280 && dx < 15 && dy < 15) {
+      if (maxFingers === 2) vibrate([30]);
+      else if (maxFingers === 1) vibrate(12);
+    }
+    releasePointer(e);
+  }, { passive: false });
+
+  pad.addEventListener("pointercancel", e => releasePointer(e));
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && pointers.size) {
+      for (const cid of pointers.values()) releaseCid(cid);
+      pointers.clear(); pos.clear(); visualTouches.clear();
+      echoLift();
+      cancelAnimationFrame(rafId); rafId = 0;
+      drawVisualizer();
+    }
+  });
+
+  ["contextmenu", "dblclick", "gesturestart"].forEach(t =>
+    document.addEventListener(t, e => e.preventDefault()));
+
+  let wakeLock = null;
+  async function wake() {
+    try {
+      if (!wakeLock || wakeLock.released) wakeLock = await navigator.wakeLock.request("screen");
+    } catch (_) {}
+  }
+  wake();
+})();
+</script>
+</body>
+</html>

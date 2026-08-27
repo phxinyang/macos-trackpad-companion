@@ -1,0 +1,1768 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>macOS 触控板全功能交互测试套件 (Trackpad Master Diagnostic Suite)</title>
+  <style>
+    :root {
+      --bg: #0b0c10;
+      --card-bg: rgba(22, 24, 34, 0.78);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-hover: rgba(255, 255, 255, 0.16);
+      --text: #f0f2f5;
+      --text-muted: #8a8f9d;
+      --cyan: #00e5ff;
+      --purple: #a855f7;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --blue: #3b82f6;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 0%, #171926 0%, #0b0c10 80%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      line-height: 1.5;
+    }
+
+    /* Top Navigation & Telemetry Bar */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      background: rgba(11, 12, 16, 0.88);
+      border-bottom: 1px solid var(--card-border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 800;
+      color: #000;
+      box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
+    }
+
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .telemetry-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .telemetry-pill {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-border);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-family: "SF Mono", monospace;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .telemetry-pill strong {
+      color: var(--text);
+    }
+
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--emerald);
+      box-shadow: 0 0 8px var(--emerald);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    /* Main Container */
+    main {
+      flex: 1;
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+      gap: 20px;
+      width: 100%;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card:hover {
+      border-color: var(--card-hover);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-cyan { background: rgba(0, 229, 255, 0.15); color: var(--cyan); border: 1px solid rgba(0, 229, 255, 0.3); }
+    .badge-purple { background: rgba(168, 85, 247, 0.15); color: var(--purple); border: 1px solid rgba(168, 85, 247, 0.3); }
+    .badge-emerald { background: rgba(16, 185, 129, 0.15); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-blue { background: rgba(59, 130, 246, 0.15); color: var(--blue); border: 1px solid rgba(59, 130, 246, 0.3); }
+
+    .card-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Test Area 1: Precision Canvas */
+    .canvas-container {
+      width: 100%;
+      height: 200px;
+      background: #08090d;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      cursor: crosshair;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .precision-targets {
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding: 10px 0;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 8px;
+    }
+
+    .target-dot {
+      border-radius: 50%;
+      background: var(--text-muted);
+      transition: transform 0.15s, background 0.15s, box-shadow 0.15s;
+      cursor: pointer;
+    }
+
+    .target-dot:hover {
+      background: var(--cyan);
+      box-shadow: 0 0 12px var(--cyan);
+      transform: scale(1.6);
+    }
+
+    /* Test Area 2: Clicks & Taps */
+    .click-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    .click-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: background 0.1s, transform 0.1s, border-color 0.1s;
+    }
+
+    .click-box:active {
+      transform: scale(0.96);
+      background: rgba(0, 229, 255, 0.1);
+      border-color: var(--cyan);
+    }
+
+    .click-box.flash-success {
+      background: rgba(16, 185, 129, 0.2) !important;
+      border-color: var(--emerald) !important;
+    }
+
+    .click-box h4 {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .click-box span {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: "SF Mono", monospace;
+    }
+
+    /* Test Area 3: Three-finger Drag & Selection */
+    .drag-stage {
+      width: 100%;
+      height: 200px;
+      background: #08090d;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .draggable-card {
+      position: absolute;
+      width: 110px;
+      height: 70px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(0, 229, 255, 0.3));
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      cursor: grab;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      touch-action: none;
+    }
+
+    .draggable-card:active {
+      cursor: grabbing;
+      box-shadow: 0 12px 32px rgba(168, 85, 247, 0.4);
+      border-color: var(--cyan);
+    }
+
+    .drag-lock-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      font-size: 12px;
+    }
+
+    .regrip-bar {
+      flex: 1;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      margin: 0 12px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .regrip-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--amber);
+      transition: width 0.05s linear;
+    }
+
+    /* Test Area 4: Smooth Scrolling & Inertia */
+    .scroll-container {
+      width: 100%;
+      height: 190px;
+      overflow: scroll;
+      background: #08090d;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 12px;
+      position: relative;
+    }
+
+    .scroll-content {
+      width: 250%;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .scroll-item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      transition: background 0.15s;
+    }
+
+    .scroll-item:hover {
+      background: rgba(0, 229, 255, 0.08);
+    }
+
+    /* Test Area 5: Pinch & Rotate */
+    .pinch-stage {
+      width: 100%;
+      height: 190px;
+      background: #08090d;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .transformable-box {
+      width: 110px;
+      height: 110px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(16, 185, 129, 0.2));
+      border: 2px dashed var(--cyan);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      transform-origin: center center;
+      transition: transform 0.05s ease-out;
+      box-shadow: 0 0 24px rgba(0, 229, 255, 0.2);
+    }
+
+    /* Test Area 6: Smart Magnify (双指双击智能缩放) */
+    .smart-zoom-card {
+      width: 100%;
+      height: 190px;
+      background: #08090d;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .smart-zoom-content {
+      padding: 16px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+      text-align: center;
+      max-width: 80%;
+    }
+
+    .smart-zoom-content.zoomed {
+      transform: scale(1.65);
+      box-shadow: 0 10px 40px rgba(0, 229, 255, 0.3);
+      border-color: var(--cyan);
+    }
+
+    /* Test Area 7: Two-Finger Navigation Swipe (双指翻页) */
+    .nav-swipe-stage {
+      width: 100%;
+      height: 190px;
+      background: #08090d;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+    }
+
+    .nav-card-track {
+      display: flex;
+      width: 300%;
+      height: 100%;
+      transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    .nav-page {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      gap: 8px;
+    }
+
+    /* Test Area 8: Multi-Finger System Gestures (Spaces & Mission Control) */
+    .system-gestures-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .gesture-indicator-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.2s, border-color 0.2s, transform 0.2s;
+    }
+
+    .gesture-indicator-box.active {
+      background: rgba(168, 85, 247, 0.2);
+      border-color: var(--purple);
+      transform: translateY(-2px);
+    }
+
+    .gesture-icon {
+      font-size: 20px;
+    }
+
+    .gesture-info h5 {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .gesture-info p {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    /* Test Area 9: Marquee Selection (框选多选网格) */
+    .marquee-stage {
+      width: 100%;
+      height: 190px;
+      background: #08090d;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      padding: 12px;
+      gap: 10px;
+    }
+
+    .grid-file-item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 11px;
+      transition: background 0.15s, border-color 0.15s;
+      cursor: pointer;
+    }
+
+    .grid-file-item.selected {
+      background: rgba(0, 229, 255, 0.25);
+      border-color: var(--cyan);
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.3);
+    }
+
+    .selection-rect {
+      position: absolute;
+      border: 1px solid var(--cyan);
+      background: rgba(0, 229, 255, 0.15);
+      pointer-events: none;
+      display: none;
+    }
+
+    /* Test Area 10: Right Edge Swipe Detector (右边缘滑入通知中心) */
+    .edge-swipe-stage {
+      width: 100%;
+      height: 190px;
+      background: #08090d;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .edge-trigger-zone {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 40px;
+      background: rgba(245, 158, 11, 0.12);
+      border-left: 2px dashed var(--amber);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      writing-mode: vertical-rl;
+      font-size: 10px;
+      color: var(--amber);
+      letter-spacing: 2px;
+    }
+
+    .notification-drawer {
+      position: absolute;
+      right: -160px;
+      top: 10px;
+      bottom: 10px;
+      width: 150px;
+      background: rgba(30, 34, 48, 0.95);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 11px;
+      box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
+      transition: right 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .notification-drawer.open {
+      right: 10px;
+    }
+
+    /* Test Area 11: Text Selection & Dictionary Lookup */
+    .selectable-text-box {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px;
+      font-size: 13px;
+      color: #d1d5db;
+      line-height: 1.7;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .selectable-text-box mark {
+      background: rgba(168, 85, 247, 0.3);
+      color: #fff;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    /* Realtime Event Stream Logger */
+    .log-container {
+      width: 100%;
+      height: 140px;
+      background: #050608;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 11px;
+      padding: 10px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 4px;
+    }
+
+    .log-line {
+      display: flex;
+      gap: 8px;
+      color: var(--text-muted);
+    }
+
+    .log-line .tag {
+      font-weight: bold;
+      color: var(--cyan);
+    }
+
+    .log-line.click .tag { color: var(--emerald); }
+    .log-line.wheel .tag { color: var(--purple); }
+    .log-line.drag .tag { color: var(--amber); }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--card-border);
+      padding: 16px 24px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .btn-action {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn-action:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: var(--card-hover);
+    }
+
+    /* Preferences Modal & Switchboard */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .modal-backdrop.show {
+      display: flex;
+    }
+
+    .modal-dialog {
+      background: #141620;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 20px;
+      width: 100%;
+      max-width: 680px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+      animation: modalPop 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+
+    @keyframes modalPop {
+      0% { opacity: 0; transform: scale(0.92); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .modal-body {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .pref-group-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 6px;
+    }
+
+    .pref-row {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .pref-row:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .pref-row strong {
+      font-size: 13px;
+      display: block;
+    }
+
+    .pref-row p {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* iOS/macOS Style Toggle Switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background-color: rgba(255, 255, 255, 0.15);
+      transition: 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      bottom: 2px;
+      background-color: white;
+      transition: 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+      border-radius: 50%;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    }
+
+    input:checked + .slider {
+      background-color: var(--cyan);
+      border-color: var(--cyan);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(20px);
+      background-color: #000;
+    }
+
+    .modal-footer {
+      padding: 14px 20px;
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header & Telemetry -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo"></div>
+      <div class="brand-title">macOS Trackpad Master Diagnostic Suite</div>
+    </div>
+    <div class="telemetry-row">
+      <div class="telemetry-pill"><span class="live-dot"></span> 状态: <strong>实时监听</strong></div>
+      <div class="telemetry-pill">采样率: <strong id="fpsVal">0 Hz</strong></div>
+      <div class="telemetry-pill">瞬时速度: <strong id="speedVal">0 px/s</strong></div>
+      <div class="telemetry-pill">光标: <strong id="posVal">(0, 0)</strong></div>
+      <button class="btn-action" id="btnOpenPrefs" style="background:rgba(0,229,255,0.15); border-color:var(--cyan); color:var(--cyan);">⚙️ 触控板功能开关</button>
+    </div>
+  </header>
+
+  <!-- Preferences Modal -->
+  <div class="modal-backdrop" id="prefsModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:20px;">⚙️</span>
+          <h3>macOS 触控板全功能配置中心 (Trackpad Settings)</h3>
+        </div>
+        <button class="btn-action" id="btnClosePrefs">&times; 关闭</button>
+      </div>
+      <div class="modal-body">
+        <div class="pref-group-title">🎯 光标与点按 (Point & Click)</div>
+        <div class="pref-row">
+          <div>
+            <strong>轻点以点按 (Tap to Click)</strong>
+            <p>单指轻点触控板进行左键单击</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefTapToClick" checked><span class="slider"></span></label>
+        </div>
+        <div class="pref-row">
+          <div>
+            <strong>双指辅助点按 (Secondary Click / 右键)</strong>
+            <p>双指轻点或按压弹出右键上下文菜单 (带 25ms 时域防抖)</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefRightClick" checked><span class="slider"></span></label>
+        </div>
+        <div class="pref-row">
+          <div>
+            <strong>三指轻点查词典与快速查看 (Look Up & Data Detectors)</strong>
+            <p>三指轻点单词弹出系统词典 / 快速预览 (支持异步抬指)</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefLookUp" checked><span class="slider"></span></label>
+        </div>
+
+        <div class="pref-group-title" style="margin-top:16px;">🖐️ 拖拽与窗口管理 (Dragging & Window Management)</div>
+        <div class="pref-row" style="background:rgba(168,85,247,0.1); border-color:var(--purple);">
+          <div>
+            <strong style="color:var(--cyan)">三指拖移 (Three-Finger Drag)</strong>
+            <p>三指滑动即抓取窗口，抬手享 500ms 悬停保护续拖</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="pref3FDrag" checked><span class="slider"></span></label>
+        </div>
+        <div class="pref-row" style="background:rgba(0,229,255,0.08); border-color:var(--cyan);">
+          <div>
+            <strong style="color:var(--cyan)">单指轻点并按住拖移 (1-Finger Tap to Drag)</strong>
+            <p>快速单指双击并在第 2 次按住滑动进行拖移 (与三指拖移双轨共存)</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="pref1FTapDrag" checked><span class="slider"></span></label>
+        </div>
+
+        <div class="pref-group-title" style="margin-top:16px;">📜 滚动与缩放 (Scroll & Zoom)</div>
+        <div class="pref-row">
+          <div>
+            <strong>自然滚动方向 (Natural Scrolling)</strong>
+            <p>内容移动方向紧随手指滑动方向</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefNaturalScroll" checked><span class="slider"></span></label>
+        </div>
+        <div class="pref-row">
+          <div>
+            <strong>双指捏合缩放 (Pinch to Zoom)</strong>
+            <p>双指张开放大 / 捏合缩小</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefPinch" checked><span class="slider"></span></label>
+        </div>
+        <div class="pref-row">
+          <div>
+            <strong>双指双击智能缩放 (Smart Zoom)</strong>
+            <p>双指轻点两下快速局部对焦放大</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefSmartZoom" checked><span class="slider"></span></label>
+        </div>
+        <div class="pref-row">
+          <div>
+            <strong>双指旋转 (Rotate Gesture)</strong>
+            <p>双指顺时针/逆时针 360° 旋转图片或画布</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefRotate" checked><span class="slider"></span></label>
+        </div>
+
+        <div class="pref-group-title" style="margin-top:16px;">⚡ 系统多指轻扫手势 (More Gestures)</div>
+        <div class="pref-row">
+          <div>
+            <strong>在全屏应用间轻扫 (Swipe Between Full-Screen Apps)</strong>
+            <p>三指/四指左右轻扫切换桌面与全屏窗口</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefSpaces" checked><span class="slider"></span></label>
+        </div>
+        <div class="pref-row">
+          <div>
+            <strong>调度中心与应用程序窗口 (Mission Control & App Exposé)</strong>
+            <p>三指/四指向上轻扫打开调度中心，向下轻扫打开应用窗口</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefMissionCtrl" checked><span class="slider"></span></label>
+        </div>
+        <div class="pref-row">
+          <div>
+            <strong>从右边缘轻扫打开通知中心 (Notification Center Edge Swipe)</strong>
+            <p>双指从右边缘向左滑入呼出通知中心</p>
+          </div>
+          <label class="switch"><input type="checkbox" id="prefEdgeSwipe" checked><span class="slider"></span></label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-action" id="btnEnableAll" style="background:rgba(0,229,255,0.2); border-color:var(--cyan); color:var(--cyan);">✨ 一键开启全部功能 (包含双拖拽)</button>
+        <button class="btn-action" id="btnSavePrefs">保存配置并应用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Test Grid -->
+  <main>
+
+    <!-- 1: Precision & Trajectory Canvas -->
+    <div class="card" id="card-precision">
+      <div class="card-header">
+        <div class="card-title">① 光标精度与微操轨迹</div>
+        <span class="badge badge-cyan">0ms 延迟 / 0 死区</span>
+      </div>
+      <div class="card-desc">非线性幂律加速曲线。低速滑动测试平滑微操（是否吞步），高速甩手测试跨屏爆发。</div>
+      <div class="canvas-container" id="canvasBox">
+        <canvas id="motionCanvas"></canvas>
+      </div>
+      <div class="precision-targets">
+        <span style="font-size:11px; color:var(--text-muted)">微操对齐靶点:</span>
+        <div class="target-dot" style="width: 4px; height: 4px;" title="4px 极小微操点"></div>
+        <div class="target-dot" style="width: 8px; height: 8px;" title="8px 按钮点"></div>
+        <div class="target-dot" style="width: 14px; height: 14px;" title="14px 标准图标"></div>
+        <div class="target-dot" style="width: 22px; height: 22px;" title="22px 控件"></div>
+        <button class="btn-action" id="btnClearCanvas" style="padding:2px 8px; font-size:11px;">清空画布</button>
+      </div>
+    </div>
+
+    <!-- 2: Clicks, Double Clicks, Right Clicks -->
+    <div class="card" id="card-clicks">
+      <div class="card-header">
+        <div class="card-title">② 轻点与按压识别响应</div>
+        <span class="badge badge-emerald">时空窗口隔离</span>
+      </div>
+      <div class="card-desc">测试单指轻点、双击、三击、双指轻点右键。已加入 $\ge 25\text{ms}$ 时域防抖，彻底消除单指误成右键。</div>
+      <div class="click-grid">
+        <div class="click-box" id="boxLeftClick">
+          <h4>单指轻点 (Left Click)</h4>
+          <span id="cntLeft">次数: 0</span>
+        </div>
+        <div class="click-box" id="boxRightClick">
+          <h4>双指轻点 (Right Click)</h4>
+          <span id="cntRight">次数: 0</span>
+        </div>
+        <div class="click-box" id="boxDblClick">
+          <h4>单指双击 (Double Click)</h4>
+          <span id="cntDbl">次数: 0</span>
+        </div>
+        <div class="click-box" id="boxTripleClick">
+          <h4>单指三击 (Triple Click)</h4>
+          <span id="cntTriple">次数: 0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3: Three-finger Drag & Drag Lock -->
+    <div class="card" id="card-drag">
+      <div class="card-header">
+        <div class="card-title">③ 三指拖拽与 500ms 悬停接力</div>
+        <span class="badge badge-purple">Three-Finger Drag</span>
+      </div>
+      <div class="card-desc">三指触碰滑动即可抓取窗口。中途抬指触发 500ms 保护期（黄色倒计时），再次落指可无缝续拖。</div>
+      <div class="drag-stage" id="dragStage">
+        <div class="draggable-card" id="dragCard1" style="top:25px; left:30px;">
+          <span> 窗口 1</span>
+          <span style="font-size:10px; opacity:0.7">三指拖动</span>
+        </div>
+        <div class="draggable-card" id="dragCard2" style="top:85px; left:180px; background:linear-gradient(135deg, rgba(0,229,255,0.3), rgba(16,185,129,0.3));">
+          <span>❖ 窗口 2</span>
+          <span style="font-size:10px; opacity:0.7">三指拖动</span>
+        </div>
+      </div>
+      <div class="drag-lock-indicator">
+        <span style="color:var(--text-muted)">Drag Lock 悬停状态:</span>
+        <div class="regrip-bar"><div class="regrip-fill" id="regripBar"></div></div>
+        <strong id="dragLockStatus" style="font-family:monospace; color:var(--text-muted)">IDLE</strong>
+      </div>
+    </div>
+
+    <!-- 4: Two-finger Smooth Scroll & Momentum -->
+    <div class="card" id="card-scroll">
+      <div class="card-header">
+        <div class="card-title">④ 双指平滑滚动与惯性阻尼</div>
+        <span class="badge badge-cyan">Continuous Inertia</span>
+      </div>
+      <div class="card-desc">双指在视窗内上下左右滑动。已彻底解决死锁，落指即随动，松手享自然动量衰减。</div>
+      <div class="scroll-container" id="scrollBox">
+        <div class="scroll-content" id="scrollContent"></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>滚动位移: <strong id="scrollDelta" style="color:var(--text)">dx: 0, dy: 0</strong></span>
+        <span>相位: <strong id="scrollPhase" style="color:var(--purple)">None</strong></span>
+      </div>
+    </div>
+
+    <!-- 5: Pinch to Zoom & Rotate -->
+    <div class="card" id="card-pinch">
+      <div class="card-header">
+        <div class="card-title">⑤ 双指缩放、旋转与热流转</div>
+        <span class="badge badge-emerald">WebKit Gesture</span>
+      </div>
+      <div class="card-desc">双指张开/捏合（缩放）或旋转。双通道 Native 事件派发，支持 360° 旋转与中途平滑热切换。</div>
+      <div class="pinch-stage" id="pinchStage">
+        <div class="transformable-box" id="transformBox">
+          <span>Pinch / Rotate</span>
+          <span id="transformMetrics" style="font-size:10px; opacity:0.8">100% | 0°</span>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>当前缩放: <strong id="zoomVal" style="color:var(--cyan)">1.00×</strong></span>
+        <span>当前角度: <strong id="rotVal" style="color:var(--emerald)">0.0°</strong></span>
+        <button class="btn-action" id="btnResetTransform" style="padding:2px 8px; font-size:11px;">重置变换</button>
+      </div>
+    </div>
+
+    <!-- 6: Smart Magnify (双指双击智能缩放) -->
+    <div class="card" id="card-smart-zoom">
+      <div class="card-header">
+        <div class="card-title">⑥ 双指双击智能缩放 (Smart Zoom)</div>
+        <span class="badge badge-blue">Smart Magnify</span>
+      </div>
+      <div class="card-desc">双指在下方卡片快速点按两次，触发 macOS 系统级平滑局部智能缩放对焦。</div>
+      <div class="smart-zoom-card" id="smartZoomStage">
+        <div class="smart-zoom-content" id="smartZoomBox">
+          <div style="font-size:24px; margin-bottom:4px;">🔍</div>
+          <h4 style="font-size:14px; font-weight:600;">智能对焦靶标</h4>
+          <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">双指轻点两次放大 / 再次双击还原</p>
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted)">
+        状态: <strong id="smartZoomStatus" style="color:var(--text)">100% (标准视角)</strong>
+      </div>
+    </div>
+
+    <!-- 7: Navigation Swipe (双指翻页) -->
+    <div class="card" id="card-nav-swipe">
+      <div class="card-header">
+        <div class="card-title">⑦ 双指轻扫页面导航 (Navigation Swipe)</div>
+        <span class="badge badge-amber">Back / Forward</span>
+      </div>
+      <div class="card-desc">双指从左向右（后退）或从右向左（前进）轻扫，测试浏览器历史栈视差滑动翻页。</div>
+      <div class="nav-swipe-stage" id="navSwipeStage">
+        <div class="nav-card-track" id="navTrack">
+          <div class="nav-page" style="background:rgba(59,130,246,0.15)">
+            <span style="font-size:20px;">⏮</span>
+            <strong>第 1 页: 历史起点</strong>
+            <span style="font-size:11px; color:var(--text-muted)">双指往左滑前往下一页 &rarr;</span>
+          </div>
+          <div class="nav-page" style="background:rgba(168,85,247,0.15)">
+            <span style="font-size:20px;">📄</span>
+            <strong>第 2 页: 当前主页</strong>
+            <span style="font-size:11px; color:var(--text-muted)">&larr; 双指往右滑后退 | 双指往左滑前进 &rarr;</span>
+          </div>
+          <div class="nav-page" style="background:rgba(16,185,129,0.15)">
+            <span style="font-size:20px;">⏭</span>
+            <strong>第 3 页: 前进目标页</strong>
+            <span style="font-size:11px; color:var(--text-muted)">&larr; 双指往右滑返回上一页</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted)">
+        <span>当前视窗: <strong id="navPageIndex" style="color:var(--amber)">Page 2 / 3</strong></span>
+        <button class="btn-action" id="btnResetNav" style="padding:2px 8px; font-size:11px;">重置到主页</button>
+      </div>
+    </div>
+
+    <!-- 8: Multi-Finger System Gestures (Spaces / Mission Control) -->
+    <div class="card" id="card-system-gestures">
+      <div class="card-header">
+        <div class="card-title">⑧ 三指/四指系统轻扫监视器</div>
+        <span class="badge badge-purple">Spaces / Mission Control</span>
+      </div>
+      <div class="card-desc">三指或四指在触控板上做系统级轻扫，观察 Dock 广播与对应手势状态灯的实时点亮。</div>
+      <div class="system-gestures-grid">
+        <div class="gesture-indicator-box" id="boxMC">
+          <div class="gesture-icon">⬆️</div>
+          <div class="gesture-info">
+            <h5>调度中心 (Mission Control)</h5>
+            <p>三指/四指向上轻扫</p>
+          </div>
+        </div>
+        <div class="gesture-indicator-box" id="boxExpose">
+          <div class="gesture-icon">⬇️</div>
+          <div class="gesture-info">
+            <h5>App Exposé (应用程序窗口)</h5>
+            <p>三指/四指向下轻扫</p>
+          </div>
+        </div>
+        <div class="gesture-indicator-box" id="boxSpaceLeft">
+          <div class="gesture-icon">⬅️</div>
+          <div class="gesture-info">
+            <h5>向左切换桌面 (Spaces Left)</h5>
+            <p>三指/四指向右轻扫</p>
+          </div>
+        </div>
+        <div class="gesture-indicator-box" id="boxSpaceRight">
+          <div class="gesture-icon">➡️</div>
+          <div class="gesture-info">
+            <h5>向右切换桌面 (Spaces Right)</h5>
+            <p>三指/四指向左轻扫</p>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted)">
+        实时动作: <strong id="sysGestureText" style="color:var(--text)">等待手势中...</strong>
+      </div>
+    </div>
+
+    <!-- 9: Marquee Selection (框选与批量文件整理) -->
+    <div class="card" id="card-marquee">
+      <div class="card-header">
+        <div class="card-title">⑨ 框选多选与文件网格整理</div>
+        <span class="badge badge-cyan">Marquee Selection</span>
+      </div>
+      <div class="card-desc">在空白区域按住拖动拉出框选高亮矩形（单指/三指均可），测试多文件选择与拖拽整理。</div>
+      <div class="marquee-stage" id="marqueeStage">
+        <div class="selection-rect" id="selRect"></div>
+        <div class="grid-file-item" data-id="1"><span>📄</span><span>Doc_01.pdf</span></div>
+        <div class="grid-file-item" data-id="2"><span>🖼</span><span>Photo_02.png</span></div>
+        <div class="grid-file-item" data-id="3"><span>🎬</span><span>Video_03.mov</span></div>
+        <div class="grid-file-item" data-id="4"><span>📦</span><span>App_04.dmg</span></div>
+        <div class="grid-file-item" data-id="5"><span>🎵</span><span>Music_05.mp3</span></div>
+        <div class="grid-file-item" data-id="6"><span>📊</span><span>Sheet_06.xlsx</span></div>
+        <div class="grid-file-item" data-id="7"><span>📁</span><span>Projects</span></div>
+        <div class="grid-file-item" data-id="8"><span>⚙️</span><span>Config.json</span></div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted)">
+        <span>已选中: <strong id="marqueeCount" style="color:var(--cyan)">0 个项目</strong></span>
+        <button class="btn-action" id="btnClearSelection" style="padding:2px 8px; font-size:11px;">清除选择</button>
+      </div>
+    </div>
+
+    <!-- 10: Right Edge Swipe Detector (右边缘滑入通知中心) -->
+    <div class="card" id="card-edge-swipe">
+      <div class="card-header">
+        <div class="card-title">⑩ 右边缘双指滑入通知中心</div>
+        <span class="badge badge-amber">Notification Center</span>
+      </div>
+      <div class="card-desc">双指从右侧边缘向内滑入，呼出 macOS 通知中心侧边抽屉面板。</div>
+      <div class="edge-swipe-stage" id="edgeStage">
+        <div style="font-size:12px; color:var(--text-muted)">双指从右侧虚线区域向左滑入 &larr;</div>
+        <div class="edge-trigger-zone">EDGE ZONE</div>
+        <div class="notification-drawer" id="notiDrawer">
+          <strong style="color:var(--text); font-size:12px;"> 通知中心</strong>
+          <div style="background:rgba(255,255,255,0.06); padding:6px; border-radius:6px;">
+            <span style="font-weight:600; color:var(--cyan)">日历</span>
+            <p style="color:var(--text-muted); font-size:10px;">下午 3:00 - 项目评审</p>
+          </div>
+          <div style="background:rgba(255,255,255,0.06); padding:6px; border-radius:6px;">
+            <span style="font-weight:600; color:var(--emerald)">天气</span>
+            <p style="color:var(--text-muted); font-size:10px;">晴朗 24°C</p>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:12px; color:var(--text-muted)">
+        状态: <strong id="edgeSwipeStatus" style="color:var(--text)">抽屉已收起</strong>
+      </div>
+    </div>
+
+    <!-- 11: Text Selection & Dictionary Lookup -->
+    <div class="card" id="card-lookup">
+      <div class="card-header">
+        <div class="card-title">⑪ 三指轻点查词典与文本框选</div>
+        <span class="badge badge-purple">Cmd + Ctrl + D</span>
+      </div>
+      <div class="card-desc">支持异步抬指（Split-Lift）三指轻点单词弹出词典；单指或三指在段落中滑动流畅选中文本。</div>
+      <div class="selectable-text-box" id="textBox">
+        Apple's <mark>Magic Trackpad</mark> delivers an unparalleled multi-touch experience on macOS. 
+        With its precise sub-pixel acceleration curve, ultra-low latency response, and fluid gesture 
+        arbitration, it seamlessly bridges natural human intuition with digital precision.
+        Try tapping three fingers on any word like <mark>unparalleled</mark> or <mark>arbitration</mark> 
+        to trigger the system dictionary lookup popup!
+      </div>
+      <div style="font-size:12px; color:var(--text-muted)">
+        选区: <span id="selectionStatus" style="color:var(--text)">未选择文本</span>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Fullscreen Raw Event Console -->
+  <div style="max-width:1440px; margin: 0 auto 24px; padding: 0 24px; width:100%;">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">⑫ 底层事件流实时监视器 (Raw Event Telemetry Stream)</div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-action" id="btnClearLog">清空日志</button>
+        </div>
+      </div>
+      <div class="log-container" id="logBox">
+        <div class="log-line"><span class="tag">[SYSTEM]</span> 触控板全链路大师级诊断系统已就绪。正在监听所有底层输入流...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div>macOS Trackpad Master Diagnostic Suite &bull; 高精度模拟触控引擎</div>
+    <div>IP: 本地服务端口 4242 &bull; 架构: Rust + WebKit Native Events + Zero-Copy UDP</div>
+  </footer>
+
+  <script>
+    // --- Telemetry & State Tracker ---
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let lastEventPos = { x: 0, y: 0, time: performance.now() };
+    let currentSpeed = 0;
+
+    const fpsEl = document.getElementById('fpsVal');
+    const speedEl = document.getElementById('speedVal');
+    const posEl = document.getElementById('posVal');
+    const eventPill = document.getElementById('eventPill');
+    const logBox = document.getElementById('logBox');
+
+    function logEvent(type, detail, cls = '') {
+      const line = document.createElement('div');
+      line.className = `log-line ${cls}`;
+      const now = new Date().toISOString().substring(11, 23);
+      line.innerHTML = `<span style="opacity:0.5">${now}</span> <span class="tag">[${type}]</span> <span>${detail}</span>`;
+      logBox.prepend(line);
+      if (logBox.children.length > 80) logBox.lastElementChild.remove();
+      if (eventPill) eventPill.textContent = type;
+    }
+
+    document.getElementById('btnClearLog').onclick = () => {
+      logBox.innerHTML = '';
+      logEvent('SYSTEM', '日志已清空');
+    };
+
+    // --- Preferences Modal Logic ---
+    const prefsModal = document.getElementById('prefsModal');
+    document.getElementById('btnOpenPrefs').onclick = () => prefsModal.classList.add('show');
+    document.getElementById('btnClosePrefs').onclick = () => prefsModal.classList.remove('show');
+
+    const prefKeys = [
+      'prefTapToClick', 'prefRightClick', 'prefLookUp', 'pref3FDrag', 
+      'pref1FTapDrag', 'prefNaturalScroll', 'prefPinch', 'prefSmartZoom', 
+      'prefRotate', 'prefSpaces', 'prefMissionCtrl', 'prefEdgeSwipe'
+    ];
+
+    function loadPrefs() {
+      prefKeys.forEach(k => {
+        const val = localStorage.getItem(k);
+        if (val !== null) {
+          const el = document.getElementById(k);
+          if (el) el.checked = (val === 'true');
+        }
+      });
+    }
+    loadPrefs();
+
+    document.getElementById('btnSavePrefs').onclick = () => {
+      prefKeys.forEach(k => {
+        const el = document.getElementById(k);
+        if (el) localStorage.setItem(k, el.checked);
+      });
+      prefsModal.classList.remove('show');
+      logEvent('CONFIG', '触控板偏好设置已更新并保存至本地');
+    };
+
+    document.getElementById('btnEnableAll').onclick = () => {
+      prefKeys.forEach(k => {
+        const el = document.getElementById(k);
+        if (el) {
+          el.checked = true;
+          localStorage.setItem(k, 'true');
+        }
+      });
+      logEvent('CONFIG', '✨ 已一键启用全部触控板手势 (包含三指拖拽与单指双击拖拽)');
+    };
+
+    // --- Global Pointer & Speed Tracking ---
+    window.addEventListener('pointermove', (e) => {
+      frameCount++;
+      const now = performance.now();
+      const dt = (now - lastEventPos.time) / 1000;
+      if (dt > 0.005) {
+        const dist = Math.hypot(e.clientX - lastEventPos.x, e.clientY - lastEventPos.y);
+        currentSpeed = Math.round(dist / dt);
+        lastEventPos = { x: e.clientX, y: e.clientY, time: now };
+      }
+      posEl.textContent = `(${Math.round(e.clientX)}, ${Math.round(e.clientY)})`;
+      speedEl.textContent = `${currentSpeed} px/s`;
+    }, { passive: true });
+
+    setInterval(() => {
+      const now = performance.now();
+      const elapsed = (now - lastFpsTime) / 1000;
+      const fps = Math.round(frameCount / elapsed);
+      fpsEl.textContent = `${fps} Hz`;
+      frameCount = 0;
+      lastFpsTime = now;
+    }, 500);
+
+    // --- 1. Motion Trajectory Canvas ---
+    const canvas = document.getElementById('motionCanvas');
+    const ctx = canvas.getContext('2d');
+    let points = [];
+
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width * window.devicePixelRatio;
+      canvas.height = rect.height * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    document.getElementById('canvasBox').addEventListener('pointermove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      points.push({ x, y, speed: currentSpeed, time: performance.now() });
+      if (points.length > 120) points.shift();
+      drawTrajectory();
+    });
+
+    function drawTrajectory() {
+      const rect = canvas.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      if (points.length < 2) return;
+
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      for (let i = 1; i < points.length; i++) {
+        const p1 = points[i - 1];
+        const p2 = points[i];
+        const age = (performance.now() - p2.time) / 1000;
+        const alpha = Math.max(0, 1 - age * 0.8);
+
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        const hue = Math.min(280, 180 + p2.speed * 0.1);
+        ctx.strokeStyle = `hsla(${hue}, 100%, 65%, ${alpha})`;
+        ctx.stroke();
+      }
+    }
+
+    document.getElementById('btnClearCanvas').onclick = () => {
+      points = [];
+      const rect = canvas.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+    };
+
+    // --- 2. Click Tester ---
+    let leftCount = 0, rightCount = 0, dblCount = 0, tripleCount = 0;
+    const boxLeft = document.getElementById('boxLeftClick');
+    const boxRight = document.getElementById('boxRightClick');
+    const boxDbl = document.getElementById('boxDblClick');
+    const boxTriple = document.getElementById('boxTripleClick');
+
+    function flashSuccess(el) {
+      el.classList.add('flash-success');
+      setTimeout(() => el.classList.remove('flash-success'), 150);
+    }
+
+    window.addEventListener('click', (e) => {
+      if (e.button === 0) {
+        leftCount++;
+        document.getElementById('cntLeft').textContent = `次数: ${leftCount}`;
+        flashSuccess(boxLeft);
+        logEvent('CLICK', `Left Click at (${e.clientX}, ${e.clientY})`, 'click');
+        if (e.detail === 2) {
+          dblCount++;
+          document.getElementById('cntDbl').textContent = `次数: ${dblCount}`;
+          flashSuccess(boxDbl);
+          logEvent('DBLCLICK', `Double Click at (${e.clientX}, ${e.clientY})`, 'click');
+        } else if (e.detail >= 3) {
+          tripleCount++;
+          document.getElementById('cntTriple').textContent = `次数: ${tripleCount}`;
+          flashSuccess(boxTriple);
+          logEvent('TRIPLECLICK', `Triple Click at (${e.clientX}, ${e.clientY})`, 'click');
+        }
+      }
+    });
+
+    window.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      rightCount++;
+      document.getElementById('cntRight').textContent = `次数: ${rightCount}`;
+      flashSuccess(boxRight);
+      logEvent('RIGHT_CLICK', `Two-Finger Right Click at (${e.clientX}, ${e.clientY})`, 'click');
+    });
+
+    // --- 3. Three-Finger Draggable Windows ---
+    function makeDraggable(el) {
+      let isDragging = false;
+      let startX, startY, initialLeft, initialTop;
+
+      el.addEventListener('pointerdown', (e) => {
+        isDragging = true;
+        el.setPointerCapture(e.pointerId);
+        startX = e.clientX;
+        startY = e.clientY;
+        initialLeft = el.offsetLeft;
+        initialTop = el.offsetTop;
+        logEvent('DRAG_START', `Grabbed ${el.textContent.trim().split('\n')[0]}`, 'drag');
+      });
+
+      el.addEventListener('pointermove', (e) => {
+        if (!isDragging) return;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        el.style.left = `${initialLeft + dx}px`;
+        el.style.top = `${initialTop + dy}px`;
+      });
+
+      el.addEventListener('pointerup', (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+        el.releasePointerCapture(e.pointerId);
+        logEvent('DRAG_END', `Released ${el.textContent.trim().split('\n')[0]}`, 'drag');
+        triggerRegripAnimation();
+      });
+    }
+
+    makeDraggable(document.getElementById('dragCard1'));
+    makeDraggable(document.getElementById('dragCard2'));
+
+    const regripBar = document.getElementById('regripBar');
+    const dragLockStatus = document.getElementById('dragLockStatus');
+    let regripTimer = null;
+
+    function triggerRegripAnimation() {
+      dragLockStatus.textContent = "500ms REGRIP";
+      dragLockStatus.style.color = "var(--amber)";
+      regripBar.style.transition = "none";
+      regripBar.style.width = "100%";
+      setTimeout(() => {
+        regripBar.style.transition = "width 0.5s linear";
+        regripBar.style.width = "0%";
+      }, 20);
+      clearTimeout(regripTimer);
+      regripTimer = setTimeout(() => {
+        dragLockStatus.textContent = "IDLE";
+        dragLockStatus.style.color = "var(--text-muted)";
+      }, 500);
+    }
+
+    // --- 4. Smooth Scrolling Population ---
+    const scrollContent = document.getElementById('scrollContent');
+    for (let i = 1; i <= 50; i++) {
+      const item = document.createElement('div');
+      item.className = 'scroll-item';
+      item.innerHTML = `<span>#${i} Trackpad Scroll Item — 丝滑惯性衰减测试行</span> <span style="font-family:monospace; color:var(--text-muted)">row_${i}</span>`;
+      scrollContent.appendChild(item);
+    }
+
+    const scrollBox = document.getElementById('scrollBox');
+    const scrollDeltaEl = document.getElementById('scrollDelta');
+    let lastScrollTime = 0;
+
+    scrollBox.addEventListener('wheel', (e) => {
+      scrollDeltaEl.textContent = `dx: ${Math.round(e.deltaX)}, dy: ${Math.round(e.deltaY)}`;
+      document.getElementById('scrollPhase').textContent = "Changed";
+      logEvent('SCROLL', `dx=${Math.round(e.deltaX)} dy=${Math.round(e.deltaY)}`, 'wheel');
+      lastScrollTime = performance.now();
+    }, { passive: true });
+
+    setInterval(() => {
+      if (performance.now() - lastScrollTime > 300) {
+        document.getElementById('scrollPhase').textContent = "None";
+      }
+    }, 200);
+
+    // --- 5. Pinch to Zoom & Rotate ---
+    let currentScale = 1.0;
+    let currentRotation = 0.0;
+    let baseScale = 1.0;
+    let baseRotation = 0.0;
+    const transformBox = document.getElementById('transformBox');
+    const zoomVal = document.getElementById('zoomVal');
+    const rotVal = document.getElementById('rotVal');
+    const transformMetrics = document.getElementById('transformMetrics');
+    const pinchStage = document.getElementById('pinchStage');
+
+    // WebKit Native Gestures (Safari & Mac WebKit)
+    pinchStage.addEventListener('gesturestart', (e) => {
+      e.preventDefault();
+      baseScale = currentScale;
+      baseRotation = currentRotation;
+      logEvent('GESTURE_START', `Pinch/Rotate Started`, 'wheel');
+    });
+
+    pinchStage.addEventListener('gesturechange', (e) => {
+      e.preventDefault();
+      if (e.scale !== undefined && e.scale !== 1) {
+        currentScale = Math.min(Math.max(0.3, baseScale * e.scale), 4.0);
+      }
+      if (e.rotation !== undefined) {
+        currentRotation = baseRotation + e.rotation;
+      }
+      updateTransform();
+      logEvent('ROTATE_PINCH', `Scale=${currentScale.toFixed(2)}x Rot=${currentRotation.toFixed(1)}°`, 'wheel');
+    });
+
+    pinchStage.addEventListener('gestureend', (e) => {
+      e.preventDefault();
+      logEvent('GESTURE_END', `Pinch/Rotate Ended`, 'wheel');
+    });
+
+    // Chrome / Generic Wheel Simulation
+    pinchStage.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        currentScale -= e.deltaY * 0.01;
+        currentScale = Math.min(Math.max(0.3, currentScale), 4.0);
+        updateTransform();
+        logEvent('PINCH', `Scale = ${currentScale.toFixed(2)}×`, 'wheel');
+      } else if (e.shiftKey) {
+        e.preventDefault();
+        currentRotation += e.deltaY * 0.5;
+        updateTransform();
+        logEvent('ROTATE', `Rot = ${currentRotation.toFixed(1)}°`, 'wheel');
+      }
+    }, { passive: false });
+
+    function updateTransform() {
+      transformBox.style.transform = `scale(${currentScale}) rotate(${currentRotation}deg)`;
+      zoomVal.textContent = `${currentScale.toFixed(2)}×`;
+      rotVal.textContent = `${currentRotation.toFixed(1)}°`;
+      transformMetrics.textContent = `${Math.round(currentScale * 100)}% | ${currentRotation.toFixed(0)}°`;
+    }
+
+    document.getElementById('btnResetTransform').onclick = () => {
+      currentScale = 1.0;
+      currentRotation = 0.0;
+      updateTransform();
+    };
+
+    // --- 6. Smart Magnify (双指双击智能缩放) ---
+    const smartBox = document.getElementById('smartZoomBox');
+    const smartStatus = document.getElementById('smartZoomStatus');
+    let isSmartZoomed = false;
+
+    document.getElementById('smartZoomStage').addEventListener('dblclick', (e) => {
+      isSmartZoomed = !isSmartZoomed;
+      if (isSmartZoomed) {
+        smartBox.classList.add('zoomed');
+        smartStatus.textContent = "165% (智能放大对焦)";
+        smartStatus.style.color = "var(--cyan)";
+        logEvent('SMART_MAGNIFY', 'Zoomed In (165%)', 'click');
+      } else {
+        smartBox.classList.remove('zoomed');
+        smartStatus.textContent = "100% (标准视角)";
+        smartStatus.style.color = "var(--text)";
+        logEvent('SMART_MAGNIFY', 'Zoomed Out (100%)', 'click');
+      }
+    });
+
+    // --- 7. Navigation Swipe Simulator ---
+    let navCurrentPage = 1;
+    const navTrack = document.getElementById('navTrack');
+    const navPageIndex = document.getElementById('navPageIndex');
+
+    function updateNavPage() {
+      navTrack.style.transform = `translateX(-${navCurrentPage * 33.333}%)`;
+      navPageIndex.textContent = `Page ${navCurrentPage + 1} / 3`;
+    }
+    updateNavPage();
+
+    document.getElementById('navSwipeStage').addEventListener('wheel', (e) => {
+      if (Math.abs(e.deltaX) > 40 && Math.abs(e.deltaY) < 20) {
+        if (e.deltaX > 40 && navCurrentPage < 2) {
+          navCurrentPage++;
+          updateNavPage();
+          logEvent('NAV_SWIPE', 'Navigated Forward (Next Page)', 'wheel');
+        } else if (e.deltaX < -40 && navCurrentPage > 0) {
+          navCurrentPage--;
+          updateNavPage();
+          logEvent('NAV_SWIPE', 'Navigated Backward (Prev Page)', 'wheel');
+        }
+      }
+    }, { passive: true });
+
+    document.getElementById('btnResetNav').onclick = () => {
+      navCurrentPage = 1;
+      updateNavPage();
+    };
+
+    // --- 8. Multi-Finger System Gestures Lamp Tracker ---
+    function triggerSystemGestureLamp(id, text) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.add('active');
+      document.getElementById('sysGestureText').textContent = text;
+      document.getElementById('sysGestureText').style.color = "var(--purple)";
+      logEvent('SYS_GESTURE', text, 'wheel');
+      setTimeout(() => {
+        el.classList.remove('active');
+        document.getElementById('sysGestureText').textContent = "等待手势中...";
+        document.getElementById('sysGestureText').style.color = "var(--text)";
+      }, 1200);
+    }
+
+    // --- 9. Marquee Selection Box ---
+    const marqueeStage = document.getElementById('marqueeStage');
+    const selRect = document.getElementById('selRect');
+    let isSelecting = false;
+    let selStartX = 0, selStartY = 0;
+    const fileItems = document.querySelectorAll('.grid-file-item');
+
+    marqueeStage.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.grid-file-item')) {
+        const item = e.target.closest('.grid-file-item');
+        item.classList.toggle('selected');
+        updateMarqueeCount();
+        return;
+      }
+      isSelecting = true;
+      marqueeStage.setPointerCapture(e.pointerId);
+      const rect = marqueeStage.getBoundingClientRect();
+      selStartX = e.clientX - rect.left;
+      selStartY = e.clientY - rect.top;
+      selRect.style.left = `${selStartX}px`;
+      selRect.style.top = `${selStartY}px`;
+      selRect.style.width = '0px';
+      selRect.style.height = '0px';
+      selRect.style.display = 'block';
+    });
+
+    marqueeStage.addEventListener('pointermove', (e) => {
+      if (!isSelecting) return;
+      const rect = marqueeStage.getBoundingClientRect();
+      const curX = e.clientX - rect.left;
+      const curY = e.clientY - rect.top;
+      const left = Math.min(selStartX, curX);
+      const top = Math.min(selStartY, curY);
+      const width = Math.abs(curX - selStartX);
+      const height = Math.abs(curY - selStartY);
+
+      selRect.style.left = `${left}px`;
+      selRect.style.top = `${top}px`;
+      selRect.style.width = `${width}px`;
+      selRect.style.height = `${height}px`;
+
+      fileItems.forEach(item => {
+        const itemRect = item.getBoundingClientRect();
+        const stageRect = marqueeStage.getBoundingClientRect();
+        const iLeft = itemRect.left - stageRect.left;
+        const iTop = itemRect.top - stageRect.top;
+        const iRight = iLeft + itemRect.width;
+        const iBottom = iTop + itemRect.height;
+
+        const overlaps = !(left > iRight || left + width < iLeft || top > iBottom || top + height < iTop);
+        if (overlaps) {
+          item.classList.add('selected');
+        }
+      });
+      updateMarqueeCount();
+    });
+
+    marqueeStage.addEventListener('pointerup', (e) => {
+      if (!isSelecting) return;
+      isSelecting = false;
+      marqueeStage.releasePointerCapture(e.pointerId);
+      selRect.style.display = 'none';
+      logEvent('MARQUEE_SELECT', `Selected ${document.querySelectorAll('.grid-file-item.selected').length} items`, 'drag');
+    });
+
+    function updateMarqueeCount() {
+      const count = document.querySelectorAll('.grid-file-item.selected').length;
+      document.getElementById('marqueeCount').textContent = `${count} 个项目`;
+    }
+
+    document.getElementById('btnClearSelection').onclick = () => {
+      fileItems.forEach(i => i.classList.remove('selected'));
+      updateMarqueeCount();
+    };
+
+    // --- 10. Edge Swipe Notification Center ---
+    const notiDrawer = document.getElementById('notiDrawer');
+    const edgeStage = document.getElementById('edgeStage');
+    let isEdgeOpen = false;
+
+    edgeStage.addEventListener('pointermove', (e) => {
+      const rect = edgeStage.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      if (x > rect.width - 45 && !isEdgeOpen) {
+        isEdgeOpen = true;
+        notiDrawer.classList.add('open');
+        document.getElementById('edgeSwipeStatus').textContent = "抽屉已滑出 (展开状态)";
+        document.getElementById('edgeSwipeStatus').style.color = "var(--amber)";
+        logEvent('EDGE_SWIPE', 'Notification Center Opened', 'wheel');
+      } else if (x < rect.width - 160 && isEdgeOpen) {
+        isEdgeOpen = false;
+        notiDrawer.classList.remove('open');
+        document.getElementById('edgeSwipeStatus').textContent = "抽屉已收起";
+        document.getElementById('edgeSwipeStatus').style.color = "var(--text)";
+      }
+    });
+
+    // --- 11. Text Selection Monitoring ---
+    document.addEventListener('selectionchange', () => {
+      const sel = window.getSelection().toString().trim();
+      const status = document.getElementById('selectionStatus');
+      if (sel.length > 0) {
+        status.textContent = `选中 "${sel.length > 25 ? sel.substring(0, 25) + '...' : sel}" (${sel.length} 字符)`;
+        status.style.color = "var(--cyan)";
+      } else {
+        status.textContent = "未选择文本";
+        status.style.color = "var(--text)";
+      }
+    });
+
+    // --- Key Events (for Cmd+Ctrl+D dictionary check) ---
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+        logEvent('LOOKUP', `Triggered Dictionary Lookup (Cmd+Ctrl+D)`, 'click');
+      }
+    });
+  </script>
+</body>
+</html>

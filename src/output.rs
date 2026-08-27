@@ -33,11 +33,9 @@ use crate::time::Timestamp;
 /// if a user needs to tune it.
 const DOUBLE_CLICK_INTERVAL: Duration = Duration::from_millis(500);
 /// Maximum cursor displacement (pixels) between successive clicks for
-/// them to count as a multi-click sequence. macOS doesn't expose this
-/// as a public API; 5 px matches stock NSEvent behaviour. Without this
-/// guard, a click → drift → click sequence would still register as
-/// double-click when it should reset to 1.
-const DOUBLE_CLICK_DISTANCE_PX: f64 = 5.0;
+/// them to count as a multi-click sequence. Expanded to 25.0 px to
+/// accommodate natural touchscreen finger touchdown drift on mobile trackpads.
+const DOUBLE_CLICK_DISTANCE_PX: f64 = 25.0;
 
 /// Inertia / coast tunables.
 ///
@@ -375,6 +373,11 @@ unsafe extern "C" {
         wheel1: i32,
         wheel2: i32,
         wheel3: i32,
+    ) -> CGEventRef;
+    fn CGEventCreateKeyboardEvent(
+        source: CGEventSourceRef,
+        virtual_key: u16,
+        key_down: bool,
     ) -> CGEventRef;
     fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
     fn CGEventSetType(event: CGEventRef, ty: u32);
@@ -906,6 +909,13 @@ pub trait Output {
     /// path and chained with [`Self::click`] (a tap followed by a
     /// quick hardware press counts as one multi-click sequence).
     fn set_left_button_held(&self, held: bool);
+    /// Latch the left button for a gesture-owned drag. Unlike the physical
+    /// button path above, this must not advance the click-count sequence:
+    /// a three-finger drag is not a click and the next tap must remain a
+    /// single click.
+    fn set_drag_button_held(&self, held: bool) {
+        self.set_left_button_held(held);
+    }
     fn scroll(&self, dx_mm: f64, dy_mm: f64, phase: Phase);
     /// Seed scroll inertia from a just-ended pan. `vx_mm_per_sec` and
     /// `vy_mm_per_sec` are the EMA-smoothed centroid velocity at lift.
@@ -934,6 +944,10 @@ pub trait Output {
     /// Ended on lift / finger-count drop. Implementations may track
     /// state across calls; `Cancelled` clears any in-flight stream.
     fn swipe(&self, axis: SwipeAxis, signed_progress: f64, velocity_mm_per_sec: f64, phase: Phase);
+    /// Trigger macOS dictionary look up (Cmd + Ctrl + D).
+    fn look_up_dictionary(&self) {}
+    /// Trigger macOS smart zoom (Smart Magnify).
+    fn smart_magnify(&self) {}
 }
 
 /// Decorator over an [`Output`] that flashes a debug HUD on each
@@ -990,6 +1004,9 @@ impl<O: Output> Output for OverlayOutput<O> {
     }
     fn set_left_button_held(&self, held: bool) {
         self.inner.set_left_button_held(held);
+    }
+    fn set_drag_button_held(&self, held: bool) {
+        self.inner.set_drag_button_held(held);
     }
     fn scroll(&self, dx_mm: f64, dy_mm: f64, phase: Phase) {
         if matches!(phase, Phase::Began) {
@@ -1077,9 +1094,10 @@ pub struct Emitter {
     /// `Some(count)` between `LeftMouseDown` and `LeftMouseUp` posts,
     /// `None` otherwise. While `Some`, `move_cursor_by` emits
     /// `LeftMouseDragged` instead of `MouseMoved` so apps see a real
-    /// drag stream. Driven by [`Output::set_left_button_held`], which
-    /// the gesture engine forwards from the firmware's PTP integrated-
-    /// button bit. The stored count is the `kCGMouseEventClickState`
+    /// drag stream. Driven by [`Output::set_left_button_held`] for the
+    /// firmware's PTP integrated button and [`Output::set_drag_button_held`]
+    /// for gesture-owned drags. The stored count is the
+    /// `kCGMouseEventClickState`
     /// assigned at press time and replayed verbatim on release, so an
     /// intervening tap-derived `click()` (which would mutate
     /// `click_count`) can't desync the down/up pair.
@@ -1232,25 +1250,39 @@ impl Emitter {
     }
 
     pub fn set_left_button_held(&self, held: bool) {
+        self.set_button_held(held, true);
+    }
+
+    /// Post a drag-owned left-button edge without changing the click
+    /// sequence used by ordinary taps and physical button presses.
+    pub fn set_drag_button_held(&self, held: bool) {
+        self.set_button_held(held, false);
+    }
+
+    fn set_button_held(&self, held: bool, count_as_click: bool) {
         let was_held = self.left_button_held.get().is_some();
         if was_held == held {
             return;
         }
         let p = self.cursor();
         let now = self.event_timestamp();
-        // Press: chain into the same multi-click sequence tap-derived
-        // clicks use (a tap quickly followed by a hardware press counts
-        // as a double-click, etc.) so the hardware button delivers real
-        // double / triple-click semantics. Stash the count in
-        // `left_button_held` so the matching release can stamp the same
-        // value, surviving any tap-derived `click()` that mutates
-        // `click_count` mid-press.
+        // Physical-button presses chain into the same multi-click sequence
+        // tap-derived clicks use (a tap quickly followed by a hardware
+        // press counts as a double-click, etc.). Gesture-owned drags pass
+        // `count_as_click = false` and always use click-state 1. Stash the
+        // chosen count in `left_button_held` so the matching release can
+        // stamp the same value, surviving any tap-derived `click()` that
+        // mutates `click_count` mid-press.
         //
         // Release: replay the press's count verbatim — both halves of
         // one click carry the same count, matching macOS for natural
         // input.
         let (event_type, count) = if held {
-            let c = self.record_click(MouseButton::Left, now, p);
+            let c = if count_as_click {
+                self.record_click(MouseButton::Left, now, p)
+            } else {
+                1
+            };
             self.left_button_held.set(Some(c));
             (kCGEventLeftMouseDown, c)
         } else {
@@ -1423,15 +1455,26 @@ impl Emitter {
     /// since the last event, positive = counterclockwise (matching
     /// NSEvent.rotation semantics).
     pub fn rotate(&self, delta_degrees: f64, phase: Phase) {
+        let ts = self.event_timestamp();
         if let Some(e) = synthesize_gesture_event(
             GESTURE_SUBTYPE_ROTATE,
             iohid_gesture_phase(phase),
             GesturePayload::Rotation(delta_degrees as f32),
-            self.event_timestamp(),
+            ts,
         ) {
-            log::trace!("post: rotate {:?} delta={:+.2}deg", phase, delta_degrees);
+            e.post_to(kCGSessionEventTap);
+            e.post_to(kCGHIDEventTap);
+        }
+        if let Some(e) = Event::from_raw(unsafe { CGEventCreate(std::ptr::null_mut()) }) {
+            e.set_int(55, 29); // NSEventTypeGesture
+            e.set_int(110, 5); // kIOHIDEventTypeRotation
+            e.set_dbl(114, delta_degrees.to_radians());
+            e.set_int(132, iohid_gesture_phase(phase) as i64);
+            unsafe { CGEventSetTimestamp(e.0, ts.as_nanos()) };
+            e.post_to(kCGHIDEventTap);
             e.post_to(kCGSessionEventTap);
         }
+        log::trace!("post: rotate {:?} delta={:+.2}deg", phase, delta_degrees);
     }
 
     /// Drive a 3F/4F swipe live, mirroring the per-frame motion the
@@ -1507,14 +1550,13 @@ impl Emitter {
         let velocity = matches!(phase, Phase::Ended | Phase::Cancelled).then(|| {
             velocity_mm_per_sec.clamp(-SWIPE_END_VELOCITY_MAX, SWIPE_END_VELOCITY_MAX)
         });
-        log::trace!(
-            "post: swipe (synthetic) axis={:?} motion={} progress={:+.3} origin_offset={:+.3} v={:+.1} (capped {:+.1}) phase={:?}",
+        log::debug!(
+            "post: swipe (synthetic) axis={:?} motion={} progress={:+.3} origin_offset={:+.3} v={:+.1} phase={:?}",
             axis,
             motion,
             signed_progress,
             origin_offset,
             velocity_mm_per_sec,
-            velocity.unwrap_or(0.0),
             phase,
         );
         post_dock_swipe(
@@ -1525,6 +1567,14 @@ impl Emitter {
             velocity,
             self.event_timestamp(),
         );
+        if matches!(axis, SwipeAxis::Horizontal)
+            && matches!(phase, Phase::Ended)
+            && signed_progress.abs() >= SWIPE_VERTICAL_COMMIT_PROGRESS
+        {
+            let key = if signed_progress < 0.0 { 124 } else { 123 }; // 124 = Right Arrow, 123 = Left Arrow
+            log::debug!("post: horizontal swipe commit → Space switch via Ctrl+Arrow (key={})", key);
+            post_ctrl_arrow_key(self.event_source, key, self.event_timestamp());
+        }
     }
 
     /// `CoreDockSendNotification` path: discrete commit on lift past a
@@ -1549,6 +1599,50 @@ impl Emitter {
         );
         send_dock_notification(notif);
     }
+}
+
+fn post_ctrl_arrow_key(source: CGEventSourceRef, keycode: u16, ts: Timestamp) {
+    const kCGEventFlagMaskControl: u64 = 0x00040000;
+    if let Some(down) = Event::from_raw(unsafe { CGEventCreateKeyboardEvent(source, keycode, true) }) {
+        unsafe {
+            CGEventSetFlags(down.0, kCGEventFlagMaskControl);
+            CGEventSetTimestamp(down.0, ts.as_nanos());
+        }
+        down.post();
+    }
+    if let Some(up) = Event::from_raw(unsafe { CGEventCreateKeyboardEvent(source, keycode, false) }) {
+        unsafe {
+            CGEventSetFlags(up.0, kCGEventFlagMaskControl);
+            CGEventSetTimestamp(up.0, ts.as_nanos());
+        }
+        up.post();
+    }
+}
+
+fn post_cmd_ctrl_key(source: CGEventSourceRef, keycode: u16, ts: Timestamp) {
+    const kVK_Command: u16 = 55;
+    const kVK_Control: u16 = 59;
+    const kCGEventFlagMaskCommand: u64 = 0x00100000;
+    const kCGEventFlagMaskControl: u64 = 0x00040000;
+    let flags = kCGEventFlagMaskCommand | kCGEventFlagMaskControl;
+
+    let post_key = |code: u16, down: bool, f: u64| {
+        if let Some(ev) = Event::from_raw(unsafe { CGEventCreateKeyboardEvent(source, code, down) }) {
+            unsafe {
+                CGEventSetFlags(ev.0, f);
+                CGEventSetTimestamp(ev.0, ts.as_nanos());
+            }
+            ev.post_to(kCGSessionEventTap);
+            ev.post_to(kCGHIDEventTap);
+        }
+    };
+
+    post_key(kVK_Command, true, kCGEventFlagMaskCommand);
+    post_key(kVK_Control, true, flags);
+    post_key(keycode, true, flags);
+    post_key(keycode, false, flags);
+    post_key(kVK_Control, false, kCGEventFlagMaskCommand);
+    post_key(kVK_Command, false, 0);
 }
 
 /// Function pointer signature for `CoreDockSendNotification`. Symbol
@@ -1953,6 +2047,9 @@ impl Output for Emitter {
     fn set_left_button_held(&self, held: bool) {
         Emitter::set_left_button_held(self, held);
     }
+    fn set_drag_button_held(&self, held: bool) {
+        Emitter::set_drag_button_held(self, held);
+    }
     fn scroll(&self, dx_mm: f64, dy_mm: f64, phase: Phase) {
         Emitter::scroll(self, dx_mm, dy_mm, phase);
     }
@@ -1970,6 +2067,23 @@ impl Output for Emitter {
     }
     fn swipe(&self, axis: SwipeAxis, signed_progress: f64, velocity_mm_per_sec: f64, phase: Phase) {
         Emitter::swipe(self, axis, signed_progress, velocity_mm_per_sec, phase);
+    }
+    fn look_up_dictionary(&self) {
+        log::debug!("post: look up dictionary via Cmd+Ctrl+D");
+        const kVK_ANSI_D: u16 = 2;
+        post_cmd_ctrl_key(self.event_source, kVK_ANSI_D, self.event_timestamp());
+    }
+    fn smart_magnify(&self) {
+        log::debug!("post: smart zoom via GESTURE_SUBTYPE_SMART_MAGNIFY");
+        const GESTURE_SUBTYPE_SMART_MAGNIFY: u32 = 0x17;
+        if let Some(event) = synthesize_gesture_event(
+            GESTURE_SUBTYPE_SMART_MAGNIFY,
+            1, // Began/commit
+            GesturePayload::Magnification(0.0),
+            self.event_timestamp(),
+        ) {
+            event.post_to(kCGSessionEventTap);
+        }
     }
 }
 
