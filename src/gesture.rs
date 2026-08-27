@@ -822,11 +822,6 @@ impl<O: Output> State<O> {
                     } else if let Some(p) = pending_2f {
                         self.last_1f_tap = None;
                         self.tap_drag_candidate = false;
-                        // Residual 1F is the tail of an asynchronous 2F
-                        // lift. Combine the 2F window/motion with the
-                        // residual's to decide whether the right-click
-                        // still qualifies; either way, suppress the
-                        // residual's own left-click path.
                         let total_dur = now - p.started_at;
                         let combined_max_move = p.max_move_sq.max(self.max_move_sq).sqrt();
                         if total_dur < TAP_MAX_DURATION && combined_max_move < TAP_MAX_MOVE_MM {
@@ -837,11 +832,15 @@ impl<O: Output> State<O> {
                             );
                             self.out.click(MouseButton::Right);
                         } else {
-                            log::debug!(
-                                "2f tap (split lift): no click (total_dur={}ms combined_max_move={:.2}mm)",
-                                total_dur.as_millis(),
-                                combined_max_move,
-                            );
+                            // If total duration exceeded or moved, it was NOT a 2F tap!
+                            // Fallback to evaluating the residual 1F touch as a normal 1F tap so single taps are never lost!
+                            let dur_1f = now - self.started_at;
+                            let max_move_1f = self.max_move_sq.sqrt();
+                            if dur_1f < TAP_MAX_DURATION && max_move_1f < TAP_MAX_MOVE_MM {
+                                log::debug!("1f tap after canceled 2f split: click Left (dur={}ms)", dur_1f.as_millis());
+                                self.out.click(MouseButton::Left);
+                                self.last_1f_tap = Some(now);
+                            }
                         }
                     } else if suppress_residual {
                         self.last_1f_tap = None;
@@ -1015,9 +1014,11 @@ impl<O: Output> State<O> {
                     self.pending_drag_release = Some(expiry);
                     return; // keep kind, baselines, held state intact
                 }
-                // If transitioning to OneFinger / TwoFinger (interrupted by 1 or 2 fingers),
-                // or drag-lock is disabled: release the left mouse button immediately!
-                if self.drag_button_held {
+                // If transitioning to FourFingerLive (e.g. 4F swipe to switch desktop),
+                // KEEP the left button held so the dragged window travels across Spaces with the cursor!
+                if matches!(new_kind, GestureKind::FourFingerLive) {
+                    log::debug!("3f drag → 4f swipe: keeping drag button held to carry window across Spaces");
+                } else if self.drag_button_held {
                     self.out.set_drag_button_held(false);
                     self.drag_button_held = false;
                     log::debug!("3f drag: ended (button released, next: {:?})", new_kind);
@@ -1030,6 +1031,11 @@ impl<O: Output> State<O> {
                 }
             }
             GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => {
+                if self.drag_button_held && matches!(new_kind, GestureKind::Idle | GestureKind::SwipeLatched) {
+                    self.out.set_drag_button_held(false);
+                    self.drag_button_held = false;
+                    log::debug!("4f swipe lift: released carried drag button in new Space");
+                }
                 let swipe_in_flight = self.multi_baseline.as_ref().map(|b| b.began_posted).unwrap_or(false);
                 if let Some(b) = self.multi_baseline
                     && b.began_posted
