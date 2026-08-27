@@ -24,12 +24,49 @@ cargo build --release
 ./target/release/companion -v
 ```
 
-CLI flags (intentionally tiny — everything else lives in the config file):
+### Phone / browser input
+
+`companion-net` is the network sibling of `companion`: it feeds the same
+gesture engine from a phone or browser instead of opening a USB HID device.
+It binds UDP and TCP on the configured port, serves the touchpad page at
+`http://<mac-ip>:4242/`, and accepts the same binary frames over WebSocket.
+
+```sh
+cargo build --release --bin companion-net
+./target/release/companion-net -v
+```
+
+Open the printed URL on a phone connected to the same LAN. The Android MVP
+is under `android/`; build it from that directory with
+`./gradlew assembleDebug`, then enter the Mac's LAN address and port in the
+app. A synthetic sender is available for
+diagnostics:
+
+```sh
+python3 tools/synthetic_sender.py --host <mac-ip> --mode circle
+```
+
+Android and browser clients encode coordinates in millimeters using one
+isotropic pixel scale. This keeps equal finger motion equally sensitive in X
+and Y; use the `A−` / `A＋` controls for overall calibration. The Android
+client prefers the panel's reported physical DPI and falls back to
+`densityDpi`; browsers use the CSS reference pixel because mobile browsers do
+not expose reliable physical DPI.
+
+The network listener needs Accessibility permission to post CGEvents, but it
+does not need Input Monitoring because it never reads a local HID device.
+Only run it on a trusted network: protocol v1 is intentionally unauthenticated
+and any host that can reach the port can inject pointer or gesture events.
+
+CLI flags (network binding can be overridden for one `companion-net` run):
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--config PATH` | XDG default | TOML config path. See **Configuration** below. |
 | `-v`, `-vv` | info | Increase log level. Overrides `[log].level` from the file. |
+| `--port PORT` | 4242 | `companion-net` UDP + HTTP/WebSocket port override. |
+| `--listen-ip IP` | all interfaces | `companion-net` bind-address override. |
+| `--token TOKEN` | unset | Reserved in protocol v1; accepted but authentication is not enabled. |
 
 ## Configuration
 
@@ -43,6 +80,11 @@ rejected so typos surface at startup.
 [device]                    # optional — match a specific USB device
 # vid = 0x1234              #   (omit either field for any PTP digitizer)
 # pid = 0x5678
+
+[net]                       # companion-net UDP + WebSocket listener
+# listen_ip = "0.0.0.0"    # bind address (default: all interfaces)
+# port      = 4242
+# token     = ""            # reserved; v1 is unauthenticated
 
 [log]
 level = "info"              # error | warn | info | debug | trace
@@ -95,7 +137,19 @@ backend = "synthetic"         # synthetic | notification | off
 [gestures.swipe.vertical]     # up/down 3F/4F → Mission Control / App Exposé
 enable  = "on"
 backend = "synthetic"
+
+[gestures.three_finger_drag]  # companion-net: three fingers → left-button drag
+enable = "on"                 # four-finger swipes remain available
 ```
+
+With this option, three fingers must move past a small jitter guard before
+the engine posts `LeftMouseDown`; movement is then emitted as standard Quartz
+`LeftMouseDragged` events and the final finger lift posts `LeftMouseUp`.
+That reproduces the application-level behavior of macOS's Three-Finger Drag
+style. It is not a real Apple multitouch stream: macOS receives synthesized
+mouse events, not the original three-finger contacts. The HID daemon keeps
+its historical three-finger swipe behavior; only `companion-net` enables this
+mode by default.
 
 ## Permissions
 
@@ -204,9 +258,28 @@ on separate interfaces.
 | `gesture.rs` | Pure state machine — classifies 1F/2F/3F/4F gestures, locks 2F mode on first significant motion. Tested without I/O. |
 | `output.rs` | macOS event synthesis. Public CGEvent for cursor/click/scroll, private CGEvent type/field IDs for pinch/rotate/swipe. |
 | `hid.rs` | IOHIDManager FFI: device matching, descriptor + input-report subscription, run-loop pumping. |
+| `net.rs` | UDP + WebSocket ingestion, strict frame decoding, sequence/loss filtering, and idle-lift recovery. |
+| `crates/touchpad-proto` | Shared ATP1 wire-format encoder/decoder used by network clients. |
 | `main.rs` | CLI parsing, logging, wiring. |
 
 ## Caveats
+
+### Native-event boundary
+
+The network clients send ATP1 contact frames to the same gesture engine, but
+they do not register as an Apple trackpad or feed `MultitouchSupport`. The
+result is intentionally mixed:
+
+| Gesture | Event path | Native status |
+| --- | --- | --- |
+| Cursor, click, three-finger drag | Public Quartz mouse events | Native app-visible mouse behavior; not native multitouch input |
+| Two-finger scroll | Public phased pixel-scroll events plus our own inertia timer | App-compatible and momentum-aware; not the Apple PTP stream |
+| Pinch, rotate | Reverse-engineered private gesture CGEvent payload | Works in some AppKit apps; undocumented and macOS-version-sensitive |
+| Three-/four-finger Spaces and Mission Control | Private DockSwipe CGEvent or Dock notification | Uses the Dock gesture path, but is still synthesized |
+
+Receiving the same raw events as an Apple trackpad would require a virtual HID
+device accepted by macOS's trackpad stack, not just `CGEventPost`. That is a
+separate driver-level project and is outside this userspace bridge.
 
 - **Private CGEvent gesture types are reverse-engineered.** Pinch,
   rotate, and swipe injection use undocumented CGEvent types (18, 19,

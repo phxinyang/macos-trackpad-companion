@@ -21,13 +21,11 @@ use std::time::Duration;
 // finger ergonomics, not pad fractions.
 
 /// Max distance a contact may drift from its landing point during a
-/// short touch and still count as a tap. ~1 mm covers normal finger
-/// jitter without admitting deliberate cursor moves.
-const TAP_MAX_MOVE_MM: f64 = 1.0;
-/// Max touch duration to count as a tap. Matches rmk's `TAP_TIME`,
-/// tightened from 220 ms to keep slow / barely-moving touches from
-/// delaying scroll onset.
-const TAP_MAX_DURATION: Duration = Duration::from_millis(150);
+/// short touch and still count as a tap. ~1.5 mm covers normal finger
+/// touch spread on mobile screens without admitting deliberate cursor moves.
+const TAP_MAX_MOVE_MM: f64 = 1.5;
+/// Max touch duration to count as a tap (240 ms).
+const TAP_MAX_DURATION: Duration = Duration::from_millis(240);
 /// Centroid motion below this between frames is treated as jitter.
 const MOTION_DEAD_ZONE_MM: f64 = 0.04;
 
@@ -75,6 +73,9 @@ const SWIPE_AXIS_LOCK_MM: f64 = 3.0;
 /// 50 mm-tall trackpad without making short swipes accidentally
 /// trigger. Tunable.
 const SWIPE_PROGRESS_REF_MM: f64 = 50.0;
+
+/// Centroid travel needed to engage a three-finger drag (post the
+const DRAG_ENGAGE_MM: f64 = 0.35;
 
 /// Window after a 2F → 1F partial-lift transition during which a
 /// subsequent 1F → 2F re-arrival is treated as a continuation of the
@@ -125,9 +126,9 @@ pub struct CursorAccel {
 impl Default for CursorAccel {
     fn default() -> Self {
         Self {
-            px_per_mm_at_ref: 25.0,
-            exponent: 1.0,
-            ref_mm_per_sec: 80.0,
+            px_per_mm_at_ref: 28.0,
+            exponent: 1.35,
+            ref_mm_per_sec: 70.0,
         }
     }
 }
@@ -172,6 +173,12 @@ enum GestureKind {
     /// anti-parallel diagonal motion.
     TwoFingerPinchAndRotate,
     ThreeFingerLive,
+    /// 拖移样式 = 三指拖移 mode. While active, three-finger motion drags
+    /// (left-button held + accelerated cursor) instead of firing Dock
+    /// swipes; four fingers retain the full swipe surface. Survives
+    /// asynchronous lifts down to a single finger — native behavior —
+    /// and releases the button when the pad empties.
+    ThreeFingerDrag,
     FourFingerLive,
     /// Latched after a swipe fires, until all fingers lift.
     SwipeLatched,
@@ -192,6 +199,7 @@ enum PinchRotateDominant {
 /// frame-to-frame noise on signals of comparable magnitude, low enough
 /// that a deliberate transition between zoom and twist still flips
 /// within 1-2 frames.
+#[allow(dead_code)]
 const PINCH_ROTATE_HYSTERESIS: f64 = 1.5;
 
 #[derive(Clone, Copy, Debug)]
@@ -284,6 +292,58 @@ struct MultiBaseline {
     velocity: (f64, f64),
 }
 
+/// Runtime-tunable behavior switches. Passed via [`State::with_options`];
+/// `State::new` uses the defaults (all features off — upstream HID
+/// behavior untouched).
+#[derive(Clone, Copy, Debug)]
+pub struct GestureOptions {
+    /// 拖移样式 = 三指拖移: three-finger motion drags instead of firing
+    /// Dock swipes. Four fingers keep the full swipe surface.
+    pub three_finger_drag: bool,
+    /// Drag-lock style delayed release: how long after the last finger
+    /// leaves before the left button is actually released. Landing a
+    /// finger inside the window cancels the release and continues the
+    /// same drag. Keep this at zero for Apple's Three-Finger Drag mode,
+    /// which stops as soon as the fingers lift; positive values model the
+    /// separate accessibility "With Drag Lock" behavior.
+    pub release_delay_ms: u64,
+    /// Whether 1-finger double-tap-to-drag is enabled. When disabled
+    /// (default, matching macOS when Three-Finger Drag is active),
+    /// a quick tap followed by cursor movement moves the cursor normally
+    /// instead of locking the left mouse button into a drag.
+    pub one_finger_tap_drag: bool,
+}
+
+impl Default for GestureOptions {
+    fn default() -> Self {
+        Self {
+            three_finger_drag: false,
+            release_delay_ms: 500,
+            one_finger_tap_drag: false,
+        }
+    }
+}
+
+/// Baseline for the live three-finger drag. Tracks the centroid the
+/// same way [`MultiBaseline`] does for swipes, but its output is cursor
+/// motion while the left button is held (synthesized press), so it
+/// carries an engage gate instead of a swipe-axis lock.
+#[derive(Clone, Copy, Debug)]
+struct DragBaseline {
+    initial_centroid: (f64, f64),
+    last_centroid: (f64, f64),
+    /// Finger count observed on the previous frame. When it changes
+    /// (async lift/addition mid-drag), the centroid jumps because the
+    /// mean is taken over a different cluster — that transitional
+    /// frame drops its delta instead of teleporting the cursor.
+    finger_count: usize,
+    /// True once cumulative centroid motion crossed
+    /// [`DRAG_ENGAGE_MM`] and `set_drag_button_held(true)` was posted.
+    engaged: bool,
+    /// Host timestamp when a re-grip touchdown frame was observed.
+    regrip_started_at: Option<Timestamp>,
+}
+
 /// Carry-over state from a 2F touch that briefly dropped to 1F (a
 /// "partial lift" — one contact disappeared for a chip frame or two,
 /// most commonly because the trackpad chip momentarily lost it, not
@@ -339,12 +399,13 @@ struct TwoFingerRecent {
 /// the 2F gesture, not a fresh 1F tap.
 #[derive(Clone, Copy, Debug)]
 struct PendingTwoFingerTap {
-    /// When the 2F gesture (not the residual 1F) began. Used to decide
-    /// whether the right-click is still in the original tap window.
     started_at: Timestamp,
-    /// Worst-case per-contact motion observed during the 2F phase.
-    /// Combined (via max) with the residual 1F's `max_move_sq` to
-    /// decide whether to fire the right-click.
+    max_move_sq: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PendingThreeFingerTap {
+    started_at: Timestamp,
     max_move_sq: f64,
 }
 
@@ -357,6 +418,18 @@ pub struct State<O: Output> {
     max_move_sq: f64,
     two_baseline: Option<TwoFingerBaseline>,
     multi_baseline: Option<MultiBaseline>,
+    drag_baseline: Option<DragBaseline>,
+    /// True between posting `set_drag_button_held(true)` and its
+    /// matching release. Kept on the State (not inside DragBaseline) so
+    /// a close-out can never lose track of an open press even if the
+    /// baseline is cleared.
+    drag_button_held: bool,
+    options: GestureOptions,
+    /// Drag-lock pending release. Set when the pad empties during an
+    /// engaged drag; the actual button-up fires via [`State::tick`]
+    /// once `release_delay_ms` elapses. Any finger landing inside the
+    /// window cancels it (grip adjustment continues the same drag).
+    pending_drag_release: Option<Timestamp>,
     /// One-frame deferred cursor motion. `dispatch_one` emits the
     /// previous frame's value and stages the current frame's; on
     /// transition out of `OneFinger` (most importantly to `Idle` on
@@ -388,6 +461,7 @@ pub struct State<O: Output> {
     /// frames stretch — e.g. coalesced reports under load).
     prev_frame_at: Option<Timestamp>,
     pending_two_finger_tap: Option<PendingTwoFingerTap>,
+    pending_three_finger_tap: Option<PendingThreeFingerTap>,
     /// See [`TwoFingerRecent`]. Set on a 2F → 1F partial lift, taken
     /// at the top of the next `transition` call to decide whether to
     /// restore. Auto-cleared if it goes stale (window expired) while
@@ -419,10 +493,18 @@ pub struct State<O: Output> {
     /// over to LeftMouseDragged. Treated independently of finger
     /// gestures (taps/scroll still classify normally while held).
     prev_button: bool,
+    last_1f_tap: Option<Timestamp>,
+    last_2f_tap: Option<Timestamp>,
+    tap_drag_candidate: bool,
+    tap_drag_active: bool,
 }
 
 impl<O: Output> State<O> {
     pub fn new(out: O, cursor_accel: CursorAccel) -> Self {
+        Self::with_options(out, cursor_accel, GestureOptions::default())
+    }
+
+    pub fn with_options(out: O, cursor_accel: CursorAccel, options: GestureOptions) -> Self {
         let now = Timestamp::now();
         Self {
             out,
@@ -432,16 +514,25 @@ impl<O: Output> State<O> {
             max_move_sq: 0.0,
             two_baseline: None,
             multi_baseline: None,
+            drag_baseline: None,
+            drag_button_held: false,
+            options,
+            pending_drag_release: None,
             pending_motion: None,
             cursor_accel,
             cursor_carry_x_px: 0.0,
             cursor_carry_y_px: 0.0,
             prev_frame_at: None,
             pending_two_finger_tap: None,
+            pending_three_finger_tap: None,
             two_finger_recent: None,
             born_during_coast: false,
             suppress_one_finger_click: false,
             prev_button: false,
+            last_1f_tap: None,
+            last_2f_tap: None,
+            tap_drag_candidate: false,
+            tap_drag_active: false,
         }
     }
 
@@ -462,6 +553,11 @@ impl<O: Output> State<O> {
     /// deltas reflect the chip's scan cadence rather than report
     /// delivery cadence. Tests inject their own `now` directly.
     pub fn on_frame_at(&mut self, frame: Frame, now: Timestamp) {
+        // A transport normally drives delayed drag release from its idle
+        // heartbeat. Check here too so a frame that arrives just after the
+        // deadline cannot resurrect an already-expired drag lock.
+        self.tick(now);
+
         // Frame interval used by the cursor-acceleration curve. `now`
         // comes from `ScanTimeClock`, so the dt reflects the chip's
         // actual scan cadence rather than report-delivery jitter.
@@ -533,16 +629,63 @@ impl<O: Output> State<O> {
         }
     }
 
+    /// Advance time-based gesture state. Called from the transport
+    /// loops' idle heartbeat (they poll on a ~50 ms cadence even with
+    /// zero traffic), which is what drives the three-finger-drag lock
+    /// release after its configured delay.
+    #[allow(dead_code)]
+    pub fn tick(&mut self, now: Timestamp) {
+        let Some(expires_at) = self.pending_drag_release else {
+            return;
+        };
+        if now < expires_at {
+            return;
+        }
+        self.pending_drag_release = None;
+        if !self.drag_button_held {
+            return; // shouldn't happen: release implies hold, but never strand a press either way
+        }
+        log::debug!("3f drag: drag-lock expired — releasing left button");
+        self.out.set_event_time(now);
+        self.out.set_drag_button_held(false);
+        self.drag_button_held = false;
+        // Manual full close-out to Idle (mirrors transition()'s reset
+        // block; bypassing transition() here avoids re-entering the
+        // ThreeFingerDrag arm that just ran).
+        self.kind = GestureKind::Idle;
+        self.started_at = now;
+        self.max_move_sq = 0.0;
+        self.two_baseline = None;
+        self.multi_baseline = None;
+        self.drag_baseline = None;
+        self.pending_motion = None;
+        self.cursor_carry_x_px = 0.0;
+        self.cursor_carry_y_px = 0.0;
+        self.born_during_coast = false;
+    }
+
     fn classify(&self, n: usize) -> GestureKind {
+        // Drag-lock: while a delayed release is pending, resume the 3-finger drag
+        // ONLY if 3 or more fingers land! If 1 or 2 fingers land, let them fall
+        // through to OneFinger / TwoFinger to release drag-lock immediately.
+        if self.pending_drag_release.is_some() {
+            if n >= 3 {
+                return GestureKind::ThreeFingerDrag;
+            } else if n == 0 {
+                return GestureKind::ThreeFingerDrag;
+            }
+            // n == 1 or n == 2 fall through to normal classification below
+        }
         // Once a swipe has fired, stay latched until every finger leaves
-        // the pad. Asynchronous lifts (3 → 2 → 1 → 0 across a few chip
-        // frames) would otherwise reclassify as TwoFingerUnclassified
-        // then OneFinger, and the close-out branches would fire a
-        // spurious right-click on the brief 2F window (seen at
-        // /tmp/companion-logs.txt run 2: 10 ms after swipe Up, contact 1
-        // lifted before contacts 0 and 2 → 2f tap: click Right).
+        // the pad.
         if matches!(self.kind, GestureKind::SwipeLatched) && n > 0 {
             return GestureKind::SwipeLatched;
+        }
+        // 三指拖移 mode: an actively engaged drag (mouse button held) outlives
+        // async lifts (3 → 2 → 1 → 0). Keep classifying as ThreeFingerDrag while fingers
+        // are on pad so async lifts do not reclassify to OneFinger!
+        if matches!(self.kind, GestureKind::ThreeFingerDrag) && self.drag_button_held && n > 0 {
+            return GestureKind::ThreeFingerDrag;
         }
         match n {
             0 => GestureKind::Idle,
@@ -553,22 +696,16 @@ impl<O: Output> State<O> {
                 | GestureKind::TwoFingerUnclassified => self.kind,
                 _ => GestureKind::TwoFingerUnclassified,
             },
-            // Treat 3⇄4 as the same in-flight gesture: a finger
-            // landing or lifting mid-swipe must NOT close out the
-            // current DockSwipe stream and start a fresh one,
-            // because Ended → Began on the same continuous motion
-            // looks like cancellation to the Dock and would split the
-            // user's swipe into two short segments. Hold the kind
-            // through that transition; the close-out only fires when
-            // the user drops below 3 fingers entirely.
             3 => match self.kind {
                 GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => self.kind,
+                GestureKind::ThreeFingerDrag => self.kind,
+                GestureKind::TwoFingerPan | GestureKind::TwoFingerPinchAndRotate => {
+                    GestureKind::ThreeFingerLive
+                }
+                _ if self.options.three_finger_drag => GestureKind::ThreeFingerDrag,
                 _ => GestureKind::ThreeFingerLive,
             },
-            _ => match self.kind {
-                GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => self.kind,
-                _ => GestureKind::FourFingerLive,
-            },
+            _ => GestureKind::FourFingerLive,
         }
     }
 
@@ -591,6 +728,23 @@ impl<O: Output> State<O> {
             if self.out.cancel_inertia() {
                 self.born_during_coast = true;
                 log::debug!("touch born during coast — suppressing taps for this session");
+            }
+        }
+        if matches!(self.kind, GestureKind::Idle) && matches!(new_kind, GestureKind::OneFinger) {
+            self.tap_drag_active = false;
+            if self.options.one_finger_tap_drag {
+                if let Some(last_tap) = self.last_1f_tap {
+                    if now.saturating_duration_since(last_tap) <= Duration::from_millis(350) {
+                        self.tap_drag_candidate = true;
+                        log::debug!("1f tap-drag: armed candidate on second tap");
+                    } else {
+                        self.tap_drag_candidate = false;
+                    }
+                } else {
+                    self.tap_drag_candidate = false;
+                }
+            } else {
+                self.tap_drag_candidate = false;
             }
         }
         // Snapshot before the close-out potentially clears it. We want
@@ -624,14 +778,41 @@ impl<O: Output> State<O> {
                 // joined by a third — back to a 2F gesture) must be
                 // discarded; the 2F lift sequence is over.
                 let pending_2f = self.pending_two_finger_tap.take();
+                let pending_3f = self.pending_three_finger_tap.take();
                 let suppress_residual = std::mem::take(&mut self.suppress_one_finger_click);
                 if matches!(new_kind, GestureKind::Idle) {
-                    if bc {
+                    if self.tap_drag_active {
+                        if self.drag_button_held {
+                            self.out.set_drag_button_held(false);
+                            self.drag_button_held = false;
+                            log::debug!("1f tap-drag: ended (released drag button)");
+                        }
+                        self.tap_drag_active = false;
+                        self.tap_drag_candidate = false;
+                        self.last_1f_tap = None;
+                    } else if bc {
                         // Born during coast: nothing this session does
                         // counts as a click. Whether the residual was
                         // also a 2F-tail or a fresh 1F is irrelevant.
                         log::debug!("1f lift, click suppressed (born during coast)");
+                        self.last_1f_tap = None;
+                        self.tap_drag_candidate = false;
+                    } else if let Some(p3) = pending_3f {
+                        self.last_1f_tap = None;
+                        self.tap_drag_candidate = false;
+                        let total_dur = now - p3.started_at;
+                        let combined_max_move = p3.max_move_sq.max(self.max_move_sq).sqrt();
+                        if total_dur < Duration::from_millis(360) && combined_max_move < 2.5 {
+                            log::debug!(
+                                "3f tap (split lift): look up dictionary via Cmd+Ctrl+D (total_dur={}ms combined_max_move={:.2}mm)",
+                                total_dur.as_millis(),
+                                combined_max_move,
+                            );
+                            self.out.look_up_dictionary();
+                        }
                     } else if let Some(p) = pending_2f {
+                        self.last_1f_tap = None;
+                        self.tap_drag_candidate = false;
                         // Residual 1F is the tail of an asynchronous 2F
                         // lift. Combine the 2F window/motion with the
                         // residual's to decide whether the right-click
@@ -654,6 +835,8 @@ impl<O: Output> State<O> {
                             );
                         }
                     } else if suppress_residual {
+                        self.last_1f_tap = None;
+                        self.tap_drag_candidate = false;
                         // Residual 1F is the tail of a non-tap 2F (a
                         // pan, pinch, rotate, or motion-disqualified
                         // unclassified). User didn't intend a 1F tap.
@@ -669,7 +852,9 @@ impl<O: Output> State<O> {
                                 if dropped.is_some() { ", dropped lift-frame motion" } else { "" },
                             );
                             self.out.click(MouseButton::Left);
+                            self.last_1f_tap = Some(now);
                         } else {
+                            self.last_1f_tap = None;
                             log::debug!(
                                 "1f lift, no tap: dur={}ms max_move={:.2}mm (limits dur<{}ms move<{:.2}mm)",
                                 dur.as_millis(),
@@ -678,6 +863,7 @@ impl<O: Output> State<O> {
                                 TAP_MAX_MOVE_MM,
                             );
                         }
+                        self.tap_drag_candidate = false;
                     }
                 }
             }
@@ -696,6 +882,12 @@ impl<O: Output> State<O> {
                 // whether the seed is fast enough to coast on; gesture-side
                 // we always offer it.
                 self.out.scroll_inertia(vx, vy);
+                if matches!(new_kind, GestureKind::ThreeFingerLive | GestureKind::FourFingerLive) {
+                    // A third/fourth contact is a new multi-finger
+                    // gesture, not a request to keep the old scroll
+                    // momentum running underneath it.
+                    let _ = self.out.cancel_inertia();
+                }
                 // Async lift: if one finger lifted before the other,
                 // the residual goes 2F-pan → 1F. That residual is the
                 // tail of the gesture, not a fresh tap. Capture
@@ -730,12 +922,29 @@ impl<O: Output> State<O> {
                             max_move,
                         );
                     } else if tap_eligible {
-                        log::debug!(
-                            "2f tap: click Right (dur={}ms max_move={:.2}mm)",
-                            dur.as_millis(),
-                            max_move,
-                        );
-                        self.out.click(MouseButton::Right);
+                        if let Some(prev) = self.last_2f_tap {
+                            if now.saturating_duration_since(prev) < Duration::from_millis(350) {
+                                log::debug!("2f double tap: smart zoom / smart magnify (interval={}ms)", now.saturating_duration_since(prev).as_millis());
+                                self.out.smart_magnify();
+                                self.last_2f_tap = None;
+                            } else {
+                                log::debug!(
+                                    "2f tap: click Right (dur={}ms max_move={:.2}mm)",
+                                    dur.as_millis(),
+                                    max_move,
+                                );
+                                self.out.click(MouseButton::Right);
+                                self.last_2f_tap = Some(now);
+                            }
+                        } else {
+                            log::debug!(
+                                "2f tap: click Right (dur={}ms max_move={:.2}mm)",
+                                dur.as_millis(),
+                                max_move,
+                            );
+                            self.out.click(MouseButton::Right);
+                            self.last_2f_tap = Some(now);
+                        }
                     } else {
                         log::debug!(
                             "2f lift, no tap: dur={}ms max_move={:.2}mm",
@@ -768,26 +977,70 @@ impl<O: Output> State<O> {
                         // motion so the next OneFinger → Idle can fire
                         // the right-click; until then, the residual 1F
                         // is part of this gesture, not a fresh 1F tap.
-                        log::debug!(
-                            "2f → 1f partial lift (dur={}ms max_move={:.2}mm); pending right-click",
-                            dur.as_millis(),
-                            max_move,
-                        );
-                        self.pending_two_finger_tap = Some(PendingTwoFingerTap {
-                            started_at: self.started_at,
-                            max_move_sq: self.max_move_sq,
-                        });
+                        // Require at least 25ms of 2F contact to prevent single-finger
+                        // touchdown edge jitter from spuriously arming a right-click.
+                        if dur >= Duration::from_millis(25) {
+                            log::debug!(
+                                "2f → 1f partial lift (dur={}ms max_move={:.2}mm); pending right-click",
+                                dur.as_millis(),
+                                max_move,
+                            );
+                            self.pending_two_finger_tap = Some(PendingTwoFingerTap {
+                                started_at: self.started_at,
+                                max_move_sq: self.max_move_sq,
+                            });
+                        } else {
+                            // Transient <25ms 2-contact jitter: restore normal 1F tap path
+                            self.suppress_one_finger_click = false;
+                        }
                     }
                 }
             }
+            GestureKind::ThreeFingerDrag => {
+                let dur = now - self.started_at;
+                let max_move = self.max_move_sq.sqrt();
+                let tap_eligible = dur < Duration::from_millis(320) && max_move < 2.0;
+                if !self.drag_button_held && tap_eligible && !bc {
+                    if matches!(new_kind, GestureKind::Idle) {
+                        log::debug!("3f tap: look up dictionary via Cmd+Ctrl+D (dur={}ms max_move={:.2}mm)", dur.as_millis(), max_move);
+                        self.out.look_up_dictionary();
+                    } else {
+                        log::debug!("3f drag → partial lift: pending 3f tap lookup (dur={}ms max_move={:.2}mm)", dur.as_millis(), max_move);
+                        self.pending_three_finger_tap = Some(PendingThreeFingerTap {
+                            started_at: self.started_at,
+                            max_move_sq: self.max_move_sq,
+                        });
+                        self.suppress_one_finger_click = true;
+                    }
+                }
+                // If transitioning to Idle (all fingers lifted from pad), arm the drag-lock delay.
+                if matches!(new_kind, GestureKind::Idle) && self.drag_button_held && self.options.release_delay_ms > 0 {
+                    let expiry = now + Duration::from_millis(self.options.release_delay_ms);
+                    if self.pending_drag_release.is_none() {
+                        log::debug!(
+                            "3f drag: fingers lifted — release armed at +{}ms",
+                            self.options.release_delay_ms
+                        );
+                    }
+                    self.pending_drag_release = Some(expiry);
+                    return; // keep kind, baselines, held state intact
+                }
+                // If transitioning to OneFinger / TwoFinger (interrupted by 1 or 2 fingers),
+                // or drag-lock is disabled: release the left mouse button immediately!
+                if self.drag_button_held {
+                    self.out.set_drag_button_held(false);
+                    self.drag_button_held = false;
+                    log::debug!("3f drag: ended (button released, next: {:?})", new_kind);
+                }
+                self.pending_drag_release = None;
+                self.drag_baseline = None;
+                self.pending_motion = None;
+                if !matches!(new_kind, GestureKind::Idle | GestureKind::ThreeFingerDrag) {
+                    self.suppress_one_finger_click = true;
+                }
+            }
             GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => {
-                // Reaching this arm means the user dropped from 3+
-                // fingers (the 3⇄4 case is held in `classify`). If a
-                // swipe was actually in flight (axis locked AND Began
-                // was emitted), close it out with an Ended that carries
-                // the EMA-smoothed lift-velocity along the locked axis
-                // — that's the signal the Dock uses to commit-vs-
-                // rubber-band the gesture.
+                let swipe_in_flight = self.multi_baseline.as_ref().map(|b| b.began_posted).unwrap_or(false);
                 if let Some(b) = self.multi_baseline
                     && b.began_posted
                     && let Some(axis) = b.axis
@@ -806,17 +1059,29 @@ impl<O: Output> State<O> {
                         axis, progress, velocity,
                     );
                     self.out.swipe(axis, progress, velocity, Phase::Ended);
-                    // Treat the post-swipe residual fingers (e.g. async
-                    // lift 3 → 2 → 0) the same way we treat post-tap
-                    // residuals: lock out further gestures until full
-                    // lift, so brief 2F windows don't fire spurious
-                    // right-clicks.
                     self.kind = GestureKind::SwipeLatched;
                     self.started_at = now;
                     self.max_move_sq = 0.0;
                     self.two_baseline = None;
                     self.multi_baseline = None;
                     return;
+                } else if matches!(self.kind, GestureKind::ThreeFingerLive) && !swipe_in_flight {
+                    let dur = now - self.started_at;
+                    let max_move = self.max_move_sq.sqrt();
+                    let tap_eligible = dur < Duration::from_millis(320) && max_move < 2.0;
+                    if tap_eligible && !bc {
+                        if matches!(new_kind, GestureKind::Idle) {
+                            log::debug!("3f tap (live): look up dictionary via Cmd+Ctrl+D (dur={}ms max_move={:.2}mm)", dur.as_millis(), max_move);
+                            self.out.look_up_dictionary();
+                        } else {
+                            log::debug!("3f live → partial lift: pending 3f tap lookup (dur={}ms max_move={:.2}mm)", dur.as_millis(), max_move);
+                            self.pending_three_finger_tap = Some(PendingThreeFingerTap {
+                                started_at: self.started_at,
+                                max_move_sq: self.max_move_sq,
+                            });
+                            self.suppress_one_finger_click = true;
+                        }
+                    }
                 }
             }
             _ => {}
@@ -827,6 +1092,12 @@ impl<O: Output> State<O> {
         self.max_move_sq = 0.0;
         self.two_baseline = None;
         self.multi_baseline = None;
+        self.drag_baseline = None;
+        // Sub-pixel carries belong to whichever mode streams cursor
+        // motion (`OneFinger` / `ThreeFingerDrag`); a kind switch means
+        // a fresh stream either way.
+        self.cursor_carry_x_px = 0.0;
+        self.cursor_carry_y_px = 0.0;
         // `born_during_coast` is a session-level flag. Clear it once
         // the user has fully lifted; surviving gesture sub-transitions
         // (e.g. OneFinger → TwoFingerUnclassified during a roll-on) is
@@ -875,6 +1146,18 @@ impl<O: Output> State<O> {
                     pinch_rot_lock_pending: false,
                     pinch_admitted,
                     rotate_admitted,
+                });
+            }
+            GestureKind::ThreeFingerDrag => {
+                let cx: f64 = active.iter().map(|c| c.x).sum::<f64>() / active.len() as f64;
+                let cy: f64 = active.iter().map(|c| c.y).sum::<f64>() / active.len() as f64;
+                log::debug!("3f drag: session start (centroid=({cx:.2},{cy:.2})mm)");
+                self.drag_baseline = Some(DragBaseline {
+                    initial_centroid: (cx, cy),
+                    last_centroid: (cx, cy),
+                    finger_count: active.len(),
+                    engaged: false,
+                    regrip_started_at: None,
                 });
             }
             GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => {
@@ -1045,7 +1328,112 @@ impl<O: Output> State<O> {
             GestureKind::TwoFingerUnclassified
             | GestureKind::TwoFingerPan
             | GestureKind::TwoFingerPinchAndRotate => self.dispatch_two(active, now),
+            GestureKind::ThreeFingerDrag => self.dispatch_drag(active, now, frame_dt),
             GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => self.dispatch_swipe(active, now),
+        }
+    }
+
+    /// 三指拖移 streaming. Centroid deltas drive the same accelerated
+    /// cursor pipeline as single-finger motion; once cumulative centroid
+    /// travel crosses [`DRAG_ENGAGE_MM`], the left button posts held and
+    /// every subsequent delta rides out as a mouse-drag.
+    fn dispatch_drag(&mut self, active: &[Contact], now: Timestamp, frame_dt: Duration) {
+        if active.is_empty() {
+            return;
+        }
+        // Fingers re-landed while a delayed release was armed: grip
+        // adjustment — cancel the release and continue the same drag.
+        let was_regrip = self.pending_drag_release.take().is_some();
+        let Some(mut base) = self.drag_baseline else {
+            return;
+        };
+        let cx = active.iter().map(|c| c.x).sum::<f64>() / active.len() as f64;
+        let cy = active.iter().map(|c| c.y).sum::<f64>() / active.len() as f64;
+
+        // There was a real empty-pad gap between these samples. Reset the
+        // centroid anchor and discard any pre-gap state so a re-grip at a
+        // different place does not teleport the pointer when drag-lock
+        // resumes.
+        if was_regrip {
+            base.last_centroid = (cx, cy);
+            base.finger_count = active.len();
+            base.regrip_started_at = Some(now);
+            self.pending_motion = None;
+            self.cursor_carry_x_px = 0.0;
+            self.cursor_carry_y_px = 0.0;
+            self.drag_baseline = Some(base);
+            return;
+        }
+
+        // If only 1 finger touched down during a regrip:
+        if base.finger_count == 1 && active.len() == 1 {
+            if let Some(re_t) = base.regrip_started_at {
+                let dur = now.saturating_duration_since(re_t);
+                let drift = ((cx - base.last_centroid.0).powi(2) + (cy - base.last_centroid.1).powi(2)).sqrt();
+                if dur > Duration::from_millis(50) || drift > TAP_MAX_MOVE_MM {
+                    log::debug!("3f drag: 1-finger interrupt during regrip — releasing drag lock");
+                    if self.drag_button_held {
+                        self.out.set_drag_button_held(false);
+                        self.drag_button_held = false;
+                    }
+                    self.drag_baseline = None;
+                    self.kind = GestureKind::OneFinger;
+                    self.started_at = now;
+                    return;
+                }
+            }
+            return;
+        }
+
+        if !base.engaged {
+            let travel =
+                ((cx - base.initial_centroid.0).powi(2) + (cy - base.initial_centroid.1).powi(2))
+                    .sqrt();
+            // Pre-engage jitter pins the baseline to the landing
+            // centroid, so none of it leaks into the first emitted
+            // delta once we cross.
+            if travel >= DRAG_ENGAGE_MM {
+                log::debug!(
+                    "3f drag: engage at travel={travel:.2}mm (centroid=({cx:.2},{cy:.2})mm)"
+                );
+                self.out.set_drag_button_held(true);
+                self.drag_button_held = true;
+                base.engaged = true;
+                base.last_centroid = (cx, cy);
+            }
+            self.drag_baseline = Some(base);
+            if !base.engaged {
+                return;
+            }
+        }
+
+        // Per-frame centroid delta from ALL surviving fingers. When the
+        // finger count changes (async lift 3 → 2 → 1), the centroid mean
+        // jumps because the cluster changed shape; drop that transitional
+        // delta and stream cleanly against the new cluster next frame.
+        if base.finger_count != active.len() {
+            base.finger_count = active.len();
+            base.last_centroid = (cx, cy);
+            base.regrip_started_at = None;
+            self.drag_baseline = Some(base);
+            return;
+        }
+        let dx = cx - base.last_centroid.0;
+        let dy = cy - base.last_centroid.1;
+        base.last_centroid = (cx, cy);
+        self.drag_baseline = Some(base);
+
+        // Dragging is already committed, so there is no tap/lift artifact
+        // to protect against. Emit this frame immediately; deferring it
+        // would add latency and would drop the final useful delta on lift.
+        if dx.abs() > MOTION_DEAD_ZONE_MM || dy.abs() > MOTION_DEAD_ZONE_MM {
+            let (dx_px, dy_px) = self.cursor_pixels_for(dx, dy, frame_dt);
+            if dx_px != 0 || dy_px != 0 {
+                log::debug!(
+                    "3f drag: emit d=({dx:+.3},{dy:+.3})mm → ({dx_px:+},{dy_px:+})px"
+                );
+                self.out.move_cursor_by(dx_px, dy_px);
+            }
         }
     }
 
@@ -1057,9 +1445,7 @@ impl<O: Output> State<O> {
 
         // While inside the partial-lift rejoin window the residual 1F
         // is the tail of a 2F gesture — emitting cursor motion would
-        // jump the pointer mid-scroll (cf. log #678's
-        // `cursor: emit deferred d=(+2.919,-0.254)mm → (+54,-1)px`
-        // sandwiched between scroll frames). Once the window expires
+        // jump the pointer mid-scroll. Once the window expires
         // without a rejoin, clear the stash so subsequent frames
         // resume normal cursor behavior, but drop the in-window
         // motion entirely (it belongs to the 2F gesture, not the 1F).
@@ -1071,22 +1457,15 @@ impl<O: Output> State<O> {
             self.two_finger_recent = None;
         }
 
-        // Hold cursor motion until this touch is committed to "not a tap".
-        // Per-frame finger jitter inside the tap budget would otherwise
-        // drag the cursor away from where the user expected the click to
-        // land. The touch becomes cursor-eligible the moment its
-        // cumulative drift exceeds TAP_MAX_MOVE_MM or its duration exceeds
-        // TAP_MAX_DURATION — both checks live here (not just at lift)
-        // because a held-then-dragged finger should also start moving the
-        // cursor once the tap window closes. Pre-commit frames clear
-        // `pending_motion` so no stale buffered delta leaks out the
-        // moment we cross the threshold.
-        let max_move = tr.max_move_sq.sqrt();
-        let dur = now - self.started_at;
-        let could_still_tap = max_move < TAP_MAX_MOVE_MM && dur < TAP_MAX_DURATION;
-        if could_still_tap {
-            self.pending_motion = None;
-            return;
+        // If candidate for tap-drag and finger moved past TAP_MAX_MOVE_MM, engage tap drag!
+        if self.tap_drag_candidate && !self.drag_button_held {
+            let max_move = tr.max_move_sq.sqrt();
+            if max_move >= TAP_MAX_MOVE_MM {
+                self.out.set_drag_button_held(true);
+                self.drag_button_held = true;
+                self.tap_drag_active = true;
+                log::debug!("1f tap-drag: engaged left mouse down for drag");
+            }
         }
 
         let dx = tr.x - tr.prev_x;
@@ -1318,14 +1697,20 @@ impl<O: Output> State<O> {
             } else {
                 0.0
             };
-            if pan >= 1.0 || pinch >= 1.0 || rot >= 1.0 {
+            let pan_score = if common_mag >= PAN_LOCK_MM && (common_mag >= differential_mag * 0.8 || pan_qualified) {
+                (common_mag / PAN_LOCK_MM).max(pan_raw)
+            } else {
+                pan
+            };
+
+            if pan_score >= 1.0 || pinch >= 1.0 || rot >= 1.0 {
                 // Pan is mutually exclusive with pinch/rotate (matches
                 // macOS PTP behavior: a 2F gesture locks into either
                 // pan/scroll or the pinch+rotate pair). It only wins
                 // if it's the strongest signal — a gesture that's
                 // mostly pinch but drifts the centroid a bit shouldn't
                 // be misclassified as pan.
-                let new_kind = if pan >= 1.0 && pan >= pinch && pan >= rot {
+                let new_kind = if pan_score >= 1.0 && pan_score >= pinch && pan_score >= rot {
                     GestureKind::TwoFingerPan
                 } else {
                     // Pinch or rot crossed but pan didn't (or didn't
@@ -1439,8 +1824,31 @@ impl<O: Output> State<O> {
 
         match self.kind {
             GestureKind::TwoFingerPan => {
+                let scale = dist / base.initial_distance;
+                let scale_delta = scale - base.prev_scale;
+                let angle_d = angle_delta(ang, base.prev_angle);
+                let diff_travel = scale_delta.abs() * base.initial_distance + angle_d.abs() * dist;
                 let ddx = centroid.0 - base.last_centroid.0;
                 let ddy = centroid.1 - base.last_centroid.1;
+                let pan_travel = (ddx * ddx + ddy * ddy).sqrt();
+
+                if diff_travel > 0.8 && diff_travel > pan_travel * 2.0 {
+                    log::info!("2F dynamic switch: scroll → pinch/rotate (diff_travel={:.2}mm pan={:.2}mm)", diff_travel, pan_travel);
+                    self.out.scroll(0.0, 0.0, Phase::Ended);
+                    self.kind = GestureKind::TwoFingerPinchAndRotate;
+                    self.out.pinch(0.0, Phase::Began);
+                    self.out.rotate(0.0, Phase::Began);
+                    base.prev_scale = scale;
+                    base.prev_angle = ang;
+                    base.pinch_rotate_dominant = if angle_d.abs() / ROTATE_LOCK_RAD > scale_delta.abs() / PINCH_LOCK_RATIO {
+                        PinchRotateDominant::Rotate
+                    } else {
+                        PinchRotateDominant::Pinch
+                    };
+                    self.two_baseline = Some(base);
+                    return;
+                }
+
                 if ddx.abs() > MOTION_DEAD_ZONE_MM || ddy.abs() > MOTION_DEAD_ZONE_MM {
                     // EMA-track centroid velocity for the inertia seed.
                     // Skip the very first sample (no prior time → no
@@ -1464,6 +1872,8 @@ impl<O: Output> State<O> {
                     // must accumulate, not get reset every frame.
                     base.last_centroid = centroid;
                 }
+                base.prev_scale = scale;
+                base.prev_angle = ang;
             }
             GestureKind::TwoFingerPinchAndRotate => {
                 // Per-frame, the locked 2F mode emits *one* of pinch
@@ -1481,14 +1891,36 @@ impl<O: Output> State<O> {
                 let angle_d = angle_delta(ang, base.prev_angle);
                 let pinch_strength = scale_delta.abs() / PINCH_LOCK_RATIO;
                 let rot_strength = angle_d.abs() / ROTATE_LOCK_RAD;
+
+                let ddx = centroid.0 - base.last_centroid.0;
+                let ddy = centroid.1 - base.last_centroid.1;
+                let pan_travel = (ddx * ddx + ddy * ddy).sqrt();
+                let diff_travel = scale_delta.abs() * base.initial_distance + angle_d.abs() * dist;
+
+                // If user shifted from pinch/rotate into parallel scrolling:
+                if pan_travel > 0.6 && pan_travel > diff_travel * 2.0 {
+                    log::info!("2F dynamic switch: pinch/rotate → scroll (pan_travel={:.2}mm diff={:.2}mm)", pan_travel, diff_travel);
+                    self.out.pinch(0.0, Phase::Ended);
+                    self.out.rotate(0.0, Phase::Ended);
+                    self.kind = GestureKind::TwoFingerPan;
+                    self.out.scroll(0.0, 0.0, Phase::Began);
+                    self.out.scroll(ddx, ddy, Phase::Changed);
+                    base.last_centroid = centroid;
+                    base.last_scroll_time = Some(now);
+                    base.prev_scale = scale;
+                    base.prev_angle = ang;
+                    self.two_baseline = Some(base);
+                    return;
+                }
+
                 base.pinch_rotate_dominant = match base.pinch_rotate_dominant {
                     PinchRotateDominant::Pinch
-                        if rot_strength > pinch_strength * PINCH_ROTATE_HYSTERESIS =>
+                        if rot_strength > 0.6 && rot_strength > pinch_strength * 2.0 =>
                     {
                         PinchRotateDominant::Rotate
                     }
                     PinchRotateDominant::Rotate
-                        if pinch_strength > rot_strength * PINCH_ROTATE_HYSTERESIS =>
+                        if pinch_strength > 0.6 && pinch_strength > rot_strength * 2.0 =>
                     {
                         PinchRotateDominant::Pinch
                     }
@@ -1591,6 +2023,23 @@ impl<O: Output> State<O> {
         };
         self.out.swipe(axis, signed_progress, /* velocity */ 0.0, phase);
         self.multi_baseline = Some(base);
+    }
+}
+
+impl<O: Output> Drop for State<O> {
+    fn drop(&mut self) {
+        // A transport can disappear while the three-finger drag is still
+        // engaged. Release the synthesized button before dropping the
+        // output so macOS cannot retain a stuck left-button state.
+        if self.drag_button_held {
+            self.out.set_event_time(Timestamp::now());
+            self.out.set_drag_button_held(false);
+            self.drag_button_held = false;
+        } else if self.prev_button {
+            self.out.set_event_time(Timestamp::now());
+            self.out.set_left_button_held(false);
+            self.prev_button = false;
+        }
     }
 }
 
@@ -1712,6 +2161,12 @@ mod tests {
                 SwipeAxis::Horizontal => self.swipe_horizontal_admit.get(),
                 SwipeAxis::Vertical => self.swipe_vertical_admit.get(),
             }
+        }
+        fn look_up_dictionary(&self) {
+            self.log.borrow_mut().push("look_up_dictionary".to_string());
+        }
+        fn smart_magnify(&self) {
+            self.log.borrow_mut().push("smart_magnify".to_string());
         }
     }
 
@@ -3516,5 +3971,231 @@ mod tests {
         // session starts clean.
         assert_eq!(s.cursor_carry_x_px, 0.0);
         assert_eq!(s.cursor_carry_y_px, 0.0);
+    }
+
+    // ── 三指拖移 (three-finger drag) ──
+    //
+    // Native 拖移样式 = 三指拖移 semantics: three fingers resting then
+    // moving = left button held + accelerated cursor; the drag survives
+    // asynchronous lifts (3 → 2 → 1) and releases exactly once when the
+    // pad empties; drags never fire click events.
+
+    fn drag_options() -> GestureOptions {
+        GestureOptions {
+            three_finger_drag: true,
+            ..GestureOptions::default()
+        }
+    }
+
+    fn drag_lock_options() -> GestureOptions {
+        GestureOptions {
+            three_finger_drag: true,
+            release_delay_ms: 260,
+            ..GestureOptions::default()
+        }
+    }
+
+    #[test]
+    fn drag_engages_moves_and_releases_on_async_lift() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_options());
+        let t0 = Timestamp::now();
+        // Land three fingers, then slide right ~1 mm/finger/frame.
+        s.on_frame_at(frame(&[(1, 0.40, 0.50), (2, 0.50, 0.50), (3, 0.60, 0.50)]), t0);
+        s.on_frame_at(frame(&[(1, 0.42, 0.50), (2, 0.52, 0.50), (3, 0.62, 0.50)]), at(t0, 10));
+        s.on_frame_at(frame(&[(1, 0.44, 0.50), (2, 0.54, 0.50), (3, 0.64, 0.50)]), at(t0, 20));
+        s.on_frame_at(frame(&[(1, 0.46, 0.50), (2, 0.56, 0.50), (3, 0.66, 0.50)]), at(t0, 30));
+        let mid = r.pop();
+        assert!(
+            mid.iter().any(|l| l == "set_left_button_held true"),
+            "expected drag engage, got: {mid:?}",
+        );
+        assert!(
+            !mid.iter().any(|l| l.starts_with("click")),
+            "drag onset must not click, got: {mid:?}",
+        );
+
+        // Async lift to one finger — cursor keeps streaming, button stays held.
+        s.on_frame_at(frame(&[(1, 0.48, 0.50)]), at(t0, 40));
+        s.on_frame_at(frame(&[(1, 0.50, 0.50)]), at(t0, 50));
+        // Final empty pad releases the press exactly once.
+        s.on_frame_at(frame(&[]), at(t0, 70));
+
+        let mut log = mid;
+        log.extend(r.pop());
+        assert!(
+            log.iter().any(|l| l.starts_with("move")),
+            "cursor motion expected after finger-count drop: {log:?}",
+        );
+        assert!(
+            !log.iter().any(|l| l.starts_with("click")),
+            "drag lift must never fire clicks: {log:?}",
+        );
+        let held: Vec<usize> = log.iter().enumerate()
+            .filter(|(_, l)| *l == "set_left_button_held true").map(|(i, _)| i).collect();
+        let released: Vec<usize> = log.iter().enumerate()
+            .filter(|(_, l)| *l == "set_left_button_held false").map(|(i, _)| i).collect();
+        assert_eq!(held.len(), 1, "exactly one engage: {log:?}");
+        assert_eq!(released.len(), 1, "exactly one release: {log:?}");
+        assert!(held[0] < released[0], "release must follow engage: {log:?}");
+    }
+
+    #[test]
+    fn pre_engage_wiggle_and_lift_emits_nothing() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_options());
+        let t0 = Timestamp::now();
+        s.on_frame_at(frame(&[(1, 0.40, 0.50), (2, 0.50, 0.50), (3, 0.60, 0.50)]), t0);
+        // Cumulative jitter ≈ 0.2 mm per finger — far below DRAG_ENGAGE_MM.
+        s.on_frame_at(frame(&[(1, 0.404, 0.502), (2, 0.503, 0.501), (3, 0.603, 0.500)]), at(t0, 12));
+        s.on_frame_at(frame(&[]), at(t0, 26));
+        let log = r.pop();
+        assert!(
+            !log.iter().any(|l| l.contains("set_left_button_held")),
+            "sub-threshold touch must not engage: {log:?}",
+        );
+        assert!(
+            !log.iter().any(|l| l.starts_with("move") || l.starts_with("click")),
+            "no motion/click before engage: {log:?}",
+        );
+    }
+
+    #[test]
+    fn four_finger_swipes_still_work_when_drag_enabled() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_options());
+        let t0 = Timestamp::now();
+        s.on_frame_at(
+            frame(&[
+                (1, 0.5, 0.5),
+                (2, 0.5, 0.55),
+                (3, 0.6, 0.6),
+                (4, 0.7, 0.65),
+            ]),
+            t0,
+        );
+        s.on_frame_at(
+            frame(&[
+                (1, 0.5, 0.44),
+                (2, 0.56, 0.49),
+                (3, 0.62, 0.54),
+                (4, 0.68, 0.59),
+            ]),
+            at(t0, 12),
+        );
+        let mid = r.pop();
+        assert!(
+            mid.iter().any(|l| l.contains("Vertical") && l.contains("Began")),
+            "vertical swipe should still fire: {mid:?}",
+        );
+    }
+
+    #[test]
+    fn adding_third_finger_to_locked_two_finger_pan_does_not_start_drag() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_options());
+        let t0 = Timestamp::now();
+        let two = |y: f64| Frame {
+            contacts: vec![
+                Contact { id: 1, x: 20.0, y, tip: true, confidence: true },
+                Contact { id: 2, x: 30.0, y, tip: true, confidence: true },
+            ],
+            scan_time_100us: 0,
+            button: false,
+        };
+
+        // Let the two-finger gesture leave the tap window, then lock it as
+        // a real pan before a third contact lands.
+        s.on_frame_at(two(25.0), t0);
+        s.on_frame_at(two(25.0), at(t0, 200));
+        s.on_frame_at(two(27.0), at(t0, 216));
+        let _ = r.pop();
+
+        s.on_frame_at(
+            Frame {
+                contacts: vec![
+                    Contact { id: 1, x: 20.0, y: 27.0, tip: true, confidence: true },
+                    Contact { id: 2, x: 30.0, y: 27.0, tip: true, confidence: true },
+                    Contact { id: 3, x: 25.0, y: 27.0, tip: true, confidence: true },
+                ],
+                scan_time_100us: 0,
+                button: false,
+            },
+            at(t0, 232),
+        );
+        let log = r.pop();
+        assert!(
+            !log.iter().any(|l| l == "set_left_button_held true"),
+            "a third finger must not hijack a locked 2F pan into drag: {log:?}",
+        );
+        assert!(
+            log.iter().any(|l| l.starts_with("scroll ") && l.contains("Ended")),
+            "the existing pan must close out cleanly: {log:?}",
+        );
+    }
+
+    #[test]
+    fn drag_lock_regrip_resets_centroid_without_pointer_jump() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_lock_options());
+        let t0 = Timestamp::now();
+        let three = |x: f64| Frame {
+            contacts: vec![
+                Contact { id: 1, x, y: 20.0, tip: true, confidence: true },
+                Contact { id: 2, x: x + 10.0, y: 20.0, tip: true, confidence: true },
+                Contact { id: 3, x: x + 20.0, y: 20.0, tip: true, confidence: true },
+            ],
+            scan_time_100us: 0,
+            button: false,
+        };
+
+        s.on_frame_at(three(20.0), t0);
+        // Centroid travel crosses DRAG_ENGAGE_MM: press, but do not move
+        // the pointer by the pre-engage distance.
+        s.on_frame_at(three(20.8), at(t0, 10));
+        s.on_frame_at(three(21.8), at(t0, 20));
+        s.on_frame_at(frame(&[]), at(t0, 30));
+
+        // Re-grip at a completely different position while drag-lock is
+        // pending. The first frame is only an anchor; it must not jump.
+        s.on_frame_at(three(100.0), at(t0, 100));
+        s.on_frame_at(three(101.0), at(t0, 110));
+        s.on_frame_at(frame(&[]), at(t0, 120));
+        s.tick(at(t0, 400));
+
+        let log = r.pop();
+        let moves: Vec<&String> = log.iter().filter(|l| l.starts_with("move ")).collect();
+        assert_eq!(moves, vec![&"move 1 0".to_string(), &"move 1 0".to_string()], "{log:?}");
+        assert_eq!(
+            log.iter().filter(|l| *l == "set_left_button_held true").count(),
+            1,
+            "re-grip must continue one drag session: {log:?}",
+        );
+        assert_eq!(
+            log.iter().filter(|l| *l == "set_left_button_held false").count(),
+            1,
+            "drag-lock must release exactly once: {log:?}",
+        );
+    }
+
+    /// Regression guard for the default path: with `GestureOptions::default`
+    /// (three-finger-drag off) fresh three-finger gestures keep behaving
+    /// as Dock swipes — upstream HID users see zero behavior change.
+    #[test]
+    fn default_options_three_fingers_still_swipe() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+        s.on_frame_at(frame(&[(1, 0.42, 0.44), (2, 0.52, 0.46), (3, 0.62, 0.48)]), t0);
+        s.on_frame_at(frame(&[(1, 0.42, 0.38), (2, 0.52, 0.40), (3, 0.62, 0.42)]), at(t0, 12));
+        let log = r.pop();
+        assert!(
+            log.iter().any(|l| l.contains("Vertical") && l.contains("Began")),
+            "default mode must keep 3f vertical swipe: {log:?}",
+        );
+        assert!(
+            !log.iter().any(|l| l.contains("set_left_button_held")),
+            "default mode must never hold the button on 3f: {log:?}",
+        );
     }
 }

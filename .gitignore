@@ -1,1 +1,7 @@
 /target
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+__pycache__/
+*.pyc

@@ -48,9 +48,11 @@ fn acquire_at(path: &Path) -> Result<InstanceLock> {
         if err.raw_os_error() == Some(libc::EWOULDBLOCK) {
             let other = read_pid(&mut file).unwrap_or_else(|| "<unknown>".into());
             bail!(
-                "another companion instance is already running (lock {} held by PID {}); \
-                 running two would clobber each other's PTP input-mode state on the firmware",
+                "another companion/companion-net instance is already running \
+                 (lock {} held by PID {}); stop it first with `kill {}` \
+                 (pkill takes a name pattern, not a PID)",
                 path.display(),
+                other,
                 other,
             );
         }
