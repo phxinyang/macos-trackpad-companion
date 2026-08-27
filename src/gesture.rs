@@ -1686,30 +1686,30 @@ impl<O: Output> State<O> {
             // Linear falloff (1 - cos) clipped at 0; see gesture-tuning
             // -ideas.md idea #2.
             let align_penalty = (1.0 - alignment).clamp(0.0, 1.0);
-            // Zero out modes the under-cursor app's policy doesn't admit
-            // (sampled at gesture start in `transition`). With both
-            // zeroed, only `pan` can ever cross — a 2F gesture in an
-            // app that doesn't allow pinch/rotate falls through to
-            // scroll instead of locking pinch+rotate-but-suppressed.
+            let u_x = (b.x - a.x) / dist;
+            let u_y = (b.y - a.y) / dist;
+            let v_x = -u_y;
+            let v_y = u_x;
+
+            let d_diff_x = db.0 - da.0;
+            let d_diff_y = db.1 - da.1;
+
+            // Pure relative motion along inter-finger axis (real pinch)
+            let pinch_dist_mm = (d_diff_x * u_x + d_diff_y * u_y).abs();
+            // Pure relative motion tangential to inter-finger axis (real rotate)
+            let rot_arc_mm = (d_diff_x * v_x + d_diff_y * v_y).abs();
+
             let pinch = if pinch_rot_admissible && base.pinch_admitted {
-                if differential_mag > common_mag * 1.1 || min_per_finger < ANCHORED_FINGER_FLOOR_MM * 1.5 {
-                    pinch_raw
-                } else {
-                    pinch_raw * align_penalty
-                }
+                (pinch_dist_mm / (base.initial_distance * PINCH_LOCK_RATIO)).max(pinch_raw * align_penalty)
             } else {
                 0.0
             };
             let rot = if pinch_rot_admissible && base.rotate_admitted {
-                if differential_mag > common_mag * 1.1 || min_per_finger < ANCHORED_FINGER_FLOOR_MM * 1.5 {
-                    rot_raw
-                } else {
-                    rot_raw * align_penalty
-                }
+                (rot_arc_mm / (dist * ROTATE_LOCK_RAD)).max(rot_raw * align_penalty)
             } else {
                 0.0
             };
-            let pan_score = if common_mag >= PAN_LOCK_MM && (common_mag >= differential_mag * 0.8 || pan_qualified) {
+            let pan_score = if common_mag >= PAN_LOCK_MM && (common_mag >= differential_mag * 0.7 || pan_qualified) {
                 (common_mag / PAN_LOCK_MM).max(pan_raw)
             } else {
                 pan
@@ -1725,35 +1725,8 @@ impl<O: Output> State<O> {
                 let new_kind = if pan_score >= 1.0 && pan_score >= pinch && pan_score >= rot {
                     GestureKind::TwoFingerPan
                 } else {
-                    // Pinch or rot crossed but pan didn't (or didn't
-                    // dominate). Two patterns suggest the gesture is
-                    // really a slow scroll whose trailing finger just
-                    // hasn't caught up — defer the lock by one frame
-                    // (the next pinch/rot crossing commits regardless):
-                    //
-                    // A. Lenient pan signal stronger than pinch/rot.
-                    //    The basic `common > differential * 1.2` margin
-                    //    is already passing — centroid is translating —
-                    //    just the per-finger gate is failing. Reproduces
-                    //    /tmp/companion-logs 2026-05-02 05:13:52.562 (the
-                    //    user's scroll-down with horizontal twist:
-                    //    balance failed by a hair at 0.27<0.30, pinch
-                    //    crossed at 1.12, and the very next frame pan
-                    //    qualified with pan_score=4.54 dominating).
-                    // B. Motion vectors essentially parallel
-                    //    (alignment > 0.97). When one finger is near-
-                    //    anchored the basic margin test *can't* pass
-                    //    (|common|≈|differential|), so case A misses it.
-                    //    But cos≈1 is a strong "both fingers want the
-                    //    same direction" signal: most likely a lagging
-                    //    finger, not an anchored-rotate (which sits at
-                    //    cos≈0.73 in our test data). Reproduces
-                    //    /tmp/companion-logs 2026-05-02 05:27:35.439
-                    //    (rot crossed at 1.28 with cos=1.000, balance
-                    //    0.06, basic margin 1.13<1.2; one frame later
-                    //    pan qualified at 3.94).
                     let pinch_or_rot = pinch.max(rot);
-                    let pan_lenient = if common_mag > differential_mag * 1.2 {
+                    let pan_lenient = if common_mag > differential_mag * 1.1 {
                         common_mag / PAN_LOCK_MM
                     } else {
                         0.0
@@ -1820,9 +1793,6 @@ impl<O: Output> State<O> {
                         // dominant.
                         self.out.pinch(0.0, Phase::Began);
                         self.out.rotate(0.0, Phase::Began);
-                        // Seed the dominant stream from whichever signal
-                        // crossed harder at lock. Subsequent switching
-                        // is gated by `PINCH_ROTATE_HYSTERESIS`.
                         base.pinch_rotate_dominant = if rot > pinch {
                             PinchRotateDominant::Rotate
                         } else {
@@ -1861,12 +1831,12 @@ impl<O: Output> State<O> {
                     return;
                 }
 
+                if base.last_scroll_time.is_none() {
+                    self.out.scroll(0.0, 0.0, Phase::Began);
+                }
                 if ddx.abs() > MOTION_DEAD_ZONE_MM || ddy.abs() > MOTION_DEAD_ZONE_MM {
-                    // EMA-track centroid velocity for the inertia seed.
-                    // Skip the very first sample (no prior time → no
-                    // meaningful dt); the next emit picks up the EMA.
-                    if let Some(prev_t) = base.last_scroll_time {
-                        let dt = (now - prev_t).as_secs_f64().max(1e-3);
+                    if let Some(prev) = base.last_scroll_time {
+                        let dt = (now - prev).as_secs_f64().max(0.001);
                         let inst_vx = ddx / dt;
                         let inst_vy = ddy / dt;
                         base.scroll_velocity.0 = SCROLL_VELOCITY_ALPHA * inst_vx
@@ -1880,29 +1850,15 @@ impl<O: Output> State<O> {
                         ddx, ddy, base.scroll_velocity.0, base.scroll_velocity.1,
                     );
                     self.out.scroll(ddx, ddy, Phase::Changed);
-                    // Advance baseline only on emit — sub-dead-zone drift
-                    // must accumulate, not get reset every frame.
                     base.last_centroid = centroid;
                 }
                 base.prev_scale = scale;
                 base.prev_angle = ang;
             }
             GestureKind::TwoFingerPinchAndRotate => {
-                // Per-frame, the locked 2F mode emits *one* of pinch
-                // or rotate — whichever the sticky `pinch_rotate_dominant`
-                // says, switched only when the other stream's normalized
-                // signal beats it by `PINCH_ROTATE_HYSTERESIS`. Deltas
-                // are one-frame (relative to prev_scale / prev_angle,
-                // both refreshed every frame) so motion the suppressed
-                // stream missed is dropped rather than catching up as a
-                // jerk later. Matches macOS PTP, which switches between
-                // zoom and rotate within a single locked 2F gesture
-                // without ever doubling them up on the same frame.
                 let scale = dist / base.initial_distance;
                 let scale_delta = scale - base.prev_scale;
                 let angle_d = angle_delta(ang, base.prev_angle);
-                let pinch_strength = scale_delta.abs() / PINCH_LOCK_RATIO;
-                let rot_strength = angle_d.abs() / ROTATE_LOCK_RAD;
 
                 let ddx = centroid.0 - base.last_centroid.0;
                 let ddy = centroid.1 - base.last_centroid.1;
@@ -1910,7 +1866,7 @@ impl<O: Output> State<O> {
                 let diff_travel = scale_delta.abs() * base.initial_distance + angle_d.abs() * dist;
 
                 // If user shifted from pinch/rotate into parallel scrolling:
-                if pan_travel > 0.6 && pan_travel > diff_travel * 2.0 {
+                if pan_travel > 0.6 && pan_travel > diff_travel * 1.5 {
                     log::info!("2F dynamic switch: pinch/rotate → scroll (pan_travel={:.2}mm diff={:.2}mm)", pan_travel, diff_travel);
                     self.out.pinch(0.0, Phase::Ended);
                     self.out.rotate(0.0, Phase::Ended);
@@ -1925,29 +1881,13 @@ impl<O: Output> State<O> {
                     return;
                 }
 
-                base.pinch_rotate_dominant = match base.pinch_rotate_dominant {
-                    PinchRotateDominant::Pinch
-                        if rot_strength > 0.6 && rot_strength > pinch_strength * 2.0 =>
-                    {
-                        PinchRotateDominant::Rotate
-                    }
-                    PinchRotateDominant::Rotate
-                        if pinch_strength > 0.6 && pinch_strength > rot_strength * 2.0 =>
-                    {
-                        PinchRotateDominant::Pinch
-                    }
-                    other => other,
-                };
-                match base.pinch_rotate_dominant {
-                    PinchRotateDominant::Pinch if scale_delta.abs() > 1e-4 => {
-                        log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
-                        self.out.pinch(scale_delta, Phase::Changed);
-                    }
-                    PinchRotateDominant::Rotate if angle_d.abs() > 1e-4 => {
-                        log::debug!("rotate: delta={:+.2}deg", angle_d.to_degrees());
-                        self.out.rotate(angle_d.to_degrees(), Phase::Changed);
-                    }
-                    _ => {}
+                if scale_delta.abs() > 1e-4 && base.pinch_admitted {
+                    log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
+                    self.out.pinch(scale_delta, Phase::Changed);
+                }
+                if angle_d.abs() > 1e-4 && base.rotate_admitted {
+                    log::debug!("rotate: delta={:+.2}deg", angle_d.to_degrees());
+                    self.out.rotate(angle_d.to_degrees(), Phase::Changed);
                 }
                 base.prev_scale = scale;
                 base.prev_angle = ang;
