@@ -380,6 +380,7 @@ unsafe extern "C" {
         key_down: bool,
     ) -> CGEventRef;
     fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
+    fn CGEventSetLocation(event: CGEventRef, location: CGPoint);
     fn CGEventSetType(event: CGEventRef, ty: u32);
     fn CGEventSetFlags(event: CGEventRef, flags: u64);
     fn CGEventSetTimestamp(event: CGEventRef, ts: u64);
@@ -1440,14 +1441,18 @@ impl Emitter {
     /// since the last event (e.g. 0.05 = 5% bigger). Phase brackets are
     /// required for apps to track the gesture.
     pub fn pinch(&self, delta: f64, phase: Phase) {
+        let p = self.cursor();
+        let ts = self.event_timestamp();
         if let Some(e) = synthesize_gesture_event(
             GESTURE_SUBTYPE_MAGNIFY,
             iohid_gesture_phase(phase),
             GesturePayload::Magnification(delta as f32),
-            self.event_timestamp(),
+            ts,
         ) {
-            log::trace!("post: pinch {:?} delta={:+.4}", phase, delta);
+            unsafe { CGEventSetLocation(e.0, p) };
+            log::trace!("post: pinch {:?} delta={:+.4} at=({:.0},{:.0})", phase, delta, p.x, p.y);
             e.post_to(kCGSessionEventTap);
+            e.post_to(kCGHIDEventTap);
         }
     }
 
@@ -1456,25 +1461,32 @@ impl Emitter {
     /// NSEvent.rotation semantics).
     pub fn rotate(&self, delta_degrees: f64, phase: Phase) {
         let ts = self.event_timestamp();
+        let p = self.cursor();
         if let Some(e) = synthesize_gesture_event(
             GESTURE_SUBTYPE_ROTATE,
             iohid_gesture_phase(phase),
             GesturePayload::Rotation(delta_degrees as f32),
             ts,
         ) {
+            unsafe { CGEventSetLocation(e.0, p) };
             e.post_to(kCGSessionEventTap);
             e.post_to(kCGHIDEventTap);
         }
-        if let Some(e) = Event::from_raw(unsafe { CGEventCreate(std::ptr::null_mut()) }) {
+        if let Some(e) = Event::from_raw(unsafe {
+            CGEventCreateMouseEvent(self.event_source, 29, p, kCGMouseButtonLeft)
+        }) {
             e.set_int(55, 29); // NSEventTypeGesture
             e.set_int(110, 5); // kIOHIDEventTypeRotation
             e.set_dbl(114, delta_degrees);
             e.set_int(132, iohid_gesture_phase(phase) as i64);
-            unsafe { CGEventSetTimestamp(e.0, ts.as_nanos()) };
+            unsafe {
+                CGEventSetTimestamp(e.0, ts.as_nanos());
+                CGEventSetLocation(e.0, p);
+            };
             e.post_to(kCGHIDEventTap);
             e.post_to(kCGSessionEventTap);
         }
-        log::trace!("post: rotate {:?} delta={:+.2}deg", phase, delta_degrees);
+        log::trace!("post: rotate {:?} delta={:+.2}deg at=({:.0},{:.0})", phase, delta_degrees, p.x, p.y);
     }
 
     /// Drive a 3F/4F swipe live, mirroring the per-frame motion the
