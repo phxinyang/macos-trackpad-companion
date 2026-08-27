@@ -922,8 +922,6 @@ impl<O: Output> State<O> {
             GestureKind::TwoFingerUnclassified => {
                 let dur = now - self.started_at;
                 let max_move = self.max_move_sq.sqrt();
-                let init_dist = self.two_baseline.map(|b| b.initial_distance).unwrap_or(0.0);
-                let is_real_two_fingers = init_dist >= 10.0 && init_dist <= 75.0 && dur >= Duration::from_millis(35);
                 let tap_eligible = dur < TAP_MAX_DURATION && max_move < TAP_MAX_MOVE_MM;
                 if matches!(new_kind, GestureKind::Idle) {
                     if bc {
@@ -932,7 +930,7 @@ impl<O: Output> State<O> {
                             dur.as_millis(),
                             max_move,
                         );
-                    } else if tap_eligible && is_real_two_fingers {
+                    } else if tap_eligible {
                         if let Some(prev) = self.last_2f_tap {
                             if now.saturating_duration_since(prev) < Duration::from_millis(350) {
                                 log::debug!("2f double tap: smart zoom / smart magnify (interval={}ms)", now.saturating_duration_since(prev).as_millis());
@@ -940,69 +938,46 @@ impl<O: Output> State<O> {
                                 self.last_2f_tap = None;
                             } else {
                                 log::debug!(
-                                    "2f tap: click Right (dur={}ms max_move={:.2}mm dist={:.1}mm)",
+                                    "2f tap: click Right (dur={}ms max_move={:.2}mm)",
                                     dur.as_millis(),
                                     max_move,
-                                    init_dist,
                                 );
                                 self.out.click(MouseButton::Right);
                                 self.last_2f_tap = Some(now);
                             }
                         } else {
                             log::debug!(
-                                "2f tap: click Right (dur={}ms max_move={:.2}mm dist={:.1}mm)",
+                                "2f tap: click Right (dur={}ms max_move={:.2}mm)",
                                 dur.as_millis(),
                                 max_move,
-                                init_dist,
                             );
                             self.out.click(MouseButton::Right);
                             self.last_2f_tap = Some(now);
                         }
-                    } else if tap_eligible && !is_real_two_fingers {
-                        log::debug!(
-                            "2f lift, transient contact (<10mm or <35ms) resolving as 1f Left click (dur={}ms dist={:.1}mm)",
-                            dur.as_millis(),
-                            init_dist,
-                        );
-                        self.out.click(MouseButton::Left);
-                        self.last_1f_tap = Some(now);
                     } else {
                         log::debug!(
-                            "2f lift, no tap: dur={}ms max_move={:.2}mm is_2f={}",
+                            "2f lift, no tap: dur={}ms max_move={:.2}mm",
                             dur.as_millis(),
                             max_move,
-                            is_real_two_fingers,
                         );
                     }
                 } else if matches!(new_kind, GestureKind::OneFinger) {
-                    if bc || !tap_eligible || !is_real_two_fingers {
-                        // Either born during coast or disqualified for 2F tap (motion, duration, or fat-finger jitter).
-                        // If it was a fat-finger split (<10mm or <35ms), restore normal 1F tap path so single tap isn't lost!
-                        if !is_real_two_fingers && dur < Duration::from_millis(150) {
-                            log::debug!("2f → 1f split contact (<10mm): treating as 1f tap, restoring single click");
-                            self.suppress_one_finger_click = false;
-                        } else {
-                            log::debug!(
-                                "2f → 1f partial lift (dur={}ms max_move={:.2}mm); suppressing residual click{}",
-                                dur.as_millis(),
-                                max_move,
-                                if bc { " (born during coast)" } else { "" },
-                            );
-                            self.suppress_one_finger_click = true;
-                            if !bc {
-                                self.capture_partial_lift(active, now);
-                            }
-                        }
-                    } else {
-                        // Tap-eligible 2F → 1F: stash the 2F window /
-                        // motion so the next OneFinger → Idle can fire
-                        // the right-click; until then, the residual 1F
-                        // is part of this gesture, not a fresh 1F tap.
+                    if bc || !tap_eligible {
                         log::debug!(
-                            "2f → 1f partial lift (dur={}ms max_move={:.2}mm dist={:.1}mm); pending right-click",
+                            "2f → 1f partial lift (dur={}ms max_move={:.2}mm); suppressing residual click{}",
                             dur.as_millis(),
                             max_move,
-                            init_dist,
+                            if bc { " (born during coast)" } else { "" },
+                        );
+                        self.suppress_one_finger_click = true;
+                        if !bc {
+                            self.capture_partial_lift(active, now);
+                        }
+                    } else {
+                        log::debug!(
+                            "2f → 1f partial lift (dur={}ms max_move={:.2}mm); pending right-click",
+                            dur.as_millis(),
+                            max_move,
                         );
                         self.pending_two_finger_tap = Some(PendingTwoFingerTap {
                             started_at: self.started_at,
