@@ -917,7 +917,9 @@ impl<O: Output> State<O> {
             GestureKind::TwoFingerUnclassified => {
                 let dur = now - self.started_at;
                 let max_move = self.max_move_sq.sqrt();
-                let tap_eligible = dur < TAP_MAX_DURATION && max_move < TAP_MAX_MOVE_MM;
+                let init_dist = self.two_baseline.map(|b| b.initial_distance).unwrap_or(0.0);
+                let is_real_two_fingers = init_dist >= 8.0;
+                let tap_eligible = dur < TAP_MAX_DURATION && max_move < TAP_MAX_MOVE_MM && is_real_two_fingers;
                 if matches!(new_kind, GestureKind::Idle) {
                     if bc {
                         log::debug!(
@@ -933,68 +935,69 @@ impl<O: Output> State<O> {
                                 self.last_2f_tap = None;
                             } else {
                                 log::debug!(
-                                    "2f tap: click Right (dur={}ms max_move={:.2}mm)",
+                                    "2f tap: click Right (dur={}ms max_move={:.2}mm dist={:.1}mm)",
                                     dur.as_millis(),
                                     max_move,
+                                    init_dist,
                                 );
                                 self.out.click(MouseButton::Right);
                                 self.last_2f_tap = Some(now);
                             }
                         } else {
                             log::debug!(
-                                "2f tap: click Right (dur={}ms max_move={:.2}mm)",
+                                "2f tap: click Right (dur={}ms max_move={:.2}mm dist={:.1}mm)",
                                 dur.as_millis(),
                                 max_move,
+                                init_dist,
                             );
                             self.out.click(MouseButton::Right);
                             self.last_2f_tap = Some(now);
                         }
                     } else {
                         log::debug!(
-                            "2f lift, no tap: dur={}ms max_move={:.2}mm",
+                            "2f lift, no tap: dur={}ms max_move={:.2}mm is_2f={}",
                             dur.as_millis(),
                             max_move,
+                            is_real_two_fingers,
                         );
                     }
                 } else if matches!(new_kind, GestureKind::OneFinger) {
                     if bc || !tap_eligible {
-                        // Either born during coast (no clicks at all
-                        // for this session) or the 2F window is already
-                        // disqualified for a tap (motion or duration
-                        // overshoot). Either way the residual 1F is
-                        // the tail of this gesture, not a fresh 1F tap.
-                        log::debug!(
-                            "2f → 1f partial lift (dur={}ms max_move={:.2}mm); suppressing residual click{}",
-                            dur.as_millis(),
-                            max_move,
-                            if bc { " (born during coast)" } else { "" },
-                        );
-                        self.suppress_one_finger_click = true;
-                        // Born-during-coast sessions can't ever fire
-                        // taps or gestures, so a rejoin shouldn't
-                        // resurrect them either.
-                        if !bc {
-                            self.capture_partial_lift(active, now);
+                        // Either born during coast or disqualified for 2F tap (motion, duration, or fat-finger jitter).
+                        // If it was a fat-finger split (<8mm), restore normal 1F tap path so single tap isn't lost!
+                        if !is_real_two_fingers && dur < Duration::from_millis(150) {
+                            log::debug!("2f → 1f split contact (<8mm): treating as 1f tap, restoring single click");
+                            self.suppress_one_finger_click = false;
+                        } else {
+                            log::debug!(
+                                "2f → 1f partial lift (dur={}ms max_move={:.2}mm); suppressing residual click{}",
+                                dur.as_millis(),
+                                max_move,
+                                if bc { " (born during coast)" } else { "" },
+                            );
+                            self.suppress_one_finger_click = true;
+                            if !bc {
+                                self.capture_partial_lift(active, now);
+                            }
                         }
                     } else {
                         // Tap-eligible 2F → 1F: stash the 2F window /
                         // motion so the next OneFinger → Idle can fire
                         // the right-click; until then, the residual 1F
                         // is part of this gesture, not a fresh 1F tap.
-                        // Require at least 25ms of 2F contact to prevent single-finger
-                        // touchdown edge jitter from spuriously arming a right-click.
-                        if dur >= Duration::from_millis(25) {
+                        if dur >= Duration::from_millis(30) && is_real_two_fingers {
                             log::debug!(
-                                "2f → 1f partial lift (dur={}ms max_move={:.2}mm); pending right-click",
+                                "2f → 1f partial lift (dur={}ms max_move={:.2}mm dist={:.1}mm); pending right-click",
                                 dur.as_millis(),
                                 max_move,
+                                init_dist,
                             );
                             self.pending_two_finger_tap = Some(PendingTwoFingerTap {
                                 started_at: self.started_at,
                                 max_move_sq: self.max_move_sq,
                             });
                         } else {
-                            // Transient <25ms 2-contact jitter: restore normal 1F tap path
+                            // Transient jitter or fat-finger contact: restore normal 1F tap path
                             self.suppress_one_finger_click = false;
                         }
                     }
@@ -1699,17 +1702,17 @@ impl<O: Output> State<O> {
             // Pure relative motion tangential to inter-finger axis (real rotate)
             let rot_arc_mm = (d_diff_x * v_x + d_diff_y * v_y).abs();
 
-            let pinch = if pinch_rot_admissible && base.pinch_admitted {
+            let pinch = if base.pinch_admitted {
                 (pinch_dist_mm / (base.initial_distance * PINCH_LOCK_RATIO)).max(pinch_raw * align_penalty)
             } else {
                 0.0
             };
-            let rot = if pinch_rot_admissible && base.rotate_admitted {
+            let rot = if base.rotate_admitted {
                 (rot_arc_mm / (dist * ROTATE_LOCK_RAD)).max(rot_raw * align_penalty)
             } else {
                 0.0
             };
-            let pan_score = if common_mag >= PAN_LOCK_MM && (common_mag >= differential_mag * 0.7 || pan_qualified) {
+            let pan_score = if common_mag >= PAN_LOCK_MM && (common_mag >= differential_mag * 0.6 || pan_qualified) {
                 (common_mag / PAN_LOCK_MM).max(pan_raw)
             } else {
                 pan
@@ -4234,6 +4237,54 @@ mod tests {
         assert!(
             log.contains(&"look_up_dictionary".to_string()),
             "3F split-lift within window must trigger look_up_dictionary: {log:?}"
+        );
+    }
+
+    #[test]
+    fn fat_finger_jitter_does_not_fire_right_click() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+
+        // Single finger lands, but capacitive sensor splits it into 2 contacts only 4mm apart
+        s.on_frame_at(frame(&[(1, 20.0, 20.0), (2, 24.0, 20.0)]), t0);
+        // Split resolves back to 1 contact after 30ms
+        s.on_frame_at(frame(&[(1, 20.0, 20.0)]), at(t0, 30));
+        // Lifts after 80ms total
+        s.on_frame_at(frame(&[]), at(t0, 80));
+
+        let log = r.pop();
+        assert!(
+            log.contains(&"click Left".to_string()),
+            "fat-finger split (<8mm) must resolve to a clean Left click, NOT Right click: {log:?}"
+        );
+        assert!(
+            !log.contains(&"click Right".to_string()),
+            "fat-finger split must never fire Right click: {log:?}"
+        );
+    }
+
+    #[test]
+    fn single_finger_to_two_finger_scroll_transition() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+
+        // 1 finger moves cursor down
+        s.on_frame_at(frame(&[(1, 20.0, 20.0)]), t0);
+        s.on_frame_at(frame(&[(1, 20.0, 25.0)]), at(t0, 30));
+
+        // 2nd finger joins (15mm away)
+        s.on_frame_at(frame(&[(1, 20.0, 26.0), (2, 35.0, 26.0)]), at(t0, 50));
+
+        // Both fingers scroll down together
+        s.on_frame_at(frame(&[(1, 20.0, 28.0), (2, 35.0, 28.0)]), at(t0, 70));
+        s.on_frame_at(frame(&[(1, 20.0, 30.0), (2, 35.0, 30.0)]), at(t0, 90));
+
+        let log = r.pop();
+        assert!(
+            log.iter().any(|l| l.starts_with("scroll ") && (l.contains("Began") || l.contains("Changed"))),
+            "1-to-2 finger transition must engage smooth scrolling: {log:?}"
         );
     }
 }
