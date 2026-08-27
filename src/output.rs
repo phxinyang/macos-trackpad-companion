@@ -1807,6 +1807,7 @@ fn post_scroll_event(
         float_x_px,
         float_y_px,
     );
+    e.post_to(kCGHIDEventTap);
     e.post_to(kCGSessionEventTap);
 }
 
