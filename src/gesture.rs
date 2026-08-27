@@ -317,9 +317,9 @@ pub struct GestureOptions {
 impl Default for GestureOptions {
     fn default() -> Self {
         Self {
-            three_finger_drag: false,
+            three_finger_drag: true,
             release_delay_ms: 500,
-            one_finger_tap_drag: false,
+            one_finger_tap_drag: true,
         }
     }
 }
@@ -734,9 +734,13 @@ impl<O: Output> State<O> {
             self.tap_drag_active = false;
             if self.options.one_finger_tap_drag {
                 if let Some(last_tap) = self.last_1f_tap {
-                    if now.saturating_duration_since(last_tap) <= Duration::from_millis(350) {
+                    let elapsed = now.saturating_duration_since(last_tap);
+                    if elapsed <= Duration::from_millis(380) {
                         self.tap_drag_candidate = true;
-                        log::debug!("1f tap-drag: armed candidate on second tap");
+                        self.tap_drag_active = true;
+                        self.drag_button_held = true;
+                        self.out.set_drag_button_held(true);
+                        log::debug!("1f tap-drag: engaged on second tap down (elapsed={}ms)", elapsed.as_millis());
                     } else {
                         self.tap_drag_candidate = false;
                     }
@@ -1688,12 +1692,20 @@ impl<O: Output> State<O> {
             // app that doesn't allow pinch/rotate falls through to
             // scroll instead of locking pinch+rotate-but-suppressed.
             let pinch = if pinch_rot_admissible && base.pinch_admitted {
-                pinch_raw * align_penalty
+                if differential_mag > common_mag * 1.1 || min_per_finger < ANCHORED_FINGER_FLOOR_MM * 1.5 {
+                    pinch_raw
+                } else {
+                    pinch_raw * align_penalty
+                }
             } else {
                 0.0
             };
             let rot = if pinch_rot_admissible && base.rotate_admitted {
-                rot_raw * align_penalty
+                if differential_mag > common_mag * 1.1 || min_per_finger < ANCHORED_FINGER_FLOOR_MM * 1.5 {
+                    rot_raw
+                } else {
+                    rot_raw * align_penalty
+                }
             } else {
                 0.0
             };
@@ -4196,6 +4208,92 @@ mod tests {
         assert!(
             !log.iter().any(|l| l.contains("set_left_button_held")),
             "default mode must never hold the button on 3f: {log:?}",
+        );
+    }
+
+    #[test]
+    fn one_finger_tap_drag_lifecycle() {
+        let r = Recorder::default();
+        let opts = GestureOptions {
+            one_finger_tap_drag: true,
+            ..GestureOptions::default()
+        };
+        let mut s = State::with_options(&r, test_accel(), opts);
+        let t0 = Timestamp::now();
+
+        // 1. First tap (down and up in 50ms)
+        s.on_frame_at(frame(&[(1, 10.0, 10.0)]), t0);
+        s.on_frame_at(frame(&[]), at(t0, 50));
+        let log = r.pop();
+        assert!(log.contains(&"click Left".to_string()), "first tap must click: {log:?}");
+
+        // 2. Second tap lands 100ms later (t = 150ms) -> should hold button immediately
+        s.on_frame_at(frame(&[(1, 10.0, 10.0)]), at(t0, 150));
+        let log = r.pop();
+        assert!(
+            log.contains(&"set_left_button_held true".to_string()),
+            "second tap down must hold left button: {log:?}"
+        );
+
+        // 3. Move finger -> cursor moves
+        s.on_frame_at(frame(&[(1, 15.0, 10.0)]), at(t0, 180));
+        s.on_frame_at(frame(&[(1, 20.0, 10.0)]), at(t0, 200));
+        let _ = r.pop();
+
+        // 4. Lift finger -> releases left button, no spurious extra click
+        s.on_frame_at(frame(&[]), at(t0, 250));
+        let log = r.pop();
+        assert!(
+            log.contains(&"set_left_button_held false".to_string()),
+            "lift after tap-drag must release left button: {log:?}"
+        );
+        assert!(
+            !log.contains(&"click Left".to_string()),
+            "lift after tap-drag must not emit click: {log:?}"
+        );
+    }
+
+    #[test]
+    fn two_finger_rotation_direct_lock() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+
+        // Touch 2 fingers horizontally: id 1 at (20, 20), id 2 at (40, 20) (distance 20mm, angle 0 rad)
+        s.on_frame_at(frame(&[(1, 20.0, 20.0), (2, 40.0, 20.0)]), t0);
+
+        // Rotate clockwise: id 1 moves to (20.0, 22.0), id 2 moves to (40.0, 18.0)
+        // Centroid stays at (30.0, 20.0), angle rotates by ~11.3 deg (0.20 rad > ROTATE_LOCK_RAD)
+        s.on_frame_at(frame(&[(1, 20.0, 22.0), (2, 40.0, 18.0)]), at(t0, 20));
+        s.on_frame_at(frame(&[(1, 20.0, 24.0), (2, 40.0, 16.0)]), at(t0, 40));
+
+        let log = r.pop();
+        assert!(
+            log.iter().any(|l| l.starts_with("rotate ") && (l.contains("Began") || l.contains("Changed"))),
+            "pure rotation must lock and emit rotate events: {log:?}"
+        );
+    }
+
+    #[test]
+    fn three_finger_split_lift_lookup() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+
+        // 3 fingers touch down quietly
+        s.on_frame_at(frame(&[(1, 20.0, 20.0), (2, 35.0, 20.0), (3, 50.0, 20.0)]), t0);
+        s.on_frame_at(frame(&[(1, 20.1, 20.0), (2, 35.0, 20.1), (3, 50.0, 20.0)]), at(t0, 30));
+
+        // Finger 1 lifts first (3 -> 2)
+        s.on_frame_at(frame(&[(2, 35.0, 20.1), (3, 50.0, 20.0)]), at(t0, 80));
+
+        // Remaining 2 fingers lift (2 -> 0)
+        s.on_frame_at(frame(&[]), at(t0, 120));
+
+        let log = r.pop();
+        assert!(
+            log.contains(&"look_up_dictionary".to_string()),
+            "3F split-lift within window must trigger look_up_dictionary: {log:?}"
         );
     }
 }

@@ -182,7 +182,7 @@ pub struct OneFingerTapDrag {
 
 impl Default for OneFingerTapDrag {
     fn default() -> Self {
-        Self { enable: GestureEnable::Off }
+        Self { enable: GestureEnable::On }
     }
 }
 

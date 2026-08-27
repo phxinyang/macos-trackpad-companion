@@ -1468,7 +1468,7 @@ impl Emitter {
         if let Some(e) = Event::from_raw(unsafe { CGEventCreate(std::ptr::null_mut()) }) {
             e.set_int(55, 29); // NSEventTypeGesture
             e.set_int(110, 5); // kIOHIDEventTypeRotation
-            e.set_dbl(114, delta_degrees.to_radians());
+            e.set_dbl(114, delta_degrees);
             e.set_int(132, iohid_gesture_phase(phase) as i64);
             unsafe { CGEventSetTimestamp(e.0, ts.as_nanos()) };
             e.post_to(kCGHIDEventTap);
