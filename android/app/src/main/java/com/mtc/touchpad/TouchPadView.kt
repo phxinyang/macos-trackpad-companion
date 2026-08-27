@@ -33,6 +33,14 @@ class TouchPadView(context: Context) : View(context) {
         private const val SWIPE_COMMIT_THRESHOLD_MM = 10.0f
         private const val TAP_MAX_TRAVEL_MM = 1.5f
         private const val TAP_MAX_TIME_MS = 240L
+
+        /**
+         * Resend interval for resting contacts. 16 ms ≈ 60 Hz: dense
+         * enough that the server's 250 ms silence watchdog never sees a
+         * gap during a legitimate hold, sparse enough to be negligible
+         * next to the frame rate an active gesture already produces.
+         */
+        private const val HEARTBEAT_MS = 16L
     }
 
     var sender: UdpSender? = null
@@ -51,6 +59,10 @@ class TouchPadView(context: Context) : View(context) {
     private val freeIds = ArrayDeque<Int>()
     private var nextCid = 1
     private val liftEchoRunnables = ArrayList<Runnable>()
+
+    /** Last frame's contacts, resent by the heartbeat while they rest. */
+    private var heldContacts: List<FrameEncoder.Contact> = emptyList()
+    private var heartbeatRunnable: Runnable? = null
 
     // Gesture & Haptic tracking state
     private var touchDownTimeMs = 0L
@@ -261,6 +273,7 @@ class TouchPadView(context: Context) : View(context) {
         cidByPointer.values.forEach { freeIds.addLast(it) }
         cidByPointer.clear()
         cancelLiftEcho()
+        cancelHeartbeat()
     }
 
     private fun toMm(x: Float, y: Float): FrameEncoder.Contact {
@@ -302,6 +315,46 @@ class TouchPadView(context: Context) : View(context) {
             list.add(FrameEncoder.Contact(cid, c.x, c.y))
         }
         s.send(FrameEncoder.encode(s.nextSeq(), s.nowTicks(), false, list))
+        armHeartbeat(list)
+    }
+
+    /**
+     * Keep the frame stream alive while contacts rest.
+     *
+     * Android only delivers `ACTION_MOVE` when a pointer actually moves,
+     * so a finger held still stops producing frames entirely. From the
+     * far end that is indistinguishable from the client disappearing,
+     * and the server's silence watchdog used to resolve it by
+     * synthesizing a lift — which manufactured taps the user never made
+     * and, at the wrong moment, whole double-clicks. A real trackpad
+     * reports at a fixed rate whether or not anything moved; this makes
+     * the phone behave the same way.
+     *
+     * Resent frames carry a fresh sequence number and a current
+     * timestamp, so the receiver treats them as genuine "still here,
+     * still at this position" samples rather than replays.
+     */
+    private fun armHeartbeat(list: List<FrameEncoder.Contact>) {
+        cancelHeartbeat()
+        if (list.isEmpty()) return
+        heldContacts = list
+        val r = object : Runnable {
+            override fun run() {
+                val s = sender ?: return
+                val held = heldContacts
+                if (held.isEmpty()) return
+                s.send(FrameEncoder.encode(s.nextSeq(), s.nowTicks(), false, held))
+                postDelayed(this, HEARTBEAT_MS)
+            }
+        }
+        heartbeatRunnable = r
+        postDelayed(r, HEARTBEAT_MS)
+    }
+
+    private fun cancelHeartbeat() {
+        heartbeatRunnable?.let { removeCallbacks(it) }
+        heartbeatRunnable = null
+        heldContacts = emptyList()
     }
 
     private fun sendCurrent(event: MotionEvent) = sendFramesOf(event)
@@ -312,6 +365,7 @@ class TouchPadView(context: Context) : View(context) {
     /** All-lifted frame ×3 (now/+30ms/+90ms) — the one stateful transition. */
     private fun echoLift() {
         val s = sender ?: return
+        cancelHeartbeat()
         s.send(FrameEncoder.encode(s.nextSeq(), s.nowTicks(), false, emptyList()))
         listOf(30L, 90L).forEach { delay ->
             val r = Runnable { sender?.send(FrameEncoder.encode(sender!!.nextSeq(), sender!!.nowTicks(), false, emptyList())) }

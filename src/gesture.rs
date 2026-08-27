@@ -21,9 +21,12 @@ use std::time::Duration;
 // finger ergonomics, not pad fractions.
 
 /// Max distance a contact may drift from its landing point during a
-/// short touch and still count as a tap. ~1.5 mm covers normal finger
-/// touch spread on mobile screens without admitting deliberate cursor moves.
-const TAP_MAX_MOVE_MM: f64 = 1.5;
+/// short touch and still count as a tap. 1 mm covers finger roll on
+/// landing without admitting deliberate cursor moves — and it has to
+/// stay below the point where a 2F gesture's per-finger motion becomes
+/// meaningful, because `dispatch_two` uses this same budget to decide
+/// when a 2F touch stops being tap-eligible and may lock a mode.
+const TAP_MAX_MOVE_MM: f64 = 1.0;
 /// Max touch duration to count as a tap (240 ms).
 const TAP_MAX_DURATION: Duration = Duration::from_millis(240);
 /// Centroid motion below this between frames is treated as jitter.
@@ -59,7 +62,40 @@ const ROTATE_LOCK_RAD: f64 = 4.0_f64 * std::f64::consts::PI / 180.0;
 /// side. Used in the pinch/rotate lock-admission gate to distinguish
 /// anchored-rotate from the ambiguous "leader committed, trailer in
 /// noise band" case.
-const ANCHORED_FINGER_FLOOR_MM: f64 = 0.3;
+const ANCHORED_FINGER_FLOOR_MM: f64 = 0.15;
+
+/// Two contacts closer together than this cannot be two distinct
+/// fingers — a capacitive panel splitting one fat contact into two
+/// blobs is the only way it happens. Such a "2F" touch must never
+/// resolve to a right-click; it falls back to being evaluated as the
+/// single-finger tap the user actually made. Measured against the
+/// inter-contact distance at the moment the second contact appeared,
+/// not against motion, so a genuine pinch that ends with the fingers
+/// touching is unaffected.
+const FAT_FINGER_SPLIT_MM: f64 = 8.0;
+
+/// Minimum number of two-finger frames observed before any lock
+/// decision may fire. The frame a second finger lands on has one
+/// contact fresh and one mid-glide, which makes the
+/// common/differential decomposition meaningless — see
+/// `gesture-tuning-ideas.md` idea #5. Two frames costs one chip frame
+/// (~8 ms on a 125 Hz pad) of onset latency, below the perceptual
+/// floor, and removes the whole class of "locked scroll on the landing
+/// frame, then immediately switched to pinch" churn.
+const TWO_FINGER_MIN_FRAMES: u32 = 2;
+
+/// A tap-drag's second contact has to stay down at least this long
+/// before it counts as a drag. Lifting sooner means the user was
+/// double-clicking, so the second contact is dispatched as the second
+/// click of a double-click instead of as a press-and-drag. Apple's
+/// tap-drag has the same shape: the second tap must be *held*.
+const TAP_DRAG_CONFIRM: Duration = Duration::from_millis(200);
+
+/// Window before lift whose peak centroid speed seeds scroll inertia.
+/// Fingers decelerate as they leave the surface, so the last frame's
+/// instantaneous velocity systematically under-reports the throw the
+/// user actually made; the peak over the tail is what they felt.
+const INERTIA_PEAK_WINDOW: Duration = Duration::from_millis(50);
 
 /// Centroid travel needed to lock the swipe axis (horizontal vs
 /// vertical). Below this, the gesture is still ambiguous; we wait
@@ -107,6 +143,12 @@ const SCROLL_VELOCITY_ALPHA: f64 = 0.4;
 /// before we have a previous frame to subtract from. ~8 ms matches a
 /// 125 Hz PTP pad, which both supported keyboards run at.
 const DEFAULT_FRAME_DT: Duration = Duration::from_micros(8000);
+
+/// Upper bound on plausible fingertip speed across a trackpad. Sprinters
+/// of the trackpad world manage a few hundred mm/s; 1200 leaves generous
+/// headroom while still catching the data faults that would otherwise
+/// teleport the pointer.
+const MAX_FINGER_SPEED_MM_S: f64 = 1200.0;
 
 /// Power-curve cursor acceleration parameters. The curve is
 /// `pixels_per_sec = c · |v|^E` (in finger mm/s → screen px/s), with
@@ -199,7 +241,6 @@ enum PinchRotateDominant {
 /// frame-to-frame noise on signals of comparable magnitude, low enough
 /// that a deliberate transition between zoom and twist still flips
 /// within 1-2 frames.
-#[allow(dead_code)]
 const PINCH_ROTATE_HYSTERESIS: f64 = 1.5;
 
 #[derive(Clone, Copy, Debug)]
@@ -217,6 +258,16 @@ struct TwoFingerBaseline {
     initial_a: (u8, (f64, f64)),
     initial_b: (u8, (f64, f64)),
     last_centroid: (f64, f64),
+    /// Number of 2F frames dispatched against this baseline. No lock may
+    /// fire until at least [`TWO_FINGER_MIN_FRAMES`] have been seen, so
+    /// the frame a second finger lands on can never decide the mode.
+    frames_observed: u32,
+    /// Highest instantaneous centroid velocity sampled during 2F pan and
+    /// when it was taken. Fingers decelerate as they leave the surface,
+    /// so the final frame's velocity under-reports the throw; the peak
+    /// inside [`INERTIA_PEAK_WINDOW`] before lift is what seeds inertia.
+    peak_velocity: (f64, f64),
+    peak_velocity_at: Option<Timestamp>,
     /// Previous-frame scale and angle, refreshed every frame so per-frame
     /// pinch and rotate deltas are always one-frame. Cross-stream
     /// accumulation (when one stream is suppressed) felt jerky — the
@@ -318,7 +369,12 @@ impl Default for GestureOptions {
     fn default() -> Self {
         Self {
             three_finger_drag: true,
-            release_delay_ms: 500,
+            // Apple's Three-Finger Drag releases the moment the fingers
+            // leave the pad. A positive value here is the separate
+            // accessibility "With Drag Lock" behavior and must stay
+            // opt-in — with it on by default, a plain three-finger drag
+            // never releases on lift, it releases on a later timer tick.
+            release_delay_ms: 0,
             one_finger_tap_drag: true,
         }
     }
@@ -401,6 +457,10 @@ struct TwoFingerRecent {
 struct PendingTwoFingerTap {
     started_at: Timestamp,
     max_move_sq: f64,
+    /// Inter-contact distance when the 2F touch started. Below
+    /// [`FAT_FINGER_SPLIT_MM`] the "two fingers" were one fat contact
+    /// the panel split, and the pending right-click is bogus.
+    initial_distance: f64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -497,6 +557,15 @@ pub struct State<O: Output> {
     last_2f_tap: Option<Timestamp>,
     tap_drag_candidate: bool,
     tap_drag_active: bool,
+    /// Set when a second tap lands inside the tap-drag window, and
+    /// cleared once that contact commits one way or the other. While it
+    /// is set the gesture is genuinely ambiguous — the user is either
+    /// starting a drag or completing a double-click — so the button is
+    /// not pressed and the pointer is pinned. Pressing on the landing
+    /// frame (which is what the engine did before) makes every
+    /// double-click arrive as a click plus an unrelated press/release
+    /// pair, which is why double-clicks stopped registering.
+    tap_drag_pending_since: Option<Timestamp>,
 }
 
 impl<O: Output> State<O> {
@@ -533,6 +602,7 @@ impl<O: Output> State<O> {
             last_2f_tap: None,
             tap_drag_candidate: false,
             tap_drag_active: false,
+            tap_drag_pending_since: None,
         }
     }
 
@@ -627,6 +697,45 @@ impl<O: Output> State<O> {
         if !active.is_empty() {
             self.dispatch(&active, now, frame_dt);
         }
+    }
+
+    /// End the current touch because the link went silent, not because
+    /// the user lifted. A synthesized lift carries no evidence about
+    /// intent: the contacts may still be on the pad with their frames
+    /// lost or throttled. Treating it as a normal lift is what turned
+    /// link stalls into phantom clicks — a real capture shows a
+    /// `dur=0ms` "tap" landing 648 ms after a real one, which macOS then
+    /// coalesced into a double-click the user never made.
+    ///
+    /// Everything that depends on a deliberate lift (taps, tap-drag
+    /// resolution, smart-magnify pairing) is suppressed; everything that
+    /// must not be left latched (held buttons, phased event streams) is
+    /// closed out exactly as a real lift would.
+    #[allow(dead_code)]
+    pub fn cancel_touch(&mut self, now: Timestamp) {
+        if matches!(self.kind, GestureKind::Idle) {
+            return;
+        }
+        log::info!(
+            "touch canceled by link timeout while in {:?} — closing out without tap evaluation",
+            self.kind,
+        );
+        // Suppress every tap path the Idle close-out could take.
+        self.born_during_coast = true;
+        self.pending_two_finger_tap = None;
+        self.pending_three_finger_tap = None;
+        self.tap_drag_pending_since = None;
+        self.tap_drag_candidate = false;
+        self.last_1f_tap = None;
+        self.last_2f_tap = None;
+        // A canceled touch must not leave a drag-lock timer armed: the
+        // fingers whose return would cancel it are not coming back.
+        self.pending_drag_release = None;
+        self.transition(GestureKind::Idle, &[], now);
+        self.contacts.clear();
+        self.pending_motion = None;
+        self.two_finger_recent = None;
+        self.born_during_coast = false;
     }
 
     /// Advance time-based gesture state. Called from the transport
@@ -741,11 +850,18 @@ impl<O: Output> State<O> {
                 if let Some(last_tap) = self.last_1f_tap {
                     let elapsed = now.saturating_duration_since(last_tap);
                     if elapsed <= Duration::from_millis(380) {
+                        // Ambiguous on purpose: this contact is either
+                        // the start of a drag or the second half of a
+                        // double-click, and nothing observable yet
+                        // distinguishes them. Defer the press; the
+                        // pointer stays pinned meanwhile so a press
+                        // that does come lands on the intended target.
                         self.tap_drag_candidate = true;
-                        self.tap_drag_active = true;
-                        self.drag_button_held = true;
-                        self.out.set_drag_button_held(true);
-                        log::debug!("1f tap-drag: engaged on second tap down (elapsed={}ms)", elapsed.as_millis());
+                        self.tap_drag_pending_since = Some(now);
+                        log::debug!(
+                            "1f tap-drag: second tap down (elapsed={}ms) — press deferred pending hold or motion",
+                            elapsed.as_millis(),
+                        );
                     } else {
                         self.tap_drag_candidate = false;
                     }
@@ -798,12 +914,29 @@ impl<O: Output> State<O> {
                         }
                         self.tap_drag_active = false;
                         self.tap_drag_candidate = false;
+                        self.tap_drag_pending_since = None;
                         self.last_1f_tap = None;
                     } else if bc {
                         // Born during coast: nothing this session does
                         // counts as a click. Whether the residual was
                         // also a 2F-tail or a fresh 1F is irrelevant.
                         log::debug!("1f lift, click suppressed (born during coast)");
+                        self.last_1f_tap = None;
+                        self.tap_drag_candidate = false;
+                        self.tap_drag_pending_since = None;
+                    } else if self.tap_drag_pending_since.take().is_some() {
+                        // The second contact of a tap pair lifted before
+                        // committing to a drag — the user double-clicked.
+                        // The first tap already posted one click; this is
+                        // the second, at the same point and within the
+                        // system's double-click interval, so downstream
+                        // coalesces the pair.
+                        let dur = now - self.started_at;
+                        log::debug!(
+                            "1f tap-drag: second tap lifted undecided after {}ms — dispatching double-click",
+                            dur.as_millis(),
+                        );
+                        self.out.click(MouseButton::Left);
                         self.last_1f_tap = None;
                         self.tap_drag_candidate = false;
                     } else if let Some(p3) = pending_3f {
@@ -824,7 +957,28 @@ impl<O: Output> State<O> {
                         self.tap_drag_candidate = false;
                         let total_dur = now - p.started_at;
                         let combined_max_move = p.max_move_sq.max(self.max_move_sq).sqrt();
-                        if total_dur < TAP_MAX_DURATION && combined_max_move < TAP_MAX_MOVE_MM {
+                        if p.initial_distance < FAT_FINGER_SPLIT_MM {
+                            // One fat contact the panel reported as two,
+                            // then merged back. Resolve it as the single
+                            // tap the user actually made.
+                            let dur_1f = now - self.started_at;
+                            if total_dur < TAP_MAX_DURATION && combined_max_move < TAP_MAX_MOVE_MM {
+                                log::debug!(
+                                    "2f split-lift reclassified as 1f: contacts only {:.1}mm apart (fat-finger split) — click Left (total_dur={}ms)",
+                                    p.initial_distance,
+                                    total_dur.as_millis(),
+                                );
+                                self.out.click(MouseButton::Left);
+                                self.last_1f_tap = Some(now);
+                            } else {
+                                log::debug!(
+                                    "fat-finger split lift, no tap: total_dur={}ms combined_max_move={:.2}mm dur_1f={}ms",
+                                    total_dur.as_millis(),
+                                    combined_max_move,
+                                    dur_1f.as_millis(),
+                                );
+                            }
+                        } else if total_dur < TAP_MAX_DURATION && combined_max_move < TAP_MAX_MOVE_MM {
                             log::debug!(
                                 "2f tap (split lift): click Right (total_dur={}ms combined_max_move={:.2}mm)",
                                 total_dur.as_millis(),
@@ -876,9 +1030,26 @@ impl<O: Output> State<O> {
                 }
             }
             GestureKind::TwoFingerPan => {
+                // Seed from the peak velocity inside the tail window, not
+                // the final frame's. Fingers decelerate on their way off
+                // the surface — real logs show a scroll that peaked at
+                // 560 mm/s reporting 7 mm/s on the frame it ended, which
+                // is below every sane inertia threshold, so a genuine
+                // flick coasted nowhere. A peak older than the window is
+                // ignored: the user slowed down deliberately.
                 let (vx, vy) = self
                     .two_baseline
-                    .map(|b| b.scroll_velocity)
+                    .map(|b| {
+                        let fresh_peak = b
+                            .peak_velocity_at
+                            .map(|t| now.saturating_duration_since(t) <= INERTIA_PEAK_WINDOW)
+                            .unwrap_or(false);
+                        if fresh_peak {
+                            b.peak_velocity
+                        } else {
+                            b.scroll_velocity
+                        }
+                    })
                     .unwrap_or((0.0, 0.0));
                 let speed = (vx * vx + vy * vy).sqrt();
                 log::debug!(
@@ -922,13 +1093,56 @@ impl<O: Output> State<O> {
                 let dur = now - self.started_at;
                 let max_move = self.max_move_sq.sqrt();
                 let tap_eligible = dur < TAP_MAX_DURATION && max_move < TAP_MAX_MOVE_MM;
+                // Two contacts that were never far enough apart to be two
+                // fingers are one fat contact the panel split in two. Such
+                // a touch must never produce a right-click; the user made
+                // an ordinary single-finger tap.
+                let split_distance = self
+                    .two_baseline
+                    .map(|b| b.initial_distance)
+                    .unwrap_or(f64::INFINITY);
+                let fat_finger_split = split_distance < FAT_FINGER_SPLIT_MM;
+                // A three-finger tap that unloads 3 → 2 → 0 lands here,
+                // not in the OneFinger arm, so the pending lookup has to
+                // be consumed on this path too. Without it the whole
+                // gesture is silently reinterpreted as a two-finger tap
+                // and fires a right-click.
+                let pending_3f = self.pending_three_finger_tap.take();
                 if matches!(new_kind, GestureKind::Idle) {
-                    if bc {
+                    if let Some(p3) = pending_3f {
+                        let total_dur = now - p3.started_at;
+                        let combined_max_move = p3.max_move_sq.max(self.max_move_sq).sqrt();
+                        if !bc
+                            && total_dur < Duration::from_millis(360)
+                            && combined_max_move < 2.5
+                        {
+                            log::debug!(
+                                "3f tap (split lift via 2f): look up dictionary via Cmd+Ctrl+D (total_dur={}ms combined_max_move={:.2}mm)",
+                                total_dur.as_millis(),
+                                combined_max_move,
+                            );
+                            self.out.look_up_dictionary();
+                        } else {
+                            log::debug!(
+                                "3f split lift via 2f, no lookup: total_dur={}ms combined_max_move={:.2}mm",
+                                total_dur.as_millis(),
+                                combined_max_move,
+                            );
+                        }
+                    } else if bc {
                         log::debug!(
                             "2f lift, click suppressed (born during coast; dur={}ms max_move={:.2}mm)",
                             dur.as_millis(),
                             max_move,
                         );
+                    } else if tap_eligible && fat_finger_split {
+                        log::debug!(
+                            "2f tap reclassified as 1f: contacts only {:.1}mm apart (fat-finger split) — click Left",
+                            split_distance,
+                        );
+                        self.out.click(MouseButton::Left);
+                        self.last_1f_tap = Some(now);
+                        self.last_2f_tap = None;
                     } else if tap_eligible {
                         if let Some(prev) = self.last_2f_tap {
                             if now.saturating_duration_since(prev) < Duration::from_millis(350) {
@@ -981,6 +1195,7 @@ impl<O: Output> State<O> {
                         self.pending_two_finger_tap = Some(PendingTwoFingerTap {
                             started_at: self.started_at,
                             max_move_sq: self.max_move_sq,
+                            initial_distance: split_distance,
                         });
                     }
                 }
@@ -1083,6 +1298,13 @@ impl<O: Output> State<O> {
             _ => {}
         }
 
+        // A tap-drag candidacy only survives while the contact that
+        // opened it is still the whole gesture. Anything else — a second
+        // finger joining, a full lift — resolves it.
+        if !matches!(new_kind, GestureKind::OneFinger) {
+            self.tap_drag_pending_since = None;
+        }
+
         self.kind = new_kind;
         self.started_at = now;
         self.max_move_sq = 0.0;
@@ -1137,6 +1359,9 @@ impl<O: Output> State<O> {
                     initial_a: (a.id, (a.x, a.y)),
                     initial_b: (b.id, (b.x, b.y)),
                     last_centroid: centroid,
+                    frames_observed: 0,
+                    peak_velocity: (0.0, 0.0),
+                    peak_velocity_at: None,
                     prev_scale: 1.0,
                     prev_angle: ang,
                     // Default; overwritten at lock based on which signal
@@ -1283,6 +1508,10 @@ impl<O: Output> State<O> {
         baseline.initial_distance = dist;
         baseline.initial_angle = ang;
         baseline.last_centroid = centroid;
+        // A rejoin re-enters classification for an unclassified gesture,
+        // so the landing-frame grace applies again. Locked kinds never
+        // consult this counter.
+        baseline.frames_observed = 0;
         baseline.prev_scale = 1.0;
         baseline.prev_angle = ang;
         baseline.pinch_rot_lock_pending = false;
@@ -1386,6 +1615,25 @@ impl<O: Output> State<O> {
             return;
         }
 
+        // Per-frame centroid delta from ALL surviving fingers. When the
+        // finger count changes (async lift 3 → 2 → 1), the centroid mean
+        // jumps because the cluster changed shape. This has to be handled
+        // *before* the engage gate, not after: the jump is routinely
+        // several millimetres — lifting one of three fingers spaced 15 mm
+        // apart moves the mean by 7.5 mm — so an un-engaged drag would
+        // read it as travel and press the button on an async lift the
+        // user meant as a three-finger tap. Re-anchor both the engage
+        // reference and the streaming reference, then stream cleanly
+        // against the new cluster from the next frame.
+        if base.finger_count != active.len() {
+            base.finger_count = active.len();
+            base.initial_centroid = (cx, cy);
+            base.last_centroid = (cx, cy);
+            base.regrip_started_at = None;
+            self.drag_baseline = Some(base);
+            return;
+        }
+
         if !base.engaged {
             let travel =
                 ((cx - base.initial_centroid.0).powi(2) + (cy - base.initial_centroid.1).powi(2))
@@ -1408,17 +1656,6 @@ impl<O: Output> State<O> {
             }
         }
 
-        // Per-frame centroid delta from ALL surviving fingers. When the
-        // finger count changes (async lift 3 → 2 → 1), the centroid mean
-        // jumps because the cluster changed shape; drop that transitional
-        // delta and stream cleanly against the new cluster next frame.
-        if base.finger_count != active.len() {
-            base.finger_count = active.len();
-            base.last_centroid = (cx, cy);
-            base.regrip_started_at = None;
-            self.drag_baseline = Some(base);
-            return;
-        }
         let dx = cx - base.last_centroid.0;
         let dy = cy - base.last_centroid.1;
         base.last_centroid = (cx, cy);
@@ -1458,14 +1695,32 @@ impl<O: Output> State<O> {
             self.two_finger_recent = None;
         }
 
-        // If candidate for tap-drag and finger moved past TAP_MAX_MOVE_MM, engage tap drag!
+        // Tap-drag candidate: commit to the drag once this contact has
+        // either travelled far enough to be a drag or been held long
+        // enough to rule out a double-click. `DRAG_ENGAGE_MM` rather
+        // than the tap budget keeps the pointer within a third of a
+        // millimetre of where the user aimed, which is what the
+        // press-on-landing-frame change was trying to achieve.
         if self.tap_drag_candidate && !self.drag_button_held {
             let max_move = tr.max_move_sq.sqrt();
-            if max_move >= TAP_MAX_MOVE_MM {
+            let held = self
+                .tap_drag_pending_since
+                .map(|t| now.saturating_duration_since(t))
+                .unwrap_or_default();
+            if max_move >= DRAG_ENGAGE_MM || held >= TAP_DRAG_CONFIRM {
                 self.out.set_drag_button_held(true);
                 self.drag_button_held = true;
                 self.tap_drag_active = true;
-                log::debug!("1f tap-drag: engaged left mouse down for drag");
+                self.tap_drag_pending_since = None;
+                log::debug!(
+                    "1f tap-drag: engaged (max_move={max_move:.2}mm held={}ms)",
+                    held.as_millis(),
+                );
+            } else if self.tap_drag_pending_since.is_some() {
+                // Still undecided. Drop this frame's motion so the
+                // pointer does not creep off the target while we wait.
+                self.pending_motion = None;
+                return;
             }
         }
 
@@ -1507,6 +1762,27 @@ impl<O: Output> State<O> {
         if dt_s <= 0.0 {
             return (0, 0);
         }
+        // A fingertip cannot cross a trackpad faster than roughly a
+        // metre per second. Anything above that is a data fault — a
+        // dropped frame the transport didn't flag, a contact-id reuse,
+        // or a client sending a stale coordinate — and feeding it to the
+        // acceleration curve throws the pointer across the screen (one
+        // real capture: a 10.4 mm single-frame delta became 1666 px).
+        // Scale such a frame back to the speed limit and say so, so the
+        // log identifies which path produced it instead of the user just
+        // seeing the cursor vanish.
+        let speed = (dx_mm * dx_mm + dy_mm * dy_mm).sqrt() / dt_s;
+        let (dx_mm, dy_mm) = if speed > MAX_FINGER_SPEED_MM_S {
+            let scale = MAX_FINGER_SPEED_MM_S / speed;
+            log::warn!(
+                "cursor: implausible frame d=({dx_mm:+.3},{dy_mm:+.3})mm over {:.1}ms \
+                 = {speed:.0}mm/s — clamped to {MAX_FINGER_SPEED_MM_S:.0}mm/s",
+                dt_s * 1000.0,
+            );
+            (dx_mm * scale, dy_mm * scale)
+        } else {
+            (dx_mm, dy_mm)
+        };
         let vx = dx_mm / dt_s;
         let vy = dy_mm / dt_s;
         let px_x = accelerate_cursor(vx, self.cursor_accel) * dt_s;
@@ -1545,10 +1821,16 @@ impl<O: Output> State<O> {
         // per-contact drift across the gesture, so it correctly gates
         // on either finger crossing the tap budget.
         if matches!(self.kind, GestureKind::TwoFingerUnclassified) {
+            base.frames_observed = base.frames_observed.saturating_add(1);
             let max_move = self.max_move_sq.sqrt();
             let dur = now - self.started_at;
             let could_still_tap = max_move < TAP_MAX_MOVE_MM && dur < TAP_MAX_DURATION;
-            if could_still_tap {
+            // The landing frame (and, with the default of 2, only the
+            // landing frame) is observation-only: one contact is fresh
+            // and the other is mid-glide, so any decomposition of their
+            // motion describes the landing, not the user's intent.
+            let within_grace = base.frames_observed < TWO_FINGER_MIN_FRAMES;
+            if could_still_tap || within_grace {
                 base.last_centroid = centroid;
                 // Track scale and angle pre-lock so the first Changed
                 // emit after lock is a one-frame delta, not a cumulative
@@ -1696,21 +1978,34 @@ impl<O: Output> State<O> {
             // Pure relative motion tangential to inter-finger axis (real rotate)
             let rot_arc_mm = (d_diff_x * v_x + d_diff_y * v_y).abs();
 
-            let pinch = if base.pinch_admitted {
-                (pinch_dist_mm / (base.initial_distance * PINCH_LOCK_RATIO)).max(pinch_raw * align_penalty)
+            // The penalty multiplies the *whole* selection score, not
+            // just the ratio term. Leaving it on `pinch_raw` alone let
+            // the geometric term slip past it through the `max`, which
+            // defeated the gate entirely for the case it was written
+            // for: a lazy-trailer scroll produces real differential
+            // millimetres, so its geometric score stays high even when
+            // the alignment cosine says both fingers are heading the
+            // same way. Anti-parallel and truly-anchored geometries have
+            // penalty 1.0 and are unaffected.
+            let pinch = if base.pinch_admitted && pinch_rot_admissible {
+                (pinch_dist_mm / (base.initial_distance * PINCH_LOCK_RATIO)).max(pinch_raw)
+                    * align_penalty
             } else {
                 0.0
             };
-            let rot = if base.rotate_admitted {
-                (rot_arc_mm / (dist * ROTATE_LOCK_RAD)).max(rot_raw * align_penalty)
+            let rot = if base.rotate_admitted && pinch_rot_admissible {
+                (rot_arc_mm / (dist * ROTATE_LOCK_RAD)).max(rot_raw) * align_penalty
             } else {
                 0.0
             };
-            let pan_score = if common_mag >= PAN_LOCK_MM && (common_mag >= differential_mag * 0.6 || pan_qualified) {
-                (common_mag / PAN_LOCK_MM).max(pan_raw)
-            } else {
-                pan
-            };
+            // Pan only ever scores when it qualified. A lenient override
+            // here (accepting `common >= differential * 0.6`) inverts the
+            // invariant this whole decomposition exists to enforce: an
+            // anchored-finger pinch drifts the centroid as a *side
+            // effect*, and letting that drift win produces exactly the
+            // "lock scroll, then immediately switch to pinch" churn the
+            // dynamic switch was then added to paper over.
+            let pan_score = pan;
 
             if pan_score >= 1.0 || pinch >= 1.0 || rot >= 1.0 {
                 // Pan is mutually exclusive with pinch/rotate (matches
@@ -1774,6 +2069,13 @@ impl<O: Output> State<O> {
                             common_mag, differential_mag, alignment, balance,
                         );
                         self.out.scroll(0.0, 0.0, Phase::Began);
+                        // Claim the Began here. The pan dispatch below
+                        // also opens a stream when `last_scroll_time` is
+                        // still unset (that path serves the partial-lift
+                        // rejoin); without this the lock frame posts
+                        // Began twice and downstream sees two
+                        // overlapping scroll streams.
+                        base.last_scroll_time = Some(now);
                     }
                     GestureKind::TwoFingerPinchAndRotate => {
                         log::info!(
@@ -1804,29 +2106,8 @@ impl<O: Output> State<O> {
         match self.kind {
             GestureKind::TwoFingerPan => {
                 let scale = dist / base.initial_distance;
-                let scale_delta = scale - base.prev_scale;
-                let angle_d = angle_delta(ang, base.prev_angle);
-                let diff_travel = scale_delta.abs() * base.initial_distance + angle_d.abs() * dist;
                 let ddx = centroid.0 - base.last_centroid.0;
                 let ddy = centroid.1 - base.last_centroid.1;
-                let pan_travel = (ddx * ddx + ddy * ddy).sqrt();
-
-                if diff_travel > 0.8 && diff_travel > pan_travel * 2.0 {
-                    log::info!("2F dynamic switch: scroll → pinch/rotate (diff_travel={:.2}mm pan={:.2}mm)", diff_travel, pan_travel);
-                    self.out.scroll(0.0, 0.0, Phase::Ended);
-                    self.kind = GestureKind::TwoFingerPinchAndRotate;
-                    self.out.pinch(0.0, Phase::Began);
-                    self.out.rotate(0.0, Phase::Began);
-                    base.prev_scale = scale;
-                    base.prev_angle = ang;
-                    base.pinch_rotate_dominant = if angle_d.abs() / ROTATE_LOCK_RAD > scale_delta.abs() / PINCH_LOCK_RATIO {
-                        PinchRotateDominant::Rotate
-                    } else {
-                        PinchRotateDominant::Pinch
-                    };
-                    self.two_baseline = Some(base);
-                    return;
-                }
 
                 if base.last_scroll_time.is_none() {
                     self.out.scroll(0.0, 0.0, Phase::Began);
@@ -1840,6 +2121,25 @@ impl<O: Output> State<O> {
                             + (1.0 - SCROLL_VELOCITY_ALPHA) * base.scroll_velocity.0;
                         base.scroll_velocity.1 = SCROLL_VELOCITY_ALPHA * inst_vy
                             + (1.0 - SCROLL_VELOCITY_ALPHA) * base.scroll_velocity.1;
+                        // Track the peak of the smoothed velocity for the
+                        // inertia seed. A peak older than the window is
+                        // stale — the user has since slowed down on
+                        // purpose — so it decays rather than persisting
+                        // for the whole gesture.
+                        let cur_speed = (base.scroll_velocity.0.powi(2)
+                            + base.scroll_velocity.1.powi(2))
+                        .sqrt();
+                        let peak_speed = (base.peak_velocity.0.powi(2)
+                            + base.peak_velocity.1.powi(2))
+                        .sqrt();
+                        let peak_stale = base
+                            .peak_velocity_at
+                            .map(|t| now.saturating_duration_since(t) > INERTIA_PEAK_WINDOW)
+                            .unwrap_or(true);
+                        if cur_speed >= peak_speed || peak_stale {
+                            base.peak_velocity = base.scroll_velocity;
+                            base.peak_velocity_at = Some(now);
+                        }
                     }
                     base.last_scroll_time = Some(now);
                     log::debug!(
@@ -1857,34 +2157,49 @@ impl<O: Output> State<O> {
                 let scale_delta = scale - base.prev_scale;
                 let angle_d = angle_delta(ang, base.prev_angle);
 
-                let ddx = centroid.0 - base.last_centroid.0;
-                let ddy = centroid.1 - base.last_centroid.1;
-                let pan_travel = (ddx * ddx + ddy * ddy).sqrt();
-                let diff_travel = scale_delta.abs() * base.initial_distance + angle_d.abs() * dist;
+                // One stream owns each frame. Normalize both signals
+                // against their lock thresholds so they're comparable,
+                // then only hand the frame to the other stream when it
+                // beats the incumbent by [`PINCH_ROTATE_HYSTERESIS`].
+                // Emitting both every frame lets sub-threshold noise on
+                // the quiet axis ride along with real motion on the
+                // active one, which is what makes a steady pinch feel
+                // like it's also twisting.
+                let pinch_mag = scale_delta.abs() / PINCH_LOCK_RATIO;
+                let rot_mag = angle_d.abs() / ROTATE_LOCK_RAD;
+                base.pinch_rotate_dominant = match base.pinch_rotate_dominant {
+                    PinchRotateDominant::Pinch
+                        if rot_mag > pinch_mag * PINCH_ROTATE_HYSTERESIS =>
+                    {
+                        log::debug!(
+                            "pinch+rotate: dominance → rotate (rot={rot_mag:.2} pinch={pinch_mag:.2})"
+                        );
+                        PinchRotateDominant::Rotate
+                    }
+                    PinchRotateDominant::Rotate
+                        if pinch_mag > rot_mag * PINCH_ROTATE_HYSTERESIS =>
+                    {
+                        log::debug!(
+                            "pinch+rotate: dominance → pinch (pinch={pinch_mag:.2} rot={rot_mag:.2})"
+                        );
+                        PinchRotateDominant::Pinch
+                    }
+                    current => current,
+                };
 
-                // If user shifted from pinch/rotate into parallel scrolling:
-                if pan_travel > 0.6 && pan_travel > diff_travel * 1.5 {
-                    log::info!("2F dynamic switch: pinch/rotate → scroll (pan_travel={:.2}mm diff={:.2}mm)", pan_travel, diff_travel);
-                    self.out.pinch(0.0, Phase::Ended);
-                    self.out.rotate(0.0, Phase::Ended);
-                    self.kind = GestureKind::TwoFingerPan;
-                    self.out.scroll(0.0, 0.0, Phase::Began);
-                    self.out.scroll(ddx, ddy, Phase::Changed);
-                    base.last_centroid = centroid;
-                    base.last_scroll_time = Some(now);
-                    base.prev_scale = scale;
-                    base.prev_angle = ang;
-                    self.two_baseline = Some(base);
-                    return;
-                }
-
-                if scale_delta.abs() > 1e-4 && base.pinch_admitted {
-                    log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
-                    self.out.pinch(scale_delta, Phase::Changed);
-                }
-                if angle_d.abs() > 1e-4 && base.rotate_admitted {
-                    log::debug!("rotate: delta={:+.2}deg", angle_d.to_degrees());
-                    self.out.rotate(angle_d.to_degrees(), Phase::Changed);
+                match base.pinch_rotate_dominant {
+                    PinchRotateDominant::Pinch => {
+                        if scale_delta.abs() > 1e-4 && base.pinch_admitted {
+                            log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
+                            self.out.pinch(scale_delta, Phase::Changed);
+                        }
+                    }
+                    PinchRotateDominant::Rotate => {
+                        if angle_d.abs() > 1e-4 && base.rotate_admitted {
+                            log::debug!("rotate: delta={:+.2}deg", angle_d.to_degrees());
+                            self.out.rotate(angle_d.to_degrees(), Phase::Changed);
+                        }
+                    }
                 }
                 base.prev_scale = scale;
                 base.prev_angle = ang;
@@ -2902,7 +3217,7 @@ mod tests {
     #[test]
     fn three_finger_swipe_left_emits_horizontal_negative_progress() {
         let r = Recorder::default();
-        let mut s = State::new(&r, test_accel());
+        let mut s = State::with_options(&r, test_accel(), swipe_options());
         // Three fingers move 10mm left across 3 frames (50mm pad,
         // 0.1 normalized = 5mm; 0.5 → 0.3 = 10mm). That's well past
         // SWIPE_AXIS_LOCK_MM (3mm) so the gesture locks Horizontal
@@ -2926,7 +3241,7 @@ mod tests {
     #[test]
     fn async_lift_after_swipe_does_not_fire_click() {
         let r = Recorder::default();
-        let mut s = State::new(&r, test_accel());
+        let mut s = State::with_options(&r, test_accel(), swipe_options());
         s.on_frame(frame(&[(1, 0.4, 0.5), (2, 0.5, 0.5), (3, 0.6, 0.5)]));
         s.on_frame(frame(&[(1, 0.4, 0.3), (2, 0.5, 0.3), (3, 0.6, 0.3)]));
         // Swipe Began should have fired by here — drain the log.
@@ -3936,6 +4251,17 @@ mod tests {
         }
     }
 
+    /// Three-finger drag turned off, which is what the
+    /// `[gestures.three_finger_drag] enable = "off"` config produces.
+    /// Three fingers then drive Dock/Spaces swipes, matching a stock
+    /// macOS install where Three-Finger Drag is an Accessibility opt-in.
+    fn swipe_options() -> GestureOptions {
+        GestureOptions {
+            three_finger_drag: false,
+            ..GestureOptions::default()
+        }
+    }
+
     fn drag_lock_options() -> GestureOptions {
         GestureOptions {
             three_finger_drag: true,
@@ -4127,11 +4453,11 @@ mod tests {
         );
     }
 
-    /// Regression guard for the default path: with `GestureOptions::default`
-    /// (three-finger-drag off) fresh three-finger gestures keep behaving
-    /// as Dock swipes — upstream HID users see zero behavior change.
+    /// Three-finger behavior is configurable and defaults to drag (the
+    /// user's chosen default for this build). These two tests pin both
+    /// halves of that contract so neither side can drift silently.
     #[test]
-    fn default_options_three_fingers_still_swipe() {
+    fn default_options_three_fingers_drag() {
         let r = Recorder::default();
         let mut s = State::new(&r, test_accel());
         let t0 = Timestamp::now();
@@ -4139,12 +4465,30 @@ mod tests {
         s.on_frame_at(frame(&[(1, 0.42, 0.38), (2, 0.52, 0.40), (3, 0.62, 0.42)]), at(t0, 12));
         let log = r.pop();
         assert!(
+            log.iter().any(|l| l == "set_left_button_held true"),
+            "default mode must engage three-finger drag: {log:?}",
+        );
+        assert!(
+            !log.iter().any(|l| l.starts_with("swipe ")),
+            "default mode must not also fire a swipe: {log:?}",
+        );
+    }
+
+    #[test]
+    fn three_fingers_swipe_when_drag_disabled() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), swipe_options());
+        let t0 = Timestamp::now();
+        s.on_frame_at(frame(&[(1, 0.42, 0.44), (2, 0.52, 0.46), (3, 0.62, 0.48)]), t0);
+        s.on_frame_at(frame(&[(1, 0.42, 0.38), (2, 0.52, 0.40), (3, 0.62, 0.42)]), at(t0, 12));
+        let log = r.pop();
+        assert!(
             log.iter().any(|l| l.contains("Vertical") && l.contains("Began")),
-            "default mode must keep 3f vertical swipe: {log:?}",
+            "with drag disabled, 3f must swipe: {log:?}",
         );
         assert!(
             !log.iter().any(|l| l.contains("set_left_button_held")),
-            "default mode must never hold the button on 3f: {log:?}",
+            "with drag disabled, 3f must never hold the button: {log:?}",
         );
     }
 
@@ -4164,18 +4508,28 @@ mod tests {
         let log = r.pop();
         assert!(log.contains(&"click Left".to_string()), "first tap must click: {log:?}");
 
-        // 2. Second tap lands 100ms later (t = 150ms) -> should hold button immediately
+        // 2. Second tap lands 100ms later. The press is deliberately
+        //    deferred: at this instant the gesture is still either a
+        //    drag or the second half of a double-click.
         s.on_frame_at(frame(&[(1, 10.0, 10.0)]), at(t0, 150));
         let log = r.pop();
         assert!(
-            log.contains(&"set_left_button_held true".to_string()),
-            "second tap down must hold left button: {log:?}"
+            !log.contains(&"set_left_button_held true".to_string()),
+            "landing frame must not commit to a drag yet: {log:?}"
         );
 
-        // 3. Move finger -> cursor moves
+        // 3. Finger moves — that resolves it as a drag, and the press
+        //    lands before any cursor motion is emitted so the grab
+        //    happens on the target the user aimed at.
         s.on_frame_at(frame(&[(1, 15.0, 10.0)]), at(t0, 180));
         s.on_frame_at(frame(&[(1, 20.0, 10.0)]), at(t0, 200));
-        let _ = r.pop();
+        let log = r.pop();
+        let press = log.iter().position(|l| l == "set_left_button_held true");
+        let first_move = log.iter().position(|l| l.starts_with("move "));
+        assert!(press.is_some(), "motion must engage the drag: {log:?}");
+        if let (Some(p), Some(m)) = (press, first_move) {
+            assert!(p < m, "press must precede cursor motion: {log:?}");
+        }
 
         // 4. Lift finger -> releases left button, no spurious extra click
         s.on_frame_at(frame(&[]), at(t0, 250));
@@ -4187,6 +4541,87 @@ mod tests {
         assert!(
             !log.contains(&"click Left".to_string()),
             "lift after tap-drag must not emit click: {log:?}"
+        );
+    }
+
+    /// The complaint that produced this test: a real double-click was
+    /// being eaten. The second tap of the pair was pressing the button
+    /// on its landing frame, so macOS saw `click` followed by an
+    /// unrelated press/release instead of two clicks in a row.
+    #[test]
+    fn quick_second_tap_completes_a_double_click_instead_of_dragging() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), GestureOptions::default());
+        let t0 = Timestamp::now();
+
+        s.on_frame_at(frame(&[(1, 10.0, 10.0)]), t0);
+        s.on_frame_at(frame(&[]), at(t0, 60));
+        // Second tap: down and back up in 48 ms without moving — the
+        // shape of a double-click, not of a drag.
+        s.on_frame_at(frame(&[(1, 10.0, 10.0)]), at(t0, 130));
+        s.on_frame_at(frame(&[]), at(t0, 178));
+
+        let log = r.pop();
+        assert_eq!(
+            log.iter().filter(|l| *l == "click Left").count(),
+            2,
+            "a tap pair must produce two clicks: {log:?}",
+        );
+        assert!(
+            !log.iter().any(|l| l.starts_with("set_left_button_held")),
+            "a double-click must never latch the button: {log:?}",
+        );
+    }
+
+    /// Holding the second tap still without moving is the other half of
+    /// the same decision: after `TAP_DRAG_CONFIRM` the user has clearly
+    /// not double-clicked, so the drag commits even with zero motion.
+    #[test]
+    fn held_second_tap_engages_drag_without_motion() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), GestureOptions::default());
+        let t0 = Timestamp::now();
+
+        s.on_frame_at(frame(&[(1, 10.0, 10.0)]), t0);
+        s.on_frame_at(frame(&[]), at(t0, 60));
+        s.on_frame_at(frame(&[(1, 10.0, 10.0)]), at(t0, 130));
+        let _ = r.pop();
+        // Same position, well past the confirm window.
+        s.on_frame_at(frame(&[(1, 10.0, 10.0)]), at(t0, 400));
+
+        let log = r.pop();
+        assert!(
+            log.contains(&"set_left_button_held true".to_string()),
+            "a held second tap must commit to a drag: {log:?}",
+        );
+    }
+
+    /// A link stall is not a lift. Synthesizing one produced `dur=0ms`
+    /// phantom taps that macOS coalesced into double-clicks.
+    #[test]
+    fn link_timeout_cancels_touch_without_clicking() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), GestureOptions::default());
+        let t0 = Timestamp::now();
+
+        s.on_frame_at(frame(&[(1, 10.0, 10.0)]), t0);
+        let _ = r.pop();
+        s.cancel_touch(at(t0, 250));
+
+        let log = r.pop();
+        assert!(
+            !log.iter().any(|l| l.starts_with("click")),
+            "a canceled touch must never click: {log:?}",
+        );
+
+        // And the cancel must not leave the engine believing a finger is
+        // still down: a genuine tap right afterwards still works.
+        s.on_frame_at(frame(&[(1, 30.0, 30.0)]), at(t0, 400));
+        s.on_frame_at(frame(&[]), at(t0, 450));
+        let log = r.pop();
+        assert!(
+            log.contains(&"click Left".to_string()),
+            "a real tap after a cancel must still click: {log:?}",
         );
     }
 
@@ -4217,12 +4652,16 @@ mod tests {
         let mut s = State::new(&r, test_accel());
         let t0 = Timestamp::now();
 
-        // 3 fingers touch down quietly
-        s.on_frame_at(frame(&[(1, 20.0, 20.0), (2, 35.0, 20.0), (3, 50.0, 20.0)]), t0);
-        s.on_frame_at(frame(&[(1, 20.1, 20.0), (2, 35.0, 20.1), (3, 50.0, 20.0)]), at(t0, 30));
+        // Fractions of the 50 mm test pad: fingers 7.5 mm apart, and the
+        // inter-frame drift is 0.1 mm — well inside DRAG_ENGAGE_MM, so
+        // the drag never engages and the gesture stays a tap. With
+        // three-finger drag on by default that distinction is the whole
+        // point: a stationary three-finger tap still looks a word up.
+        s.on_frame_at(frame(&[(1, 0.30, 0.40), (2, 0.50, 0.40), (3, 0.70, 0.40)]), t0);
+        s.on_frame_at(frame(&[(1, 0.302, 0.40), (2, 0.50, 0.402), (3, 0.70, 0.40)]), at(t0, 30));
 
         // Finger 1 lifts first (3 -> 2)
-        s.on_frame_at(frame(&[(2, 35.0, 20.1), (3, 50.0, 20.0)]), at(t0, 80));
+        s.on_frame_at(frame(&[(2, 0.50, 0.402), (3, 0.70, 0.40)]), at(t0, 80));
 
         // Remaining 2 fingers lift (2 -> 0)
         s.on_frame_at(frame(&[]), at(t0, 120));
@@ -4240,10 +4679,13 @@ mod tests {
         let mut s = State::new(&r, test_accel());
         let t0 = Timestamp::now();
 
-        // Single finger lands, but capacitive sensor splits it into 2 contacts only 4mm apart
-        s.on_frame_at(frame(&[(1, 20.0, 20.0), (2, 24.0, 20.0)]), t0);
+        // Coordinates are [0,1] fractions of the 50 mm test pad, so
+        // 0.08 apart is 4 mm — half of FAT_FINGER_SPLIT_MM. No hand can
+        // place two fingers that close; a capacitive panel splitting one
+        // contact into two blobs is the only way it happens.
+        s.on_frame_at(frame(&[(1, 0.40, 0.40), (2, 0.48, 0.40)]), t0);
         // Split resolves back to 1 contact after 30ms
-        s.on_frame_at(frame(&[(1, 20.0, 20.0)]), at(t0, 30));
+        s.on_frame_at(frame(&[(1, 0.40, 0.40)]), at(t0, 30));
         // Lifts after 80ms total
         s.on_frame_at(frame(&[]), at(t0, 80));
 
@@ -4294,7 +4736,7 @@ mod tests {
 
         let log = r.pop();
         assert!(
-            log.contains(&"set_drag_button_held true".to_string()),
+            log.contains(&"set_left_button_held true".to_string()),
             "3F drag must hold drag button: {log:?}"
         );
 
@@ -4304,13 +4746,23 @@ mod tests {
         s.on_frame_at(frame(&[(1, 10.0, 23.0), (2, 25.0, 23.0), (3, 40.0, 23.0), (4, 55.0, 23.0)]), at(t0, 90));
 
         let log2 = r.pop();
+        // The window being dragged has to travel with the cursor across
+        // the Space change, so the button stays held through the
+        // transition and is released when the pad finally empties.
         assert!(
-            log2.contains(&"set_drag_button_held false".to_string()),
-            "transitioning to 4F must release drag button: {log2:?}"
+            !log2.contains(&"set_left_button_held false".to_string()),
+            "4F transition must carry the held button, not drop it: {log2:?}"
         );
         assert!(
-            log2.iter().any(|l| l.starts_with("swipe_live ")),
-            "4F swipe must engage live spaces navigation: {log2:?}"
+            log2.iter().any(|l| l.starts_with("swipe ") && l.contains("Horizontal")),
+            "4F swipe must engage horizontal spaces navigation: {log2:?}"
+        );
+
+        s.on_frame_at(frame(&[]), at(t0, 130));
+        let log3 = r.pop();
+        assert!(
+            log3.contains(&"set_left_button_held false".to_string()),
+            "lifting after the carried swipe must release the button: {log3:?}"
         );
     }
 }

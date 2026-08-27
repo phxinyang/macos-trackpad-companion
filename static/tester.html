@@ -3,1119 +3,1443 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>macOS 触控板全功能交互诊断套件 (Trackpad Diagnostic Suite)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>触控板手势诊断</title>
   <style>
+    /* ══════════════════════════════════════════════════════════════
+       Tokens. Colour values are Apple's semantic system palette
+       (label / secondaryLabel / systemFill / separator), not
+       hand-picked greys. Body stays grayscale; the single accent is
+       reserved for state that the user is meant to read.
+       ══════════════════════════════════════════════════════════════ */
     :root {
-      --bg: #0d0e12;
-      --card-bg: rgba(28, 28, 32, 0.65);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --card-border-hover: rgba(255, 255, 255, 0.18);
-      --card-inner: rgba(20, 20, 24, 0.55);
-      --text: #f5f5f7;
-      --text-muted: #86868b;
-      --text-dim: #636366;
-      --apple-blue: #0a84ff;
-      --apple-purple: #bf5af2;
-      --apple-cyan: #64d2ff;
-      --apple-green: #30d158;
-      --apple-orange: #ff9f0a;
-      --apple-red: #ff453a;
-      --apple-yellow: #ffd60a;
-      --apple-indigo: #5e5ce6;
-      --shadow-subtle: 0 8px 32px rgba(0, 0, 0, 0.36);
-      --glow-blue: 0 0 20px rgba(10, 132, 255, 0.28);
+      color-scheme: light dark;
+
+      --bg: #f5f5f7;
+      --surface: #ffffff;
+      --well: #f2f2f7;
+      --hairline: rgba(0, 0, 0, 0.07);
+      --separator: rgba(60, 60, 67, 0.29);
+
+      --label: #1d1d1f;
+      --label-2: rgba(60, 60, 67, 0.60);
+      --label-3: rgba(60, 60, 67, 0.42);
+      --label-4: rgba(60, 60, 67, 0.24);
+
+      --fill: rgba(118, 118, 128, 0.12);
+      --fill-2: rgba(120, 120, 128, 0.16);
+
+      --accent: #0071e3;
+      --accent-wash: rgba(0, 113, 227, 0.10);
+      --trace: #0071e3;
+
+      /* Named radius tiers. Nothing in between gets invented. */
+      --r-chip: 6px;
+      --r-thumb: 12px;
+      --r-card: 18px;
+      --r-panel: 22px;
+      --r-pill: 999px;
+
+      /* Two layers: tight contact shadow plus soft spread. */
+      --sh-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+      --sh-lift: 0 1px 2px rgba(0, 0, 0, 0.05), 0 12px 32px rgba(0, 0, 0, 0.09);
+      --sh-float: 0 2px 8px rgba(0, 0, 0, 0.10);
+
+      --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+              "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", sans-serif;
+      --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      user-select: none;
-      -webkit-user-select: none;
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000000;
+        --surface: #1c1c1e;
+        --well: #2c2c2e;
+        --hairline: rgba(255, 255, 255, 0.10);
+        --separator: rgba(84, 84, 88, 0.65);
+
+        --label: #ffffff;
+        --label-2: rgba(235, 235, 245, 0.60);
+        --label-3: rgba(235, 235, 245, 0.40);
+        --label-4: rgba(235, 235, 245, 0.22);
+
+        --fill: rgba(118, 118, 128, 0.24);
+        --fill-2: rgba(120, 120, 128, 0.32);
+
+        --accent: #0a84ff;
+        --accent-wash: rgba(10, 132, 255, 0.16);
+        --trace: #0a84ff;
+
+        --sh-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+        --sh-lift: 0 8px 28px rgba(0, 0, 0, 0.55);
+        --sh-float: 0 2px 10px rgba(0, 0, 0, 0.5);
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html {
+      -webkit-text-size-adjust: 100%;
+      font-optical-sizing: auto;
     }
 
     body {
-      background: radial-gradient(circle at 50% -10%, #1c1d29 0%, #0d0e12 70%);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow-x: hidden;
+      background: var(--bg);
+      color: var(--label);
+      font-family: var(--font);
+      font-size: 14px;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: manipulation;
+      overscroll-behavior-y: none;
+      min-height: 100vh;
     }
 
-    /* Top Glass Navigation Bar */
-    header {
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+      border-radius: var(--r-chip);
+    }
+
+    /* ── Chrome. The one place glass belongs. ─────────────────────── */
+    .chrome {
       position: sticky;
       top: 0;
-      z-index: 100;
-      backdrop-filter: blur(28px) saturate(190%);
-      -webkit-backdrop-filter: blur(28px) saturate(190%);
-      background: rgba(13, 14, 18, 0.75);
-      border-bottom: 1px solid var(--card-border);
-      padding: 14px 28px;
+      z-index: 20;
+      padding: 13px 24px calc(13px + env(safe-area-inset-top, 0px));
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .brand-logo {
-      width: 32px;
-      height: 32px;
-      border-radius: 9px;
-      background: linear-gradient(135deg, var(--apple-cyan), var(--apple-indigo));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 17px;
-      font-weight: 800;
-      color: #fff;
-      box-shadow: 0 4px 16px rgba(100, 210, 255, 0.35);
-    }
-
-    .brand-title {
-      font-size: 17px;
-      font-weight: 600;
-      letter-spacing: -0.4px;
-    }
-
-    .telemetry-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .telemetry-pill {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--card-border);
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-family: "SF Mono", Menlo, monospace;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-    }
-
-    .telemetry-pill strong {
-      color: var(--text);
-      font-weight: 600;
-    }
-
-    .status-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--apple-green);
-      box-shadow: 0 0 8px var(--apple-green);
-      animation: pulse 2s infinite ease-in-out;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.6; transform: scale(0.9); }
-    }
-
-    /* Main Container */
-    main {
-      flex: 1;
-      max-width: 1440px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 24px 28px 48px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
       gap: 20px;
+      flex-wrap: wrap;
+      background: color-mix(in srgb, var(--bg) 72%, transparent);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid transparent;
+      transition-property: border-color, box-shadow;
+      transition-duration: 300ms;
     }
 
-    /* Apple-styled Glass Cards */
-    .card {
-      background: var(--card-bg);
-      backdrop-filter: blur(24px) saturate(180%);
-      -webkit-backdrop-filter: blur(24px) saturate(180%);
-      border: 1px solid var(--card-border);
-      border-radius: 18px;
-      padding: 20px;
+    /* Scroll edge, not a permanent divider. */
+    .chrome.scrolled {
+      border-bottom-color: var(--hairline);
+      box-shadow: 0 1px 12px rgba(0, 0, 0, 0.04);
+    }
+
+    .wordmark h1 {
+      font-size: 19px;
+      font-weight: 600;
+      letter-spacing: -0.014em;
+      line-height: 1.25;
+    }
+
+    .wordmark p {
+      font-size: 12.5px;
+      color: var(--label-2);
+      margin-top: 1px;
+    }
+
+    .gauges {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      flex-wrap: wrap;
+    }
+
+    .gauge dt {
+      font-size: 10.5px;
+      font-weight: 500;
+      color: var(--label-3);
+    }
+
+    .gauge dd {
+      font-family: var(--mono);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.01em;
+    }
+
+    .mode {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      height: 26px;
+      padding: 0 11px;
+      border-radius: var(--r-pill);
+      background: var(--fill);
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--label-2);
+      transition-property: background-color, color;
+      transition-duration: 180ms;
+    }
+
+    .mode[data-mode="pointer"] { background: var(--accent-wash); color: var(--accent); }
+    .mode[data-mode="gesture"] { background: var(--fill-2); color: var(--label); }
+
+    .mode i {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.6;
+    }
+
+    /* ── Grid. The pointer trace is the instrument you actually watch,
+       so it gets the width. A uniform card grid would say every test
+       matters equally, which is not true. ───────────────────────��── */
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 20px 24px 64px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    section.card {
+      background: var(--surface);
+      border-radius: var(--r-panel);
+      box-shadow: var(--sh-card);
+      padding: 14px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 11px;
+    }
+
+    /* Cards in a row share a height, and their readout rows share a
+       baseline. Letting each card size to its own content leaves a
+       ragged bottom edge that reads as sloppy rather than as hierarchy. */
+    .metrics { margin-top: auto; }
+
+    /* outer 22 = inner 8 + padding 14 */
+    .stage {
       position: relative;
-      overflow: hidden;
-      box-shadow: var(--shadow-subtle), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-      transition: border-color 0.25s ease, box-shadow 0.25s ease;
-    }
-
-    .card:hover {
-      border-color: var(--card-border-hover);
-    }
-
-    .card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .card-title {
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: -0.2px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .badge {
-      font-size: 11px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.4px;
-    }
-
-    .badge-blue { background: rgba(10, 132, 255, 0.15); color: var(--apple-blue); border: 1px solid rgba(10, 132, 255, 0.3); }
-    .badge-purple { background: rgba(191, 90, 242, 0.15); color: var(--apple-purple); border: 1px solid rgba(191, 90, 242, 0.3); }
-    .badge-cyan { background: rgba(100, 210, 255, 0.15); color: var(--apple-cyan); border: 1px solid rgba(100, 210, 255, 0.3); }
-    .badge-green { background: rgba(48, 209, 88, 0.15); color: var(--apple-green); border: 1px solid rgba(48, 209, 88, 0.3); }
-    .badge-orange { background: rgba(255, 159, 10, 0.15); color: var(--apple-orange); border: 1px solid rgba(255, 159, 10, 0.3); }
-
-    .card-desc {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.4;
-    }
-
-    /* macOS Window Dots */
-    .window-dots {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-    }
-    .window-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-    }
-    .dot-red { background: #ff5f56; border: 1px solid #e0443e; }
-    .dot-yellow { background: #ffbd2e; border: 1px solid #dea123; }
-    .dot-green { background: #27c93f; border: 1px solid #1aab29; }
-
-    /* Interactive Inner Stages */
-    .interactive-stage {
-      background: var(--card-inner);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 12px;
-      height: 170px;
-      position: relative;
+      height: 150px;
+      border-radius: 8px;
+      background: var(--well);
       overflow: hidden;
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3);
     }
 
-    /* --- Card 1: Cursor Acceleration Radar --- */
-    #cursorRadarCanvas {
-      width: 100%;
-      height: 100%;
+    /* The pointer trace is the one instrument you actually watch, and a
+       trace needs width more than it needs height. */
+    .card.primary { grid-column: 1 / -1; }
+    .card.primary .stage { height: 156px; }
+    .card.full { grid-column: 1 / -1; }
+
+    @media (max-width: 719px) {
+      .card.primary .stage { height: 150px; }
     }
 
-    /* --- Card 2: Click Test Targets --- */
+    .head {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .glyph {
+      flex: none;
+      width: 24px;
+      height: 24px;
+      border-radius: var(--r-chip);
+      background: var(--fill);
+      display: grid;
+      place-items: center;
+      color: var(--label-2);
+    }
+
+    .glyph svg { width: 14px; height: 14px; display: block; }
+
+    .head hgroup { flex: 1; min-width: 0; }
+
+    .head h2 {
+      font-size: 14.5px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .card.primary .head h2 { font-size: 17px; letter-spacing: -0.014em; }
+
+    .head p {
+      font-size: 12.5px;
+      color: var(--label-2);
+      margin-top: 2px;
+      text-wrap: pretty;
+    }
+
+    .fingers {
+      flex: none;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      color: var(--label-3);
+      padding-top: 3px;
+      white-space: nowrap;
+    }
+
+    .metrics {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12.5px;
+      color: var(--label-2);
+      min-height: 24px;
+      flex-wrap: wrap;
+    }
+
+    .metrics b {
+      font-family: var(--mono);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      color: var(--label);
+    }
+
+    .note {
+      font-size: 12px;
+      color: var(--label-3);
+      line-height: 1.5;
+      text-wrap: pretty;
+    }
+
+    .note code {
+      font-family: var(--mono);
+      font-size: 11px;
+      background: var(--fill);
+      border-radius: 4px;
+      padding: 1px 4px;
+    }
+
+    /* ── Controls. One shape, one press behaviour. ────────────────── */
+    button {
+      font: inherit;
+      font-size: 12.5px;
+      min-height: 24px;
+      padding: 0 12px;
+      border-radius: var(--r-pill);
+      border: 0;
+      background: var(--fill);
+      color: var(--label);
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+      position: relative;
+      transition-property: background-color, scale;
+      transition-duration: 150ms;
+      transition-timing-function: var(--ease-out-quart);
+    }
+
+    /* 40x40 hit area without changing the visible pill */
+    button::after {
+      content: "";
+      position: absolute;
+      inset: 50% 0 auto 0;
+      height: 40px;
+      transform: translateY(-50%);
+    }
+
+    @media (hover: hover) {
+      button:hover { background: var(--fill-2); }
+    }
+
+    button:active { scale: 0.96; }
+
+    /* ── Cursor trace ─────────────────────────────────────────────── */
+    #cursorRadarCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    /* Alignment targets sit against the bottom edge rather than floating
+       in the middle of the canvas: they are a ruler for the trace, not
+       the subject of the panel. */
+    .targets {
+      position: absolute;
+      left: 16px;
+      bottom: 12px;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      pointer-events: none;
+    }
+
+    .targets figcaption {
+      font-size: 11px;
+      color: var(--label-3);
+      margin-right: 2px;
+    }
+
+    .target-dot {
+      border-radius: 50%;
+      background: var(--label-4);
+    }
+
+    /* ── Tap counters ─────────────────────────────────────────────── */
     .click-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 10px;
+      gap: 1px;
       width: 100%;
       height: 100%;
-      padding: 10px;
+      background: var(--hairline);
     }
+
     .click-box {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 10px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-muted);
-      transition: all 0.12s ease;
-      cursor: pointer;
-    }
-    .click-box.active {
-      transform: scale(0.96);
-      background: rgba(10, 132, 255, 0.25);
-      border-color: var(--apple-blue);
-      color: #fff;
-      box-shadow: 0 0 16px rgba(10, 132, 255, 0.4);
-    }
-    .click-box.active-right {
-      background: rgba(191, 90, 242, 0.25);
-      border-color: var(--apple-purple);
-      color: #fff;
-      box-shadow: 0 0 16px rgba(191, 90, 242, 0.4);
-    }
-
-    /* --- Card 3: 3F / Tap Dragging Canvas --- */
-    .draggable-window {
-      position: absolute;
-      width: 140px;
-      height: 80px;
-      background: rgba(40, 40, 45, 0.9);
-      backdrop-filter: blur(16px);
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 10px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-      cursor: grab;
-      display: flex;
-      flex-direction: column;
-      top: 45px;
-      left: 30px;
-    }
-    .draggable-window:active {
-      cursor: grabbing;
-      box-shadow: 0 14px 40px rgba(10, 132, 255, 0.35);
-      border-color: var(--apple-blue);
-    }
-    .drag-titlebar {
-      height: 24px;
-      background: rgba(255, 255, 255, 0.06);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-      display: flex;
-      align-items: center;
-      padding: 0 8px;
-      gap: 6px;
-      font-size: 10px;
-      font-weight: 500;
-      color: var(--text-muted);
-    }
-    .drag-content {
-      flex: 1;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    /* --- Card 4: Smooth Scrolling --- */
-    .scroll-box {
-      width: 100%;
-      height: 100%;
-      overflow-y: scroll;
-      padding: 8px 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .scroll-item {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      color: var(--text-muted);
-    }
-    .scroll-item.active {
-      background: rgba(100, 210, 255, 0.1);
-      border-color: var(--apple-cyan);
-      color: #fff;
-    }
-
-    /* --- Card 5: Pinch & 360° Rotate Compass --- */
-    .rotate-compass-stage {
-      width: 100%;
-      height: 100%;
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    .compass-dial {
-      width: 130px;
-      height: 130px;
-      border-radius: 50%;
-      border: 2px dashed rgba(255, 255, 255, 0.15);
-      position: relative;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 30px rgba(0, 0, 0, 0.4);
-      transition: transform 0.05s ease-out;
-    }
-    .compass-card-box {
-      width: 84px;
-      height: 84px;
-      background: linear-gradient(135deg, rgba(100, 210, 255, 0.2), rgba(191, 90, 242, 0.2));
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 14px;
+      background: var(--well);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 2px;
-      font-size: 11px;
-      font-weight: 600;
-      color: #fff;
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-      pointer-events: none;
+      font-size: 12.5px;
+      color: var(--label-2);
+      transition-property: background-color, color;
+      transition-duration: 120ms;
     }
-    .compass-needle {
+
+    .click-box b {
+      font-family: var(--mono);
+      font-size: 21px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+      color: var(--label);
+    }
+
+    .click-box.active { background: var(--accent-wash); color: var(--accent); }
+    .click-box.active b { color: var(--accent); }
+
+    /* ── Drag window ──────────────────────────────────────────────── */
+    .window {
       position: absolute;
-      top: -6px;
-      width: 4px;
-      height: 12px;
-      background: var(--apple-cyan);
+      top: 38px;
+      left: 26px;
+      width: 136px;
+      border-radius: var(--r-thumb);
+      background: var(--surface);
+      box-shadow: var(--sh-float);
+      overflow: hidden;
+      cursor: grab;
+      transition-property: box-shadow;
+      transition-duration: 150ms;
+    }
+
+    .window.grabbed { cursor: grabbing; box-shadow: var(--sh-lift); }
+
+    .window-bar {
+      height: 22px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 9px;
+      border-bottom: 1px solid var(--hairline);
+      font-size: 10.5px;
+      color: var(--label-2);
+    }
+
+    .traffic { display: flex; gap: 4px; }
+    .traffic i { width: 8px; height: 8px; border-radius: 50%; background: var(--label-4); }
+
+    .window-body {
+      height: 50px;
+      display: grid;
+      place-items: center;
+      font-size: 11.5px;
+      color: var(--label-3);
+    }
+
+    /* ── Scroll list ──────────────────────────────────────────────── */
+    .scroll-list { width: 100%; height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 14px;
+      font-size: 12.5px;
+      color: var(--label-2);
+      border-bottom: 1px solid var(--hairline);
+    }
+
+    .row:last-child { border-bottom: 0; }
+    .row span:last-child { font-family: var(--mono); font-size: 11px; color: var(--label-4); }
+
+    /* ── Dial ─────────────────────────────────────────────────────── */
+    .dial {
+      width: 118px;
+      height: 118px;
+      border-radius: 50%;
+      border: 1px solid var(--separator);
+      position: relative;
+      display: grid;
+      place-items: center;
+      will-change: transform;
+    }
+
+    .dial::before {
+      content: "";
+      position: absolute;
+      top: -1px;
+      width: 3px;
+      height: 10px;
       border-radius: 2px;
-      box-shadow: 0 0 8px var(--apple-cyan);
+      background: var(--accent);
     }
 
-    /* --- Card 6: Smart Magnify --- */
-    .magnify-box {
-      width: 100%;
-      height: 100%;
+    .dial-face {
+      width: 74px;
+      height: 74px;
+      border-radius: var(--r-thumb);
+      background: var(--surface);
+      box-shadow: var(--sh-float);
+      display: grid;
+      place-items: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: var(--label-2);
+    }
+
+    /* ── Smart zoom ───────────────────────────────────────────────── */
+    .zoom-target {
       display: flex;
-      align-items: center;
-      justify-content: center;
       flex-direction: column;
-      gap: 8px;
-      cursor: pointer;
-      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-    }
-    .magnify-box.zoomed {
-      transform: scale(1.6);
-    }
-    .magnify-art {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, var(--apple-blue), var(--apple-cyan));
-      display: flex;
       align-items: center;
-      justify-content: center;
-      font-size: 22px;
-      box-shadow: var(--glow-blue);
+      gap: 9px;
+      transition-property: scale;
+      transition-duration: 380ms;
+      transition-timing-function: var(--ease-out-quart);
     }
 
-    /* --- Card 7: History Swipe Track --- */
-    .history-slider {
-      width: 100%;
-      height: 100%;
+    .zoom-target.zoomed { scale: 1.55; }
+
+    .zoom-plate {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--r-thumb);
+      background: var(--surface);
+      box-shadow: var(--sh-float);
+      display: grid;
+      place-items: center;
+      color: var(--label-2);
+    }
+
+    .zoom-plate svg { width: 19px; height: 19px; }
+
+    .hint { font-size: 11.5px; color: var(--label-3); text-align: center; padding: 0 16px; }
+
+    /* ── Page swipe ───────────────────────────────────────────────── */
+    .page-card {
+      width: 72%;
+      height: 74%;
+      border-radius: var(--r-thumb);
+      background: var(--surface);
+      box-shadow: var(--sh-float);
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 4px;
+      font-size: 12.5px;
+      transition-property: scale;
+      transition-duration: 220ms;
+      transition-timing-function: var(--ease-out-quart);
+    }
+
+    /* ── Spaces ───────────────────────────────────────────────────── */
+    .spaces { display: flex; gap: 8px; padding: 14px; width: 100%; height: 100%; }
+
+    .space {
+      flex: 1;
+      border-radius: var(--r-thumb);
+      background: var(--surface);
+      box-shadow: var(--sh-float);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 11.5px;
+      color: var(--label-3);
+      transition-property: color, box-shadow;
+      transition-duration: 180ms;
+    }
+
+    .space.active { color: var(--accent); background: var(--accent-wash); box-shadow: none; }
+    .space u { display: block; width: 22px; height: 14px; border: 1px solid currentColor; border-radius: 3px; opacity: 0.55; }
+
+    /* ── Lookup prose ─────────────────────────────────────────────── */
+    .prose {
+      padding: 15px 16px;
+      font-size: 13px;
+      line-height: 1.75;
+      color: var(--label);
+      -webkit-user-select: text;
+      user-select: text;
+      overflow-y: auto;
+      height: 100%;
+      align-self: stretch;
+      text-wrap: pretty;
+    }
+
+    .prose em { color: var(--accent); font-style: normal; font-weight: 500; }
+
+    /* ── Notification drawer ──────────────────────────────────────── */
+    .drawer {
+      position: absolute;
+      inset: 0 0 0 auto;
+      width: 128px;
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      background: color-mix(in srgb, var(--surface) 82%, transparent);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-left: 1px solid var(--hairline);
+      translate: 100% 0;
+      transition-property: translate;
+      transition-duration: 340ms;
+      transition-timing-function: var(--ease-out-quart);
+    }
+
+    .drawer.open { translate: 0 0; }
+    .drawer h3 { font-size: 11px; font-weight: 600; color: var(--label-2); }
+
+    .bubble {
+      border-radius: var(--r-chip);
+      background: var(--fill);
+      padding: 7px 9px;
+      font-size: 11px;
+      color: var(--label-2);
+    }
+
+    /* ── Event stream ─────────────────────────────────────────────── */
+    .log-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .log-head h2 { font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
+
+    .log-shell {
+      border-radius: 8px;
+      background: var(--well);
+      height: 148px;
+      overflow: hidden;
       position: relative;
     }
-    .history-page-card {
-      width: 80%;
-      height: 80%;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 12px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      font-size: 13px;
-      transition: transform 0.25s ease;
-    }
 
-    /* --- Card 8: Spaces Desktop Switcher --- */
-    .spaces-bar {
-      width: 100%;
+    #logStream {
       height: 100%;
-      display: flex;
-      gap: 8px;
-      padding: 12px;
-      align-items: center;
-      justify-content: center;
-    }
-    .space-thumb {
-      flex: 1;
-      height: 100%;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 10px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      font-size: 11px;
-      color: var(--text-muted);
-      transition: all 0.2s ease;
-    }
-    .space-thumb.active {
-      background: rgba(10, 132, 255, 0.15);
-      border-color: var(--apple-blue);
-      color: #fff;
-      box-shadow: 0 0 16px rgba(10, 132, 255, 0.3);
-    }
-
-    /* --- Card 9: Dictionary Text Lookup --- */
-    .dict-field {
-      width: 100%;
-      height: 100%;
-      padding: 16px;
-      font-size: 13px;
-      line-height: 1.6;
-      color: var(--text);
       overflow-y: auto;
-      user-select: text;
-      -webkit-user-select: text;
-    }
-    .dict-field::selection {
-      background: rgba(10, 132, 255, 0.35);
-    }
-
-    /* --- Card 10: Notification Center Drawer --- */
-    .noti-drawer {
-      position: absolute;
-      top: 0;
-      right: 0;
-      bottom: 0;
-      width: 120px;
-      background: rgba(30, 30, 35, 0.95);
-      backdrop-filter: blur(20px);
-      border-left: 1px solid var(--card-border-hover);
-      transform: translateX(100%);
-      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       display: flex;
       flex-direction: column;
-      padding: 12px 8px;
-      gap: 6px;
-    }
-    .noti-drawer.open {
-      transform: translateX(0);
-    }
-    .noti-bubble {
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 6px;
-      padding: 6px 8px;
-      font-size: 10px;
-      color: var(--text-muted);
+      padding: 4px 0;
     }
 
-    /* Event Log Stream Footer */
-    .event-log-container {
-      grid-column: 1 / -1;
-      background: rgba(18, 18, 22, 0.7);
-      backdrop-filter: blur(20px);
-      border: 1px solid var(--card-border);
-      border-radius: 16px;
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .log-stream {
-      height: 110px;
-      overflow-y: auto;
-      font-family: "SF Mono", Menlo, monospace;
-      font-size: 11px;
-      display: flex;
-      flex-direction: column-reverse;
-      gap: 4px;
-      color: var(--text-muted);
-    }
     .log-entry {
-      display: flex;
+      display: grid;
+      grid-template-columns: 96px 108px 1fr;
       gap: 12px;
-      align-items: center;
+      align-items: baseline;
+      padding: 5px 14px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+      color: var(--label-2);
     }
-    .log-time { color: var(--text-dim); }
-    .log-tag {
-      font-size: 9px;
-      padding: 1px 5px;
-      border-radius: 4px;
-      font-weight: 600;
+
+    .log-entry .t { color: var(--label-4); }
+    .log-entry .k { color: var(--label); }
+    .log-entry.accent .k { color: var(--accent); }
+
+    /* A quiet stream is a state, not a blank box. */
+    .log-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-size: 12.5px;
+      color: var(--label-3);
+      pointer-events: none;
+    }
+
+    .log-shell.has-entries .log-empty { display: none; }
+
+    @media (max-width: 719px) {
+      .chrome { padding: 11px 16px; }
+      main { padding: 16px 16px 48px; grid-template-columns: 1fr; }
+      .gauges { gap: 14px; }
+      .log-entry { grid-template-columns: 80px 96px 1fr; gap: 8px; padding: 5px 12px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        transition-duration: 1ms !important;
+        animation-duration: 1ms !important;
+      }
     }
   </style>
 </head>
 
 <body>
-  <!-- Header -->
-  <header>
-    <div class="brand">
-      <div class="brand-logo"></div>
-      <div>
-        <div class="brand-title">macOS 触控板交互诊断套件</div>
-        <div style="font-size: 11px; color: var(--text-muted);">Antigravity Native Precision Testbed</div>
-      </div>
+  <header class="chrome" id="chrome">
+    <div class="wordmark">
+      <h1>触控板手势诊断</h1>
+      <p>逐项验证 companion-net 派发的原生事件</p>
     </div>
-    <div class="telemetry-row">
-      <div class="telemetry-pill">
-        <span class="status-dot"></span>
-        <span>状态: <strong>Live Ingesting</strong></span>
-      </div>
-      <div class="telemetry-pill">
-        <span>采样率: <strong id="hzVal">120 Hz</strong></span>
-      </div>
-      <div class="telemetry-pill">
-        <span>光标坐标: <strong id="cursorPos">(0, 0)</strong></span>
-      </div>
+    <div class="gauges">
+      <span class="mode" id="modeChip" data-mode="idle"><i></i><span id="modeText">等待输入</span></span>
+      <dl class="gauge"><dt>事件速率</dt><dd id="hzVal">0 Hz</dd></dl>
+      <dl class="gauge"><dt>光标</dt><dd id="cursorPos">0, 0</dd></dl>
     </div>
   </header>
 
-  <!-- Main Cards -->
   <main>
-    <!-- 1: Cursor Motion & Velocity -->
-    <div class="card" id="card-cursor">
-      <div class="card-header">
-        <div class="card-title">① 单指精准位移与动态加速度</div>
-        <span class="badge badge-blue">1F Move</span>
+    <!-- 光标：主仪表 -->
+    <section class="card primary">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3.5 2.2 12 8.1l-3.6.6-1.3 3.5z" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>光标位移与加速曲线</h2>
+          <p>慢速滑动看是否吞步，快速甩动看加速是否连续。轨迹粗细跟随速度，加速不连续会显示成一段珠状凸起。</p>
+        </hgroup>
+        <span class="fingers">1 指</span>
       </div>
-      <div class="card-desc">单指滑动。测试曲线加速、次像素累加及微位移动态响应。</div>
-      <div class="interactive-stage" id="radarStage">
+      <div class="stage" id="radarStage">
         <canvas id="cursorRadarCanvas"></canvas>
+        <div class="targets">
+          <figcaption>微操靶点</figcaption>
+          <div class="target-dot" style="width:4px;height:4px"></div>
+          <div class="target-dot" style="width:8px;height:8px"></div>
+          <div class="target-dot" style="width:14px;height:14px"></div>
+          <div class="target-dot" style="width:22px;height:22px"></div>
+        </div>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>瞬时速度: <strong id="speedVal" style="color:var(--apple-cyan)">0.0 mm/s</strong></span>
-        <span>最大速度: <strong id="maxSpeedVal" style="color:var(--apple-blue)">0.0 mm/s</strong></span>
+      <div class="metrics">
+        <span>瞬时 <b id="speedVal">0</b> mm/s</span>
+        <span>峰值 <b id="maxSpeedVal">0</b> mm/s</span>
+        <button id="btnClearTrace">清除轨迹</button>
       </div>
-    </div>
+    </section>
 
-    <!-- 2: Clicks & Secondary Tap -->
-    <div class="card" id="card-click">
-      <div class="card-header">
-        <div class="card-title">② 单指/双指轻点按键响应</div>
-        <span class="badge badge-purple">Click Engine</span>
+    <!-- 轻点 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+            <circle cx="8" cy="8" r="2.2" />
+            <path d="M8 2.4v1.6M8 12v1.6M2.4 8h1.6M12 8h1.6" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>轻点与右键</h2>
+          <p>双指轻点应只计右键，不应带出左键。</p>
+        </hgroup>
+        <span class="fingers">1–2 指</span>
       </div>
-      <div class="card-desc">单指轻点触发左键，双指并拢轻点触发右键上下文菜单。</div>
-      <div class="interactive-stage">
+      <div class="stage">
         <div class="click-grid">
-          <div class="click-box" id="boxLeft">
-            <span style="font-size:18px;">🖱️</span>
-            <span>单指轻点 (左键)</span>
-            <span id="cntLeft" style="font-size:10px; opacity:0.8;">0 次</span>
-          </div>
-          <div class="click-box" id="boxRight">
-            <span style="font-size:18px;">📋</span>
-            <span>双指轻点 (右键)</span>
-            <span id="cntRight" style="font-size:10px; opacity:0.8;">0 次</span>
-          </div>
+          <div class="click-box" id="boxLeft"><b id="cntLeft">0</b><span>左键</span></div>
+          <div class="click-box" id="boxRight"><b id="cntRight">0</b><span>右键</span></div>
         </div>
       </div>
-      <div style="font-size:11px; color:var(--text-muted); text-align:center;">
-        支持双击防抖与毫秒级时序链
+      <div class="metrics">
+        <span>间隔 <b id="clickGap">—</b></span>
+        <span>连击 <b id="clickRun">1</b></span>
+        <button id="btnResetClicks">归零</button>
       </div>
-    </div>
+    </section>
 
-    <!-- 3: 3-Finger Drag / Tap-Drag -->
-    <div class="card" id="card-drag">
-      <div class="card-header">
-        <div class="card-title">③ 三指拖移与单指轻点拖拽</div>
-        <span class="badge badge-green">Drag Lock</span>
+    <!-- 拖移 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.4" y="3.4" width="11.2" height="9.2" rx="1.6" />
+            <path d="M2.4 6.2h11.2" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>三指拖移与轻点拖移</h2>
+          <p>按下时长短于 200ms 说明被判成了双击而不是拖移。</p>
+        </hgroup>
+        <span class="fingers">1 / 3 指</span>
       </div>
-      <div class="card-desc">三指或单指轻点两下拖动物体。支持拖拽锁定与停顿换气。</div>
-      <div class="interactive-stage" id="dragStage">
-        <div class="draggable-window" id="dragWindow">
-          <div class="drag-titlebar">
-            <div class="window-dots">
-              <div class="window-dot dot-red"></div>
-              <div class="window-dot dot-yellow"></div>
-              <div class="window-dot dot-green"></div>
-            </div>
-            <span>Finder.app</span>
+      <div class="stage" id="dragStage">
+        <div class="window" id="dragWindow">
+          <div class="window-bar">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <span>访达</span>
           </div>
-          <div class="drag-content" id="dragStatus">
-            拖动我
+          <div class="window-body" id="dragStatus">拖动此窗口</div>
+        </div>
+      </div>
+      <div class="metrics">
+        <span>状态 <b id="dragActiveStatus">空闲</b></span>
+        <span>位移 <b id="dragDistance">0</b> px</span>
+        <span>按下 <b id="dragHold">0</b> ms</span>
+      </div>
+    </section>
+
+    <!-- 滚动 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 2.6v10.8M5 5.6 8 2.6l3 3M5 10.4l3 3 3-3" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>平滑滚动与惯性</h2>
+          <p>抬手后应有一段自然衰减，而不是立刻停住。</p>
+        </hgroup>
+        <span class="fingers">2 指</span>
+      </div>
+      <div class="stage">
+        <div class="scroll-list" id="scrollBox">
+          <div class="row"><span>逐像素滚动流</span><span>01</span></div>
+          <div class="row"><span>Q16.16 定点位移</span><span>02</span></div>
+          <div class="row"><span>抬手惯性衰减</span><span>03</span></div>
+          <div class="row"><span>边界橡皮筋回弹</span><span>04</span></div>
+          <div class="row"><span>滚动中落指制动</span><span>05</span></div>
+          <div class="row"><span>WebKit 与 AppKit 一致性</span><span>06</span></div>
+          <div class="row"><span>反向自然滚动</span><span>07</span></div>
+          <div class="row"><span>横向滚动分量</span><span>08</span></div>
+        </div>
+      </div>
+      <div class="metrics">
+        <span>ΔY <b id="scrollDy">0</b></span>
+        <span>相位 <b id="scrollPhase">静止</b></span>
+        <span>时长 <b id="scrollTail">—</b></span>
+      </div>
+    </section>
+
+    <!-- 缩放旋转 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 8a5 5 0 1 1-1.6-3.7" />
+            <path d="M13.2 2.6v2.6h-2.6" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>缩放与旋转</h2>
+          <p>旋转量应是角度而不是弧度，差 57.3 倍时看起来像没反应。</p>
+        </hgroup>
+        <span class="fingers">2 指</span>
+      </div>
+      <div class="stage" id="rotateStage">
+        <div class="dial" id="compassDial">
+          <div class="dial-face" id="compassBox"><span id="compassMetrics">0° · 1.00×</span></div>
+        </div>
+      </div>
+      <div class="metrics">
+        <span>角度 <b id="rotDegreeVal">0.0°</b></span>
+        <span>倍率 <b id="pinchScaleVal">1.00×</b></span>
+        <button id="btnResetRotate">重置</button>
+      </div>
+      <p class="note" id="rotateNote">只有 Safari 会派发原生 gesture 事件，旋转在 Chrome 与 Firefox 里无法观测，改用「预览」验证。</p>
+    </section>
+
+    <!-- 智能缩放 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="7" cy="7" r="4.3" />
+            <path d="M10.2 10.2 13.6 13.6M5.2 7h3.6M7 5.2v3.6" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>智能缩放</h2>
+          <p>单指双击不应触发这里。来源一栏会指出实际是哪种。</p>
+        </hgroup>
+        <span class="fingers">2 指</span>
+      </div>
+      <div class="stage" id="smartZoomStage">
+        <div class="zoom-target" id="smartZoomBox">
+          <div class="zoom-plate">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="7" cy="7" r="4.3" /><path d="M10.2 10.2 13.6 13.6" />
+            </svg>
           </div>
+          <span class="hint">双指轻点两次对焦</span>
         </div>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>拖拽状态: <strong id="dragActiveStatus" style="color:var(--apple-green)">空闲</strong></span>
-        <span>位移: <strong id="dragDistance">0 px</strong></span>
+      <div class="metrics">
+        <span>倍率 <b id="zoomScaleText">1.00×</b></span>
+        <span>来源 <b id="zoomSource">—</b></span>
       </div>
-    </div>
+    </section>
 
-    <!-- 4: Smooth Pixel Scroll -->
-    <div class="card" id="card-scroll">
-      <div class="card-header">
-        <div class="card-title">④ 双指次像素平滑滚动与惯性</div>
-        <span class="badge badge-cyan">Smooth Scroll</span>
+    <!-- 翻页 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9.6 3.4 5 8l4.6 4.6" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>双指横扫翻页</h2>
+          <p>横向分量需明显压过纵向，斜向滑动只应滚动。</p>
+        </hgroup>
+        <span class="fingers">2 指</span>
       </div>
-      <div class="card-desc">双指滑动。自然滚动、橡胶圈阻尼与 RunLoop 物理惯性飞轮。</div>
-      <div class="interactive-stage">
-        <div class="scroll-box" id="scrollBox">
-          <div class="scroll-item active">01. macOS Sonoma 原生滚轮流</div>
-          <div class="scroll-item">02. 高精度 Q16.16 浮点位移派发</div>
-          <div class="scroll-item">03. 惯性衰减曲线模拟 (Inertia Phase)</div>
-          <div class="scroll-item">04. 极速滑动橡胶圈回弹测试</div>
-          <div class="scroll-item">05. 滚动中随时落指物理制动拦截</div>
-          <div class="scroll-item">06. 跨应用 WebKit & AppKit 无缝穿透</div>
+      <div class="stage" id="navStage">
+        <div class="page-card" id="navCard">
+          <span id="navCardTitle">第 2 页</span>
+          <span class="hint">双指向左或向右滑动</span>
         </div>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>Delta Y: <strong id="scrollDy" style="color:var(--apple-cyan)">0 px</strong></span>
-        <span>相位: <strong id="scrollPhase">Idle</strong></span>
+      <div class="metrics">
+        <span>位置 <b id="navPosText">2 / 3</b></span>
+        <span>ΔX 峰值 <b id="navPeak">0</b></span>
       </div>
-    </div>
+    </section>
 
-    <!-- 5: Pinch & 360° Rotate -->
-    <div class="card" id="card-rotate">
-      <div class="card-header">
-        <div class="card-title">⑤ 双指缩放与 360° 连续无极旋转</div>
-        <span class="badge badge-orange">Rotate & Pinch</span>
+    <!-- 桌面 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">
+            <rect x="1.8" y="4.4" width="5" height="7.2" rx="1.2" />
+            <rect x="9.2" y="4.4" width="5" height="7.2" rx="1.2" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>切换桌面与调度中心</h2>
+          <p>系统级动作，网页只能观测副作用。</p>
+        </hgroup>
+        <span class="fingers">3–4 指</span>
       </div>
-      <div class="card-desc">两指捏合缩放或以圆心旋转。全面支持 WebKit 手势与坐标绑定。</div>
-      <div class="interactive-stage" id="rotateStage">
-        <div class="rotate-compass-stage">
-          <div class="compass-dial" id="compassDial">
-            <div class="compass-needle"></div>
-            <div class="compass-card-box" id="compassBox">
-              <span>CANVAS</span>
-              <span id="compassMetrics" style="font-size:10px; color:var(--apple-cyan)">0° | 1.0×</span>
-            </div>
-          </div>
+      <div class="stage" id="spacesStage">
+        <div class="spaces">
+          <div class="space" id="space1"><u></u><span>桌面 1</span></div>
+          <div class="space active" id="space2"><u></u><span>桌面 2</span></div>
+          <div class="space" id="space3"><u></u><span>桌面 3</span></div>
         </div>
       </div>
-      <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>旋转角: <strong id="rotDegreeVal" style="color:var(--apple-orange)">0.0°</strong></span>
-        <span>缩放: <strong id="pinchScaleVal" style="color:var(--apple-cyan)">1.00×</strong></span>
-        <button id="btnResetRotate" style="background:rgba(255,255,255,0.08); border:1px solid var(--card-border); color:var(--text); padding:3px 10px; border-radius:6px; font-size:11px; cursor:pointer;">重置</button>
+      <div class="metrics">
+        <span>页面可见性 <b id="spaceCurrentText">可见</b></span>
+        <span>离屏次数 <b id="spaceLeaveCount">0</b></span>
       </div>
-    </div>
+      <p class="note">桌面编号读不到，上面统计的是离屏事件，缩略图仅示意。</p>
+    </section>
 
-    <!-- 6: Smart Magnify -->
-    <div class="card" id="card-smart-magnify">
-      <div class="card-header">
-        <div class="card-title">⑥ 双指双击智能缩放对焦</div>
-        <span class="badge badge-blue">Smart Zoom</span>
+    <!-- 查词 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3.4h4.2a2 2 0 0 1 2 2v7.2a1.6 1.6 0 0 0-1.6-1.6H3z" />
+            <path d="M13 3.4H8.8a2 2 0 0 0-2 2v7.2a1.6 1.6 0 0 1 1.6-1.6H13z" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>三指轻点查词</h2>
+          <p>三指并拢轻点单词，系统应弹出释义浮层。</p>
+        </hgroup>
+        <span class="fingers">3 指</span>
       </div>
-      <div class="card-desc">双指快速点按两次。触发 macOS 系统级靶向局部快速对焦。</div>
-      <div class="interactive-stage" id="smartZoomStage">
-        <div class="magnify-box" id="smartZoomBox">
-          <div class="magnify-art">🔍</div>
-          <span style="font-size:12px; color:var(--text-muted);">双指轻点两次对焦</span>
+      <div class="stage">
+        <div class="prose">
+          Apple 触控板的核心是连续多点采样、次像素惯性物理，以及把旋转当刚体角度处理。试着三指轻点
+          <em>Architecture</em>、<em>Fluidity</em> 或 <em>Trackpad</em> 这几个词。
         </div>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>倍率: <strong id="zoomScaleText" style="color:var(--apple-blue)">1.00× (标准)</strong></span>
+      <div class="metrics">
+        <span>状态 <b id="dictStatus">等待三指轻点</b></span>
+        <span>选中 <b id="dictSelection">—</b></span>
       </div>
-    </div>
+      <p class="note">浮层观测不到，这里检测的是等效快捷键 <code>⌃⌘D</code> 与选中状态。</p>
+    </section>
 
-    <!-- 7: 2-Finger Navigation Swipe -->
-    <div class="card" id="card-nav">
-      <div class="card-header">
-        <div class="card-title">⑦ 双指横扫前进 / 后退翻页</div>
-        <span class="badge badge-purple">Page Swipe</span>
-      </div>
-      <div class="card-desc">在 Safari 或访达中双指横向滑动，流畅穿梭于前后历史页面。</div>
-      <div class="interactive-stage" id="navStage">
-        <div class="history-slider">
-          <div class="history-page-card" id="navCard">
-            <span style="font-size:20px;">📄</span>
-            <span id="navCardTitle">Page 2 (当前页面)</span>
-            <span style="font-size:10px; color:var(--text-muted);">双指向左/向右滑动翻页</span>
-          </div>
+    <!-- 边缘 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.2" y="3" width="11.6" height="10" rx="1.6" />
+            <path d="M10.4 3v10" />
+          </svg>
         </div>
+        <hgroup>
+          <h2>右边缘滑入通知中心</h2>
+          <p>手势必须从右缘发起，单指移动不触发。</p>
+        </hgroup>
+        <span class="fingers">2 指</span>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>当前位置: <strong id="navPosText" style="color:var(--apple-purple)">Page 2 / 3</strong></span>
+      <div class="stage" id="edgeStage">
+        <span class="hint">从右边缘向左滑入</span>
+        <aside class="drawer" id="notiDrawer">
+          <h3>通知中心</h3>
+          <div class="bubble">日历 · 14:00 评审</div>
+          <div class="bubble">天气 · 晴 24°C</div>
+        </aside>
       </div>
-    </div>
+      <div class="metrics">
+        <span>抽屉 <b id="edgeStatus">收起</b></span>
+        <span>起始位置 <b id="edgeOrigin">—</b></span>
+      </div>
+    </section>
 
-    <!-- 8: 4-Finger Spaces Switcher -->
-    <div class="card" id="card-spaces">
-      <div class="card-header">
-        <div class="card-title">⑧ 四指桌面切换 (Spaces) 与调度中心</div>
-        <span class="badge badge-green">Spaces & Mission</span>
+    <!-- 事件流 -->
+    <section class="card full">
+      <div class="log-head">
+        <h2>事件流</h2>
+        <button id="btnClearLogs">清空</button>
       </div>
-      <div class="card-desc">四指左右滑动切换全屏桌面；四指上推打开 Mission Control 调度中心。</div>
-      <div class="interactive-stage" id="spacesStage">
-        <div class="spaces-bar">
-          <div class="space-thumb" id="space1">
-            <span>💻</span>
-            <span>Desktop 1</span>
-          </div>
-          <div class="space-thumb active" id="space2">
-            <span>🚀</span>
-            <span>Desktop 2</span>
-          </div>
-          <div class="space-thumb" id="space3">
-            <span>🎨</span>
-            <span>Desktop 3</span>
-          </div>
-        </div>
+      <div class="log-shell" id="logShell">
+        <div id="logStream"></div>
+        <div class="log-empty" id="logEmpty">尚无事件，在上面任意区域操作即可</div>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>当前桌面: <strong id="spaceCurrentText" style="color:var(--apple-green)">Space 2</strong></span>
-      </div>
-    </div>
-
-    <!-- 9: 3-Finger Dictionary Lookup -->
-    <div class="card" id="card-dict">
-      <div class="card-header">
-        <div class="card-title">⑨ 三指轻点查词 (Cmd+Ctrl+D)</div>
-        <span class="badge badge-cyan">Look Up</span>
-      </div>
-      <div class="card-desc">三指并拢轻点文本。系统自动识别词汇并弹出词典/维基百科释义。</div>
-      <div class="interactive-stage">
-        <div class="dict-field">
-          <strong>Apple Trackpad</strong> features continuous multitouch precision, sub-pixel inertial physics, and native rigid-body rotational gestures. Try 3-finger tapping on words like <em>MacBook</em>, <em>Architecture</em>, or <em>Fluidity</em>!
-        </div>
-      </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>查词捕获: <strong id="dictStatus" style="color:var(--apple-cyan)">等待三指轻点...</strong></span>
-      </div>
-    </div>
-
-    <!-- 10: Right-Edge 2-Finger Notification Drawer -->
-    <div class="card" id="card-edge">
-      <div class="card-header">
-        <div class="card-title">⑩ 触控板右边缘滑入通知中心</div>
-        <span class="badge badge-orange">Edge In</span>
-      </div>
-      <div class="card-desc">两指从触控板最右侧边缘向内滑入，滑出 macOS 通知中心小组件。</div>
-      <div class="interactive-stage" id="edgeStage">
-        <div style="font-size:12px; color:var(--text-muted); text-align:center;">
-          从右边缘向左滑入
-        </div>
-        <div class="noti-drawer" id="notiDrawer">
-          <div style="font-size:10px; font-weight:600; color:var(--text);">通知中心</div>
-          <div class="noti-bubble">📅 日历: 会议 14:00</div>
-          <div class="noti-bubble">⛅️ 晴朗 24°C</div>
-        </div>
-      </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>抽屉状态: <strong id="edgeStatus" style="color:var(--apple-orange)">收起</strong></span>
-      </div>
-    </div>
-
-    <!-- Event Log Stream -->
-    <div class="event-log-container">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <div style="font-size:13px; font-weight:600; color:var(--text);">实时手势事件日志流 (Live Event Stream)</div>
-        <button id="btnClearLogs" style="background:rgba(255,255,255,0.06); border:1px solid var(--card-border); color:var(--text-muted); padding:3px 10px; border-radius:6px; font-size:11px; cursor:pointer;">清空日志</button>
-      </div>
-      <div class="log-stream" id="logStream">
-        <div class="log-entry">
-          <span class="log-time">[00:00:00]</span>
-          <span class="log-tag badge-blue">INIT</span>
-          <span>手势诊断环境已就绪，等待输入...</span>
-        </div>
-      </div>
-    </div>
+      <p class="note">时间戳来自浏览器接收时刻。引擎侧的判定过程见 <code>~/Library/Logs/macos-trackpad-companion.log</code>。</p>
+    </section>
   </main>
 
-  <!-- Interactive Script -->
   <script>
-    // --- Logging Utility ---
-    const logStream = document.getElementById('logStream');
-    function logEvent(tag, message, colorClass = 'badge-blue') {
-      const now = new Date();
-      const timeStr = `[${now.toTimeString().split(' ')[0]}.${String(now.getMilliseconds()).padStart(3, '0')}]`;
-      const div = document.createElement('div');
-      div.className = 'log-entry';
-      div.innerHTML = `<span class="log-time">${timeStr}</span><span class="log-tag ${colorClass}">${tag}</span><span>${message}</span>`;
-      logStream.prepend(div);
-      if (logStream.children.length > 40) {
-        logStream.removeChild(logStream.lastChild);
-      }
-    }
-    document.getElementById('btnClearLogs').onclick = () => {
-      logStream.innerHTML = '';
-      logEvent('CLEARED', '日志已清空', 'badge-cyan');
-    };
+    'use strict';
 
-    // --- 1. Cursor Radar & Velocity ---
+    /* ---------------------------------------------------------------
+       Log
+       --------------------------------------------------------------- */
+    const logStream = document.getElementById('logStream');
+    const MAX_LOG = 60;
+
+    function logEvent(kind, detail, accent) {
+      const d = new Date();
+      const stamp = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:` +
+                    `${String(d.getSeconds()).padStart(2, '0')}.${String(d.getMilliseconds()).padStart(3, '0')}`;
+      const row = document.createElement('div');
+      row.className = accent ? 'log-entry accent' : 'log-entry';
+      row.innerHTML = '<span class="t"></span><span class="k"></span><span class="v"></span>';
+      row.children[0].textContent = stamp;
+      row.children[1].textContent = kind;
+      row.children[2].textContent = detail;
+      logStream.prepend(row);
+      while (logStream.children.length > MAX_LOG) logStream.removeChild(logStream.lastChild);
+    }
+
+    document.getElementById('btnClearLogs').onclick = () => { logStream.textContent = ''; };
+    logEvent('ready', '诊断页已就绪');
+
+    /* ---------------------------------------------------------------
+       Input-mode chip + event rate.
+       A browser cannot count fingers. What it CAN do is tell pointer
+       events (1F cursor) apart from wheel/gesture events (2F+), which
+       is exactly the confusion this page has to avoid.
+       --------------------------------------------------------------- */
+    const modeChip = document.getElementById('modeChip');
+    const modeText = document.getElementById('modeText');
+    const hzVal = document.getElementById('hzVal');
+    let modeTimer = null;
+    let tickCount = 0;
+
+    function setMode(mode, label) {
+      modeChip.dataset.mode = mode;
+      modeText.textContent = label;
+      clearTimeout(modeTimer);
+      modeTimer = setTimeout(() => {
+        modeChip.dataset.mode = 'idle';
+        modeText.textContent = '等待输入';
+      }, 700);
+    }
+
+    setInterval(() => { hzVal.textContent = `${tickCount} Hz`; tickCount = 0; }, 1000);
+
+    /* ---------------------------------------------------------------
+       ① Cursor trace + velocity
+       --------------------------------------------------------------- */
     const canvas = document.getElementById('cursorRadarCanvas');
     const ctx = canvas.getContext('2d');
-    let lastX = 0, lastY = 0, lastT = performance.now();
-    let maxSpeed = 0;
+    const PX_PER_MM = 3.7795; // CSS reference pixel
+    let lastX = null, lastY = null, lastT = 0, maxSpeed = 0;
+
     function resizeCanvas() {
-      canvas.width = canvas.parentElement.clientWidth;
-      canvas.height = canvas.parentElement.clientHeight;
+      const r = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(r.width * dpr);
+      canvas.height = Math.round(r.height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
     }
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
+    function traceColor() {
+      return getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#0071e3';
+    }
+
+    document.getElementById('btnClearTrace').onclick = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      maxSpeed = 0;
+      document.getElementById('maxSpeedVal').textContent = '0';
+    };
+
     window.addEventListener('pointermove', (e) => {
-      const now = performance.now();
-      const dt = Math.max(1, now - lastT);
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
-      const distPx = Math.hypot(dx, dy);
-      const speedMmPerSec = (distPx * 0.264583) / (dt / 1000); // approx 96dpi
-      if (speedMmPerSec > maxSpeed && speedMmPerSec < 4000) {
-        maxSpeed = speedMmPerSec;
-        document.getElementById('maxSpeedVal').textContent = `${maxSpeed.toFixed(1)} mm/s`;
+      tickCount++;
+      const now = e.timeStamp || performance.now();
+      document.getElementById('cursorPos').textContent = `${Math.round(e.clientX)}, ${Math.round(e.clientY)}`;
+      setMode('pointer', '单指光标');
+
+      if (lastX !== null) {
+        const dt = now - lastT;
+        const dist = Math.hypot(e.clientX - lastX, e.clientY - lastY);
+        if (dt > 0) {
+          const speed = (dist / PX_PER_MM) / (dt / 1000);
+          document.getElementById('speedVal').textContent = speed.toFixed(0);
+          if (speed > maxSpeed && speed < 6000) {
+            maxSpeed = speed;
+            document.getElementById('maxSpeedVal').textContent = speed.toFixed(0);
+          }
+          // Draw the segment inside the stage; thickness tracks speed so
+          // discontinuous acceleration shows up as a visible bead.
+          const rect = canvas.getBoundingClientRect();
+          const ax = lastX - rect.left, ay = lastY - rect.top;
+          const bx = e.clientX - rect.left, by = e.clientY - rect.top;
+          const inside = (x, y) => x >= 0 && y >= 0 && x <= rect.width && y <= rect.height;
+          if (inside(ax, ay) && inside(bx, by)) {
+            ctx.globalAlpha = 0.9;
+            ctx.strokeStyle = traceColor();
+            ctx.lineWidth = Math.min(6, 0.8 + speed / 90);
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(bx, by);
+            ctx.stroke();
+          }
+        }
       }
-      document.getElementById('speedVal').textContent = `${speedMmPerSec.toFixed(1)} mm/s`;
-      document.getElementById('cursorPos').textContent = `(${e.clientX}, ${e.clientY})`;
+      lastX = e.clientX; lastY = e.clientY; lastT = now;
+    }, { passive: true });
 
-      // Draw particle trail
-      ctx.fillStyle = 'rgba(20, 20, 24, 0.2)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      const rect = canvas.getBoundingClientRect();
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
-      if (cx >= 0 && cx <= canvas.width && cy >= 0 && cy <= canvas.height) {
-        ctx.beginPath();
-        ctx.arc(cx, cy, Math.min(14, 4 + speedMmPerSec * 0.02), 0, Math.PI * 2);
-        ctx.fillStyle = '#64d2ff';
-        ctx.shadowColor = '#0a84ff';
-        ctx.shadowBlur = 10;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-
-      lastX = e.clientX;
-      lastY = e.clientY;
-      lastT = now;
-    });
-
-    // --- 2. Clicks (Left / Right / Double) ---
-    let leftCount = 0, rightCount = 0;
+    /* ---------------------------------------------------------------
+       ② Taps. Click / contextmenu only — never pointermove.
+       --------------------------------------------------------------- */
+    let leftCount = 0, rightCount = 0, lastClickAt = 0, clickRun = 0;
     const boxLeft = document.getElementById('boxLeft');
     const boxRight = document.getElementById('boxRight');
-    window.addEventListener('click', (e) => {
+
+    function flash(el) {
+      el.classList.add('active');
+      setTimeout(() => el.classList.remove('active'), 130);
+    }
+
+    window.addEventListener('click', () => {
+      const now = performance.now();
+      const gap = lastClickAt ? Math.round(now - lastClickAt) : null;
+      clickRun = gap !== null && gap < 500 ? clickRun + 1 : 1;
+      lastClickAt = now;
       leftCount++;
-      document.getElementById('cntLeft').textContent = `${leftCount} 次`;
-      boxLeft.classList.add('active');
-      setTimeout(() => boxLeft.classList.remove('active'), 140);
-      logEvent('CLICK', `Left Click (Total: ${leftCount})`, 'badge-blue');
+      document.getElementById('cntLeft').textContent = leftCount;
+      document.getElementById('clickGap').textContent = gap === null ? '—' : `${gap} ms`;
+      document.getElementById('clickRun').textContent = clickRun;
+      flash(boxLeft);
+      logEvent('click.left', `第 ${leftCount} 次${gap === null ? '' : ` · 间隔 ${gap}ms · 连击 ${clickRun}`}`);
     });
+
     window.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       rightCount++;
-      document.getElementById('cntRight').textContent = `${rightCount} 次`;
-      boxRight.classList.add('active-right');
-      setTimeout(() => boxRight.classList.remove('active-right'), 140);
-      logEvent('RIGHT_CLICK', `Right Click (Total: ${rightCount})`, 'badge-purple');
+      document.getElementById('cntRight').textContent = rightCount;
+      flash(boxRight);
+      logEvent('click.right', `第 ${rightCount} 次`, true);
     });
 
-    // --- 3. Window Dragging ---
+    document.getElementById('btnResetClicks').onclick = () => {
+      leftCount = rightCount = clickRun = 0; lastClickAt = 0;
+      document.getElementById('cntLeft').textContent = '0';
+      document.getElementById('cntRight').textContent = '0';
+      document.getElementById('clickGap').textContent = '—';
+      document.getElementById('clickRun').textContent = '1';
+    };
+
+    /* ---------------------------------------------------------------
+       ③ Drag — reports how long the button stayed down, so a
+       tap-drag that releases too early is visible as a short hold.
+       --------------------------------------------------------------- */
     const dragWin = document.getElementById('dragWindow');
     const dragStage = document.getElementById('dragStage');
-    let isDragging = false, dragStartX = 0, dragStartY = 0, winStartX = 0, winStartY = 0;
+    const dragActiveStatus = document.getElementById('dragActiveStatus');
+    let dragging = false, dsx = 0, dsy = 0, wsx = 0, wsy = 0, downAt = 0;
+
     dragWin.addEventListener('pointerdown', (e) => {
-      isDragging = true;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      winStartX = dragWin.offsetLeft;
-      winStartY = dragWin.offsetTop;
+      dragging = true;
+      downAt = performance.now();
+      dsx = e.clientX; dsy = e.clientY;
+      wsx = dragWin.offsetLeft; wsy = dragWin.offsetTop;
       dragWin.setPointerCapture(e.pointerId);
-      document.getElementById('dragActiveStatus').textContent = "正在拖拽";
-      document.getElementById('dragActiveStatus').style.color = "var(--apple-blue)";
-      logEvent('DRAG_START', 'Window Drag Engaged', 'badge-green');
-    });
-    dragWin.addEventListener('pointermove', (e) => {
-      if (!isDragging) return;
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      const stageRect = dragStage.getBoundingClientRect();
-      const newX = Math.max(0, Math.min(winStartX + dx, stageRect.width - dragWin.offsetWidth));
-      const newY = Math.max(0, Math.min(winStartY + dy, stageRect.height - dragWin.offsetHeight));
-      dragWin.style.left = `${newX}px`;
-      dragWin.style.top = `${newY}px`;
-      document.getElementById('dragDistance').textContent = `${Math.round(Math.hypot(dx, dy))} px`;
-    });
-    dragWin.addEventListener('pointerup', (e) => {
-      if (!isDragging) return;
-      isDragging = false;
-      dragWin.releasePointerCapture(e.pointerId);
-      document.getElementById('dragActiveStatus').textContent = "空闲";
-      document.getElementById('dragActiveStatus').style.color = "var(--apple-green)";
-      logEvent('DRAG_END', 'Window Released', 'badge-green');
+      dragWin.classList.add('grabbed');
+      dragActiveStatus.textContent = '按下';
+      logEvent('drag.down', '左键按下');
     });
 
-    // --- 4. Smooth Scrolling ---
+    dragWin.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - dsx, dy = e.clientY - dsy;
+      const r = dragStage.getBoundingClientRect();
+      dragWin.style.left = `${Math.max(0, Math.min(wsx + dx, r.width - dragWin.offsetWidth))}px`;
+      dragWin.style.top = `${Math.max(0, Math.min(wsy + dy, r.height - dragWin.offsetHeight))}px`;
+      document.getElementById('dragDistance').textContent = Math.round(Math.hypot(dx, dy));
+      document.getElementById('dragHold').textContent = Math.round(performance.now() - downAt);
+      dragActiveStatus.textContent = '拖移中';
+    });
+
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      const held = Math.round(performance.now() - downAt);
+      try { dragWin.releasePointerCapture(e.pointerId); } catch (_) {}
+      dragWin.classList.remove('grabbed');
+      dragActiveStatus.textContent = '空闲';
+      document.getElementById('dragHold').textContent = held;
+      logEvent('drag.up', `按下 ${held}ms 后释放`, held < 120);
+    }
+    dragWin.addEventListener('pointerup', endDrag);
+    dragWin.addEventListener('pointercancel', endDrag);
+
+    /* ---------------------------------------------------------------
+       ④ Scroll + inertia tail. Momentum shows up as wheel events
+       still arriving after the fingers left, so we time the tail.
+       --------------------------------------------------------------- */
     const scrollBox = document.getElementById('scrollBox');
-    let scrollTimeout = null;
+    const scrollPhase = document.getElementById('scrollPhase');
+    let scrollIdleTimer = null, scrollStartAt = 0, lastWheelAt = 0, peakAbsDy = 0;
+
     scrollBox.addEventListener('wheel', (e) => {
-      document.getElementById('scrollDy').textContent = `${Math.round(e.deltaY)} px`;
-      document.getElementById('scrollPhase').textContent = "Changed";
-      document.getElementById('scrollPhase').style.color = "var(--apple-cyan)";
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        document.getElementById('scrollPhase').textContent = "Ended";
-        document.getElementById('scrollPhase').style.color = "var(--text-muted)";
-      }, 150);
+      tickCount++;
+      setMode('gesture', '双指手势');
+      const now = performance.now();
+      if (!scrollStartAt) { scrollStartAt = now; peakAbsDy = 0; }
+      lastWheelAt = now;
+      peakAbsDy = Math.max(peakAbsDy, Math.abs(e.deltaY));
+      document.getElementById('scrollDy').textContent = e.deltaY.toFixed(1);
+      scrollPhase.textContent = '滚动中';
+
+      clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = setTimeout(() => {
+        scrollPhase.textContent = '静止';
+        const total = Math.round(lastWheelAt - scrollStartAt);
+        document.getElementById('scrollTail').textContent = `${total} ms`;
+        logEvent('scroll.end', `持续 ${total}ms · 峰值 ΔY ${peakAbsDy.toFixed(0)}`);
+        scrollStartAt = 0;
+      }, 170);
     }, { passive: true });
 
-    // --- 5. 360° Rotate & Pinch Compass ---
+    /* ---------------------------------------------------------------
+       ⑤ Pinch + rotate. Safari: native gesture events. Others: only
+       ⌘+wheel magnification is observable — say so instead of faking.
+       --------------------------------------------------------------- */
     const compassDial = document.getElementById('compassDial');
     const rotDegreeVal = document.getElementById('rotDegreeVal');
     const pinchScaleVal = document.getElementById('pinchScaleVal');
     const compassMetrics = document.getElementById('compassMetrics');
-    let currentRot = 0.0;
-    let currentScale = 1.0;
-    let baseRot = 0.0;
-    let baseScale = 1.0;
+    let rot = 0, scale = 1, baseRot = 0, baseScale = 1;
 
-    function applyCompassTransform() {
-      compassDial.style.transform = `rotate(${currentRot}deg) scale(${currentScale})`;
-      rotDegreeVal.textContent = `${currentRot.toFixed(1)}°`;
-      pinchScaleVal.textContent = `${currentScale.toFixed(2)}×`;
-      compassMetrics.textContent = `${currentRot.toFixed(0)}° | ${currentScale.toFixed(2)}×`;
+    function applyDial() {
+      compassDial.style.transform = `rotate(${rot}deg) scale(${scale})`;
+      rotDegreeVal.textContent = `${rot.toFixed(1)}°`;
+      pinchScaleVal.textContent = `${scale.toFixed(2)}×`;
+      compassMetrics.textContent = `${rot.toFixed(0)}° · ${scale.toFixed(2)}×`;
     }
 
-    // WebKit Trackpad Native Gestures (Safari)
+    const hasNativeGesture = 'ongesturestart' in window;
+    if (hasNativeGesture) {
+      document.getElementById('rotateNote').textContent =
+        '本浏览器支持原生 gesture 事件，旋转与缩放都能在这里直接观测。';
+    }
+
     window.addEventListener('gesturestart', (e) => {
       e.preventDefault();
-      baseRot = currentRot;
-      baseScale = currentScale;
-      logEvent('GESTURE_START', 'Native Rotate/Pinch Gesture Began', 'badge-orange');
-    });
-    window.addEventListener('gesturechange', (e) => {
-      e.preventDefault();
-      if (e.rotation !== undefined) {
-        currentRot = baseRot + e.rotation;
-      }
-      if (e.scale !== undefined && e.scale > 0) {
-        currentScale = Math.min(Math.max(0.4, baseScale * e.scale), 3.0);
-      }
-      applyCompassTransform();
-      logEvent('GESTURE_MOVE', `Rot=${currentRot.toFixed(1)}° Scale=${currentScale.toFixed(2)}×`, 'badge-orange');
-    });
-    window.addEventListener('gestureend', (e) => {
-      e.preventDefault();
-      logEvent('GESTURE_END', 'Native Rotate/Pinch Ended', 'badge-orange');
+      baseRot = rot; baseScale = scale;
+      setMode('gesture', '双指手势');
+      logEvent('gesture.begin', '原生缩放 / 旋转开始');
     });
 
-    // Fallback Wheel for Chrome / Touchpad Track
-    document.getElementById('rotateStage').addEventListener('wheel', (e) => {
-      if (e.ctrlKey) {
-        e.preventDefault();
-        currentScale = Math.min(Math.max(0.4, currentScale - e.deltaY * 0.01), 3.0);
-        applyCompassTransform();
-        logEvent('PINCH', `Scale = ${currentScale.toFixed(2)}×`, 'badge-cyan');
-      } else if (e.shiftKey) {
-        e.preventDefault();
-        currentRot += e.deltaY * 0.4;
-        applyCompassTransform();
-        logEvent('ROTATE', `Rot = ${currentRot.toFixed(1)}°`, 'badge-orange');
+    window.addEventListener('gesturechange', (e) => {
+      e.preventDefault();
+      tickCount++;
+      setMode('gesture', '双指手势');
+      if (typeof e.rotation === 'number') rot = baseRot + e.rotation;
+      if (typeof e.scale === 'number' && e.scale > 0) {
+        scale = Math.min(3, Math.max(0.4, baseScale * e.scale));
       }
+      applyDial();
+    });
+
+    window.addEventListener('gestureend', (e) => {
+      e.preventDefault();
+      logEvent('gesture.end', `角度 ${rot.toFixed(1)}° · 倍率 ${scale.toFixed(2)}×`);
+    });
+
+    document.getElementById('rotateStage').addEventListener('wheel', (e) => {
+      if (!e.ctrlKey && !e.metaKey) return; // plain wheel is a scroll, not a pinch
+      e.preventDefault();
+      setMode('gesture', '双指手势');
+      scale = Math.min(3, Math.max(0.4, scale - e.deltaY * 0.01));
+      applyDial();
     }, { passive: false });
 
     document.getElementById('btnResetRotate').onclick = () => {
-      currentRot = 0.0;
-      currentScale = 1.0;
-      applyCompassTransform();
-      logEvent('RESET', 'Rotation & Scale Reset to 0°', 'badge-cyan');
+      rot = 0; scale = 1; applyDial();
+      logEvent('gesture.reset', '角度与倍率归零');
     };
 
-    // --- 6. Smart Magnify ---
-    const smartBox = document.getElementById('smartZoomBox');
-    let isSmartZoomed = false;
+    /* ---------------------------------------------------------------
+       ⑥ Smart zoom. Two-finger double-tap arrives as dblclick in
+       Safari with a `webkitDirectionInvertedFromDevice`-free gesture;
+       a 1F double-click also produces dblclick, so we distinguish by
+       whether a gesture stream was active in the last 300 ms.
+       --------------------------------------------------------------- */
+    const zoomTarget = document.getElementById('smartZoomBox');
+    let zoomed = false, lastGestureAt = 0;
+    window.addEventListener('gesturechange', () => { lastGestureAt = performance.now(); });
+    document.getElementById('smartZoomStage').addEventListener('wheel', () => { lastGestureAt = performance.now(); }, { passive: true });
+
     document.getElementById('smartZoomStage').addEventListener('dblclick', () => {
-      isSmartZoomed = !isSmartZoomed;
-      if (isSmartZoomed) {
-        smartBox.classList.add('zoomed');
-        document.getElementById('zoomScaleText').textContent = "1.60× (智能放大)";
-        document.getElementById('zoomScaleText').style.color = "var(--apple-blue)";
-        logEvent('SMART_ZOOM', 'Smart Magnify Engaged (160%)', 'badge-blue');
-      } else {
-        smartBox.classList.remove('zoomed');
-        document.getElementById('zoomScaleText').textContent = "1.00× (标准)";
-        document.getElementById('zoomScaleText').style.color = "var(--text-muted)";
-        logEvent('SMART_ZOOM', 'Smart Magnify Reset (100%)', 'badge-blue');
-      }
+      const viaGesture = performance.now() - lastGestureAt < 300;
+      zoomed = !zoomed;
+      zoomTarget.classList.toggle('zoomed', zoomed);
+      document.getElementById('zoomScaleText').textContent = zoomed ? '1.55×' : '1.00×';
+      document.getElementById('zoomSource').textContent = viaGesture ? '双指' : '单指双击';
+      logEvent('zoom.smart', `${zoomed ? '放大' : '还原'} · 来源 ${viaGesture ? '双指' : '单指双击'}`, !viaGesture);
     });
 
-    // --- 7. Navigation Swipe ---
-    let navPage = 2;
+    /* ---------------------------------------------------------------
+       ⑦ Page swipe — horizontal dominance gate, mirrors what the
+       engine has to decide.
+       --------------------------------------------------------------- */
+    let navPage = 2, navPeak = 0, navArmed = true;
     const navCard = document.getElementById('navCard');
-    const navCardTitle = document.getElementById('navCardTitle');
-    const navPosText = document.getElementById('navPosText');
+
     document.getElementById('navStage').addEventListener('wheel', (e) => {
-      if (Math.abs(e.deltaX) > 35 && Math.abs(e.deltaY) < 20) {
-        if (e.deltaX > 35 && navPage < 3) {
-          navPage++;
-          updateNav();
-        } else if (e.deltaX < -35 && navPage > 1) {
-          navPage--;
-          updateNav();
-        }
-      }
+      const ax = Math.abs(e.deltaX), ay = Math.abs(e.deltaY);
+      navPeak = Math.max(navPeak, ax);
+      document.getElementById('navPeak').textContent = navPeak.toFixed(0);
+      if (ax < 35 || ax < ay * 2.5 || !navArmed) return;
+      const next = e.deltaX > 0 ? navPage + 1 : navPage - 1;
+      if (next < 1 || next > 3) return;
+      navPage = next;
+      navArmed = false;
+      setTimeout(() => { navArmed = true; }, 420);
+      document.getElementById('navCardTitle').textContent = `第 ${navPage} 页`;
+      document.getElementById('navPosText').textContent = `${navPage} / 3`;
+      navCard.style.transform = 'scale(0.96)';
+      setTimeout(() => { navCard.style.transform = 'scale(1)'; }, 190);
+      logEvent('swipe.page', `翻到第 ${navPage} 页 · ΔX ${e.deltaX.toFixed(0)}`);
     }, { passive: true });
-    function updateNav() {
-      navCardTitle.textContent = `Page ${navPage} (当前页面)`;
-      navPosText.textContent = `Page ${navPage} / 3`;
-      navCard.style.transform = `scale(0.95)`;
-      setTimeout(() => navCard.style.transform = `scale(1)`, 180);
-      logEvent('PAGE_SWIPE', `Navigated to Page ${navPage}`, 'badge-purple');
+
+    /* ---------------------------------------------------------------
+       ⑧ Spaces / Mission Control — observable only as the page going
+       away. Report that honestly rather than inventing a desktop index.
+       --------------------------------------------------------------- */
+    let leaveCount = 0;
+    const spaceCurrentText = document.getElementById('spaceCurrentText');
+
+    function noteLeave(reason) {
+      leaveCount++;
+      document.getElementById('spaceLeaveCount').textContent = leaveCount;
+      logEvent('spaces.leave', reason, true);
     }
 
-    // --- 8. Spaces Switcher ---
-    let activeSpace = 2;
-    document.getElementById('spacesStage').addEventListener('wheel', (e) => {
-      if (Math.abs(e.deltaX) > 40 && Math.abs(e.deltaY) < 25) {
-        if (e.deltaX > 40 && activeSpace < 3) {
-          activeSpace++;
-          updateSpace();
-        } else if (e.deltaX < -40 && activeSpace > 1) {
-          activeSpace--;
-          updateSpace();
-        }
-      }
-    }, { passive: true });
-    function updateSpace() {
-      [1, 2, 3].forEach(i => {
-        document.getElementById(`space${i}`).classList.toggle('active', i === activeSpace);
-      });
-      document.getElementById('spaceCurrentText').textContent = `Space ${activeSpace}`;
-      logEvent('SPACE_SWITCH', `Switched to Desktop Space ${activeSpace}`, 'badge-green');
-    }
+    document.addEventListener('visibilitychange', () => {
+      const hidden = document.hidden;
+      spaceCurrentText.textContent = hidden ? '隐藏' : '可见';
+      if (hidden) noteLeave('页面转入后台（切桌面或调度中心）');
+    });
+    window.addEventListener('blur', () => noteLeave('窗口失去焦点'));
 
-    // --- 9. Dictionary Lookup Key Detection ---
+    /* ---------------------------------------------------------------
+       ⑨ Lookup — ⌃⌘D plus the current selection.
+       --------------------------------------------------------------- */
+    const dictStatus = document.getElementById('dictStatus');
     window.addEventListener('keydown', (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
-        document.getElementById('dictStatus').textContent = "Cmd+Ctrl+D 查词激活!";
-        document.getElementById('dictStatus').style.color = "var(--apple-cyan)";
-        logEvent('LOOKUP', 'Dictionary Lookup Triggered (Cmd+Ctrl+D)', 'badge-cyan');
-        setTimeout(() => {
-          document.getElementById('dictStatus').textContent = "等待三指轻点...";
-          document.getElementById('dictStatus').style.color = "var(--text-muted)";
-        }, 1500);
+        dictStatus.textContent = '已收到 ⌃⌘D';
+        logEvent('lookup', '查词快捷键到达', true);
+        setTimeout(() => { dictStatus.textContent = '等待三指轻点'; }, 1600);
       }
+    });
+    document.addEventListener('selectionchange', () => {
+      const s = String(document.getSelection() || '').trim();
+      document.getElementById('dictSelection').textContent = s ? s.slice(0, 18) : '—';
     });
 
-    // --- 10. Edge Swipe Notification Center ---
+    /* ---------------------------------------------------------------
+       ⑩ Right-edge drawer. Two-finger horizontal wheel only, and the
+       gesture must have started near the right edge of the stage.
+       --------------------------------------------------------------- */
     const notiDrawer = document.getElementById('notiDrawer');
-    let isDrawerOpen = false;
-    document.getElementById('edgeStage').addEventListener('wheel', (e) => {
-      if (e.deltaX < -25 && !isDrawerOpen) {
-        isDrawerOpen = true;
-        notiDrawer.classList.add('open');
-        document.getElementById('edgeStatus').textContent = "展开";
-        document.getElementById('edgeStatus').style.color = "var(--apple-orange)";
-        logEvent('NOTI_DRAWER', 'Notification Center Opened', 'badge-orange');
-      } else if (e.deltaX > 25 && isDrawerOpen) {
-        isDrawerOpen = false;
-        notiDrawer.classList.remove('open');
-        document.getElementById('edgeStatus').textContent = "收起";
-        document.getElementById('edgeStatus').style.color = "var(--text-muted)";
-        logEvent('NOTI_DRAWER', 'Notification Center Dismissed', 'badge-orange');
+    const edgeStage = document.getElementById('edgeStage');
+    const edgeStatus = document.getElementById('edgeStatus');
+    const edgeOrigin = document.getElementById('edgeOrigin');
+    let drawerOpen = false, lastPointerFrac = null;
+
+    edgeStage.addEventListener('pointermove', (e) => {
+      const r = edgeStage.getBoundingClientRect();
+      lastPointerFrac = (e.clientX - r.left) / r.width;
+      edgeOrigin.textContent = `${Math.round(lastPointerFrac * 100)}%`;
+    }, { passive: true });
+
+    function setDrawer(open, why) {
+      if (open === drawerOpen) return;
+      drawerOpen = open;
+      notiDrawer.classList.toggle('open', open);
+      edgeStatus.textContent = open ? '展开' : '收起';
+      logEvent('edge.drawer', `${open ? '展开' : '收起'} · ${why}`);
+    }
+
+    edgeStage.addEventListener('wheel', (e) => {
+      const ax = Math.abs(e.deltaX);
+      if (ax < 20 || ax < Math.abs(e.deltaY) * 2) return; // vertical scroll, ignore
+      if (e.deltaX < 0 && !drawerOpen) {
+        const fromEdge = lastPointerFrac !== null && lastPointerFrac > 0.75;
+        if (!fromEdge) { logEvent('edge.reject', '横扫未从右边缘发起'); return; }
+        setDrawer(true, '右缘向左');
+      } else if (e.deltaX > 0 && drawerOpen) {
+        setDrawer(false, '向右扫回');
       }
     }, { passive: true });
-    notiDrawer.addEventListener('click', () => {
-      isDrawerOpen = false;
-      notiDrawer.classList.remove('open');
-      document.getElementById('edgeStatus').textContent = "收起";
-    });
+
+    notiDrawer.addEventListener('click', () => setDrawer(false, '点击收起'));
+  </script>
+
+  <script>
+    // Scroll edge: the hairline under the chrome appears only once
+    // content is actually passing beneath it.
+    (function () {
+      const chrome = document.getElementById('chrome');
+      const sync = () => chrome.classList.toggle('scrolled', window.scrollY > 8);
+      addEventListener('scroll', sync, { passive: true });
+      sync();
+    })();
+
+    // The stream's empty state is a state, not a blank box. It clears
+    // the moment a real entry lands.
+    (function () {
+      const shell = document.getElementById('logShell');
+      const stream = document.getElementById('logStream');
+      const sync = () => shell.classList.toggle('has-entries', stream.children.length > 0);
+      new MutationObserver(sync).observe(stream, { childList: true });
+      sync();
+    })();
   </script>
 </body>
 

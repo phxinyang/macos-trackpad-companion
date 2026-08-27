@@ -101,23 +101,44 @@ asymmetric scrolls.
 Test before changing: pull the user's recent scroll-vs-pinch traces, compute
 balance distributions for each, look for separation.
 
-## 4. Tighten `ANCHORED_FINGER_FLOOR_MM` from 0.30 → 0.15
+## 4. Tighten `ANCHORED_FINGER_FLOOR_MM` from 0.30 → 0.15 — IMPLEMENTED
 
-The current 0.30 floor lets per-finger displacements right at the boundary
-(e.g. #678's 0.3007 mm) pass the noise-band gate as if the finger were committed.
-0.15 firmly classifies the 0.15–1.0 mm band as "trailer hasn't decided yet" →
-pinch lock deferred.
+The 0.30 floor let per-finger displacements right at the boundary
+(e.g. #678's 0.3007 mm) pass the noise-band gate as if the finger were
+committed. 0.15 firmly classifies the 0.15–1.0 mm band as "trailer hasn't
+decided yet" → pinch lock deferred.
 
-Smallest, safest change. Doesn't fix the root cause but stops one specific edge
-case from misclassifying. Worth doing even if we also do #1.
+Landed together with the restoration of the gate itself: `pinch_rot_admissible`
+had at some point stopped feeding the scores and survived only as a log tag,
+so the whole noise-band deferral was inert. Both `pinch` and `rot` selection
+scores are now zeroed when it is false.
 
-## 5. Grace period at fresh 2F baselines
+## 5. Grace period at fresh 2F baselines — IMPLEMENTED
 
-Require at least 1–2 frames (or ~30 ms) of 2F observation before any lock decision
-can fire. Lets the trailing finger reveal its intent before the algorithm commits.
+Landed as `TWO_FINGER_MIN_FRAMES = 2` on `TwoFingerBaseline::frames_observed`:
+no lock decision may fire until a second 2F frame has been dispatched. Counted
+in frames rather than wall-clock, which resolves the open question below — chip
+frames are the invariant quantity, and host scheduling jitter can otherwise
+stretch or shrink a millisecond window arbitrarily.
 
-Cost: every real pinch/rotate also waits 30 ms longer to lock. Probably tolerable
-(perceptually subliminal), but quantify before adopting.
+The landing frame is the one this exists for: it has one contact fresh and one
+mid-glide, so its common/differential decomposition describes the landing
+rather than the user's intent. Real capture showed a lock firing at
+`common=0.41mm balance=0.00` — a decision made off a finger that had not moved
+at all — and then reversing in the same millisecond.
+
+Two related mechanisms were removed as part of this, both of which had been
+added to compensate for the missing grace:
+
+- **Lenient `pan_score` override.** Accepting `common >= differential * 0.6`
+  inverted the invariant the decomposition exists to enforce (`common` must
+  strictly dominate). It made anchored-finger pinches lock pan on the centroid
+  drift they produce as a side effect.
+- **Post-lock "dynamic switch."** Watching for `diff_travel > pan_travel * 2`
+  and flipping the locked kind mid-gesture. With the lock decision itself
+  fixed there is nothing for it to correct, and it emitted a spurious
+  `scroll Began`/`Ended` pair before every pinch that started slightly
+  off-axis.
 
 ## 6. Bias toward prior lock during quick re-grips
 
@@ -291,7 +312,10 @@ Add 3–4 tests in `src/gesture.rs` test module:
 - Should `REJOIN_WINDOW` be measured in wall-clock time or in chip frames?
   Frames are more invariant to host-side scheduling jitter, but the dispatch
   loop already uses wall-clock everywhere — go with wall-clock unless tests
-  suggest otherwise.
+  suggest otherwise. (Idea #5 subsequently answered the same question the
+  other way for the lock grace: `TWO_FINGER_MIN_FRAMES` counts frames,
+  precisely because a wall-clock window is at the mercy of host scheduling.
+  Worth revisiting the rejoin window on the same grounds.)
 - Does `out.scroll(0.0, 0.0, Phase::Began)` need a corresponding `Ended` for the
   brief gap, or is the continuation truly seamless from the downstream CG event
   stream's perspective? Probably truly seamless — no Began/Ended pair during the

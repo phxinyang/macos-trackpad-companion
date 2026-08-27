@@ -5,3 +5,4 @@
 /android/local.properties
 __pycache__/
 *.pyc
+.zcode/
