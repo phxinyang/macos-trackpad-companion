@@ -669,9 +669,9 @@ impl<O: Output> State<O> {
         // ONLY if 3 or more fingers land! If 1 or 2 fingers land, let them fall
         // through to OneFinger / TwoFinger to release drag-lock immediately.
         if self.pending_drag_release.is_some() {
-            if n >= 3 {
-                return GestureKind::ThreeFingerDrag;
-            } else if n == 0 {
+            if n >= 4 {
+                return GestureKind::FourFingerLive;
+            } else if n == 3 || n == 0 {
                 return GestureKind::ThreeFingerDrag;
             }
             // n == 1 or n == 2 fall through to normal classification below
@@ -684,8 +684,13 @@ impl<O: Output> State<O> {
         // 三指拖移 mode: an actively engaged drag (mouse button held) outlives
         // async lifts (3 → 2 → 1 → 0). Keep classifying as ThreeFingerDrag while fingers
         // are on pad so async lifts do not reclassify to OneFinger!
-        if matches!(self.kind, GestureKind::ThreeFingerDrag) && self.drag_button_held && n > 0 {
-            return GestureKind::ThreeFingerDrag;
+        // BUT if user puts down a 4th finger (n >= 4), seamlessly transition to 4-finger desktop swipe!
+        if matches!(self.kind, GestureKind::ThreeFingerDrag) && self.drag_button_held {
+            if n >= 4 {
+                return GestureKind::FourFingerLive;
+            } else if n > 0 {
+                return GestureKind::ThreeFingerDrag;
+            }
         }
         match n {
             0 => GestureKind::Idle,
@@ -918,8 +923,8 @@ impl<O: Output> State<O> {
                 let dur = now - self.started_at;
                 let max_move = self.max_move_sq.sqrt();
                 let init_dist = self.two_baseline.map(|b| b.initial_distance).unwrap_or(0.0);
-                let is_real_two_fingers = init_dist >= 8.0;
-                let tap_eligible = dur < TAP_MAX_DURATION && max_move < TAP_MAX_MOVE_MM && is_real_two_fingers;
+                let is_real_two_fingers = init_dist >= 10.0 && init_dist <= 75.0 && dur >= Duration::from_millis(35);
+                let tap_eligible = dur < TAP_MAX_DURATION && max_move < TAP_MAX_MOVE_MM;
                 if matches!(new_kind, GestureKind::Idle) {
                     if bc {
                         log::debug!(
@@ -927,7 +932,7 @@ impl<O: Output> State<O> {
                             dur.as_millis(),
                             max_move,
                         );
-                    } else if tap_eligible {
+                    } else if tap_eligible && is_real_two_fingers {
                         if let Some(prev) = self.last_2f_tap {
                             if now.saturating_duration_since(prev) < Duration::from_millis(350) {
                                 log::debug!("2f double tap: smart zoom / smart magnify (interval={}ms)", now.saturating_duration_since(prev).as_millis());
@@ -953,6 +958,14 @@ impl<O: Output> State<O> {
                             self.out.click(MouseButton::Right);
                             self.last_2f_tap = Some(now);
                         }
+                    } else if tap_eligible && !is_real_two_fingers {
+                        log::debug!(
+                            "2f lift, transient contact (<10mm or <35ms) resolving as 1f Left click (dur={}ms dist={:.1}mm)",
+                            dur.as_millis(),
+                            init_dist,
+                        );
+                        self.out.click(MouseButton::Left);
+                        self.last_1f_tap = Some(now);
                     } else {
                         log::debug!(
                             "2f lift, no tap: dur={}ms max_move={:.2}mm is_2f={}",
@@ -962,11 +975,11 @@ impl<O: Output> State<O> {
                         );
                     }
                 } else if matches!(new_kind, GestureKind::OneFinger) {
-                    if bc || !tap_eligible {
+                    if bc || !tap_eligible || !is_real_two_fingers {
                         // Either born during coast or disqualified for 2F tap (motion, duration, or fat-finger jitter).
-                        // If it was a fat-finger split (<8mm), restore normal 1F tap path so single tap isn't lost!
+                        // If it was a fat-finger split (<10mm or <35ms), restore normal 1F tap path so single tap isn't lost!
                         if !is_real_two_fingers && dur < Duration::from_millis(150) {
-                            log::debug!("2f → 1f split contact (<8mm): treating as 1f tap, restoring single click");
+                            log::debug!("2f → 1f split contact (<10mm): treating as 1f tap, restoring single click");
                             self.suppress_one_finger_click = false;
                         } else {
                             log::debug!(
@@ -985,21 +998,16 @@ impl<O: Output> State<O> {
                         // motion so the next OneFinger → Idle can fire
                         // the right-click; until then, the residual 1F
                         // is part of this gesture, not a fresh 1F tap.
-                        if dur >= Duration::from_millis(30) && is_real_two_fingers {
-                            log::debug!(
-                                "2f → 1f partial lift (dur={}ms max_move={:.2}mm dist={:.1}mm); pending right-click",
-                                dur.as_millis(),
-                                max_move,
-                                init_dist,
-                            );
-                            self.pending_two_finger_tap = Some(PendingTwoFingerTap {
-                                started_at: self.started_at,
-                                max_move_sq: self.max_move_sq,
-                            });
-                        } else {
-                            // Transient jitter or fat-finger contact: restore normal 1F tap path
-                            self.suppress_one_finger_click = false;
-                        }
+                        log::debug!(
+                            "2f → 1f partial lift (dur={}ms max_move={:.2}mm dist={:.1}mm); pending right-click",
+                            dur.as_millis(),
+                            max_move,
+                            init_dist,
+                        );
+                        self.pending_two_finger_tap = Some(PendingTwoFingerTap {
+                            started_at: self.started_at,
+                            max_move_sq: self.max_move_sq,
+                        });
                     }
                 }
             }
@@ -4285,6 +4293,38 @@ mod tests {
         assert!(
             log.iter().any(|l| l.starts_with("scroll ") && (l.contains("Began") || l.contains("Changed"))),
             "1-to-2 finger transition must engage smooth scrolling: {log:?}"
+        );
+    }
+
+    #[test]
+    fn three_finger_drag_to_four_finger_swipe_transition() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+
+        // 3 fingers down and drag window:
+        s.on_frame_at(frame(&[(1, 20.0, 20.0), (2, 35.0, 20.0), (3, 50.0, 20.0)]), t0);
+        s.on_frame_at(frame(&[(1, 20.0, 23.0), (2, 35.0, 23.0), (3, 50.0, 23.0)]), at(t0, 40));
+
+        let log = r.pop();
+        assert!(
+            log.contains(&"set_drag_button_held true".to_string()),
+            "3F drag must hold drag button: {log:?}"
+        );
+
+        // 4th finger joins to swipe desktop (Spaces)
+        s.on_frame_at(frame(&[(1, 20.0, 23.0), (2, 35.0, 23.0), (3, 50.0, 23.0), (4, 65.0, 23.0)]), at(t0, 60));
+        // All 4 fingers slide horizontally to the left
+        s.on_frame_at(frame(&[(1, 10.0, 23.0), (2, 25.0, 23.0), (3, 40.0, 23.0), (4, 55.0, 23.0)]), at(t0, 90));
+
+        let log2 = r.pop();
+        assert!(
+            log2.contains(&"set_drag_button_held false".to_string()),
+            "transitioning to 4F must release drag button: {log2:?}"
+        );
+        assert!(
+            log2.iter().any(|l| l.starts_with("swipe_live ")),
+            "4F swipe must engage live spaces navigation: {log2:?}"
         );
     }
 }
