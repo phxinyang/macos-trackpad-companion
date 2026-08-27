@@ -1100,6 +1100,11 @@ impl<O: Output> State<O> {
         // what keeps post-coast taps suppressed across kind changes.
         if matches!(new_kind, GestureKind::Idle) {
             self.born_during_coast = false;
+            if self.drag_button_held {
+                self.out.set_drag_button_held(false);
+                self.drag_button_held = false;
+                log::debug!("all fingers lifted: released held drag button (failsafe)");
+            }
         }
 
         match new_kind {

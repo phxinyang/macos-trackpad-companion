@@ -4,21 +4,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>macOS 触控板全功能交互测试套件 (Trackpad Master Diagnostic Suite)</title>
+  <title>macOS 触控板全功能交互诊断套件 (Trackpad Diagnostic Suite)</title>
   <style>
     :root {
-      --bg: #0b0c10;
-      --card-bg: rgba(22, 24, 34, 0.78);
+      --bg: #0d0e12;
+      --card-bg: rgba(28, 28, 32, 0.65);
       --card-border: rgba(255, 255, 255, 0.08);
-      --card-hover: rgba(255, 255, 255, 0.16);
-      --text: #f0f2f5;
-      --text-muted: #8a8f9d;
-      --cyan: #00e5ff;
-      --purple: #a855f7;
-      --emerald: #10b981;
-      --amber: #f59e0b;
-      --rose: #f43f5e;
-      --blue: #3b82f6;
+      --card-border-hover: rgba(255, 255, 255, 0.18);
+      --card-inner: rgba(20, 20, 24, 0.55);
+      --text: #f5f5f7;
+      --text-muted: #86868b;
+      --text-dim: #636366;
+      --apple-blue: #0a84ff;
+      --apple-purple: #bf5af2;
+      --apple-cyan: #64d2ff;
+      --apple-green: #30d158;
+      --apple-orange: #ff9f0a;
+      --apple-red: #ff453a;
+      --apple-yellow: #ffd60a;
+      --apple-indigo: #5e5ce6;
+      --shadow-subtle: 0 8px 32px rgba(0, 0, 0, 0.36);
+      --glow-blue: 0 0 20px rgba(10, 132, 255, 0.28);
     }
 
     * {
@@ -30,7 +36,7 @@
     }
 
     body {
-      background: radial-gradient(circle at 50% 0%, #171926 0%, #0b0c10 80%);
+      background: radial-gradient(circle at 50% -10%, #1c1d29 0%, #0d0e12 70%);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
       min-height: 100vh;
@@ -38,18 +44,19 @@
       flex-direction: column;
       overflow-x: hidden;
       line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* Top Navigation & Telemetry Bar */
+    /* Top Glass Navigation Bar */
     header {
       position: sticky;
       top: 0;
       z-index: 100;
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      background: rgba(11, 12, 16, 0.88);
+      backdrop-filter: blur(28px) saturate(190%);
+      -webkit-backdrop-filter: blur(28px) saturate(190%);
+      background: rgba(13, 14, 18, 0.75);
       border-bottom: 1px solid var(--card-border);
-      padding: 12px 24px;
+      padding: 14px 28px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -60,117 +67,112 @@
     .brand {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
 
     .brand-logo {
-      width: 28px;
-      height: 28px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, var(--cyan), var(--purple));
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, var(--apple-cyan), var(--apple-indigo));
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 16px;
+      font-size: 17px;
       font-weight: 800;
-      color: #000;
-      box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(100, 210, 255, 0.35);
     }
 
     .brand-title {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: -0.3px;
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.4px;
     }
 
     .telemetry-row {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
       flex-wrap: wrap;
     }
 
     .telemetry-pill {
-      background: rgba(255, 255, 255, 0.04);
+      background: rgba(255, 255, 255, 0.05);
       border: 1px solid var(--card-border);
-      padding: 4px 10px;
+      padding: 4px 12px;
       border-radius: 20px;
       font-size: 12px;
-      font-family: "SF Mono", monospace;
+      font-family: "SF Mono", Menlo, monospace;
       color: var(--text-muted);
       display: flex;
       align-items: center;
       gap: 6px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
     }
 
     .telemetry-pill strong {
       color: var(--text);
+      font-weight: 600;
     }
 
-    .live-dot {
-      width: 8px;
-      height: 8px;
+    .status-dot {
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
-      background: var(--emerald);
-      box-shadow: 0 0 8px var(--emerald);
-      animation: pulse 1.5s infinite;
+      background: var(--apple-green);
+      box-shadow: 0 0 8px var(--apple-green);
+      animation: pulse 2s infinite ease-in-out;
     }
 
     @keyframes pulse {
-
-      0%,
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-
-      50% {
-        opacity: 0.5;
-        transform: scale(0.85);
-      }
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(0.9); }
     }
 
     /* Main Container */
     main {
       flex: 1;
       max-width: 1440px;
-      margin: 0 auto;
-      padding: 24px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
-      gap: 20px;
       width: 100%;
+      margin: 0 auto;
+      padding: 24px 28px 48px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 20px;
     }
 
+    /* Apple-styled Glass Cards */
     .card {
       background: var(--card-bg);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
       border: 1px solid var(--card-border);
-      border-radius: 16px;
+      border-radius: 18px;
       padding: 20px;
       display: flex;
       flex-direction: column;
       gap: 14px;
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
       position: relative;
       overflow: hidden;
+      box-shadow: var(--shadow-subtle), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
     }
 
     .card:hover {
-      border-color: var(--card-hover);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+      border-color: var(--card-border-hover);
     }
 
     .card-header {
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
     }
 
     .card-title {
       font-size: 15px;
       font-weight: 600;
+      letter-spacing: -0.2px;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -182,1655 +184,937 @@
       padding: 2px 8px;
       border-radius: 12px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.4px;
     }
 
-    .badge-cyan {
-      background: rgba(0, 229, 255, 0.15);
-      color: var(--cyan);
-      border: 1px solid rgba(0, 229, 255, 0.3);
-    }
-
-    .badge-purple {
-      background: rgba(168, 85, 247, 0.15);
-      color: var(--purple);
-      border: 1px solid rgba(168, 85, 247, 0.3);
-    }
-
-    .badge-emerald {
-      background: rgba(16, 185, 129, 0.15);
-      color: var(--emerald);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-    }
-
-    .badge-amber {
-      background: rgba(245, 158, 11, 0.15);
-      color: var(--amber);
-      border: 1px solid rgba(245, 158, 11, 0.3);
-    }
-
-    .badge-blue {
-      background: rgba(59, 130, 246, 0.15);
-      color: var(--blue);
-      border: 1px solid rgba(59, 130, 246, 0.3);
-    }
+    .badge-blue { background: rgba(10, 132, 255, 0.15); color: var(--apple-blue); border: 1px solid rgba(10, 132, 255, 0.3); }
+    .badge-purple { background: rgba(191, 90, 242, 0.15); color: var(--apple-purple); border: 1px solid rgba(191, 90, 242, 0.3); }
+    .badge-cyan { background: rgba(100, 210, 255, 0.15); color: var(--apple-cyan); border: 1px solid rgba(100, 210, 255, 0.3); }
+    .badge-green { background: rgba(48, 209, 88, 0.15); color: var(--apple-green); border: 1px solid rgba(48, 209, 88, 0.3); }
+    .badge-orange { background: rgba(255, 159, 10, 0.15); color: var(--apple-orange); border: 1px solid rgba(255, 159, 10, 0.3); }
 
     .card-desc {
       font-size: 12px;
       color: var(--text-muted);
+      line-height: 1.4;
     }
 
-    /* Test Area 1: Precision Canvas */
-    .canvas-container {
-      width: 100%;
-      height: 200px;
-      background: #08090d;
-      border: 1px dashed rgba(255, 255, 255, 0.12);
+    /* macOS Window Dots */
+    .window-dots {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .window-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ff5f56; border: 1px solid #e0443e; }
+    .dot-yellow { background: #ffbd2e; border: 1px solid #dea123; }
+    .dot-green { background: #27c93f; border: 1px solid #1aab29; }
+
+    /* Interactive Inner Stages */
+    .interactive-stage {
+      background: var(--card-inner);
+      border: 1px solid rgba(255, 255, 255, 0.05);
       border-radius: 12px;
+      height: 170px;
       position: relative;
       overflow: hidden;
-      cursor: crosshair;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3);
     }
 
-    canvas {
+    /* --- Card 1: Cursor Acceleration Radar --- */
+    #cursorRadarCanvas {
       width: 100%;
       height: 100%;
-      display: block;
     }
 
-    .precision-targets {
-      display: flex;
-      justify-content: space-around;
-      align-items: center;
-      padding: 10px 0;
-      background: rgba(0, 0, 0, 0.25);
-      border-radius: 8px;
-    }
-
-    .target-dot {
-      border-radius: 50%;
-      background: var(--text-muted);
-      transition: transform 0.15s, background 0.15s, box-shadow 0.15s;
-      cursor: pointer;
-    }
-
-    .target-dot:hover {
-      background: var(--cyan);
-      box-shadow: 0 0 12px var(--cyan);
-      transform: scale(1.6);
-    }
-
-    /* Test Area 2: Clicks & Taps */
+    /* --- Card 2: Click Test Targets --- */
     .click-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      width: 100%;
+      height: 100%;
+      padding: 10px;
     }
-
     .click-box {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 6px;
-      cursor: pointer;
-      transition: background 0.1s, transform 0.1s, border-color 0.1s;
-    }
-
-    .click-box:active {
-      transform: scale(0.96);
-      background: rgba(0, 229, 255, 0.1);
-      border-color: var(--cyan);
-    }
-
-    .click-box.flash-success {
-      background: rgba(16, 185, 129, 0.2) !important;
-      border-color: var(--emerald) !important;
-    }
-
-    .click-box h4 {
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    .click-box span {
-      font-size: 11px;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 500;
       color: var(--text-muted);
-      font-family: "SF Mono", monospace;
+      transition: all 0.12s ease;
+      cursor: pointer;
+    }
+    .click-box.active {
+      transform: scale(0.96);
+      background: rgba(10, 132, 255, 0.25);
+      border-color: var(--apple-blue);
+      color: #fff;
+      box-shadow: 0 0 16px rgba(10, 132, 255, 0.4);
+    }
+    .click-box.active-right {
+      background: rgba(191, 90, 242, 0.25);
+      border-color: var(--apple-purple);
+      color: #fff;
+      box-shadow: 0 0 16px rgba(191, 90, 242, 0.4);
     }
 
-    /* Test Area 3: Three-finger Drag & Selection */
-    .drag-stage {
-      width: 100%;
-      height: 200px;
-      background: #08090d;
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .draggable-card {
+    /* --- Card 3: 3F / Tap Dragging Canvas --- */
+    .draggable-window {
       position: absolute;
-      width: 110px;
-      height: 70px;
+      width: 140px;
+      height: 80px;
+      background: rgba(40, 40, 45, 0.9);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
       border-radius: 10px;
-      background: linear-gradient(135deg, rgba(168, 85, 247, 0.3), rgba(0, 229, 255, 0.3));
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
       cursor: grab;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      font-weight: 600;
-      color: #fff;
-      touch-action: none;
+      top: 45px;
+      left: 30px;
     }
-
-    .draggable-card:active {
+    .draggable-window:active {
       cursor: grabbing;
-      box-shadow: 0 12px 32px rgba(168, 85, 247, 0.4);
-      border-color: var(--cyan);
+      box-shadow: 0 14px 40px rgba(10, 132, 255, 0.35);
+      border-color: var(--apple-blue);
     }
-
-    .drag-lock-indicator {
+    .drag-titlebar {
+      height: 24px;
+      background: rgba(255, 255, 255, 0.06);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 8px 12px;
-      background: rgba(0, 0, 0, 0.3);
-      border-radius: 8px;
-      font-size: 12px;
-    }
-
-    .regrip-bar {
-      flex: 1;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 3px;
-      margin: 0 12px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .regrip-fill {
-      height: 100%;
-      width: 0%;
-      background: var(--amber);
-      transition: width 0.05s linear;
-    }
-
-    /* Test Area 4: Smooth Scrolling & Inertia */
-    .scroll-container {
-      width: 100%;
-      height: 190px;
-      overflow: scroll;
-      background: #08090d;
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 12px;
-      position: relative;
-    }
-
-    .scroll-content {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .scroll-item {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 12px;
-      display: flex;
-      justify-content: space-between;
-      transition: background 0.15s;
-    }
-
-    .scroll-item:hover {
-      background: rgba(0, 229, 255, 0.08);
-    }
-
-    /* Test Area 5: Pinch & Rotate */
-    .pinch-stage {
-      width: 100%;
-      height: 190px;
-      background: #08090d;
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .transformable-box {
-      width: 110px;
-      height: 110px;
-      border-radius: 16px;
-      background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(16, 185, 129, 0.2));
-      border: 2px dashed var(--cyan);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #fff;
-      transform-origin: center center;
-      transition: transform 0.05s ease-out;
-      box-shadow: 0 0 24px rgba(0, 229, 255, 0.2);
-    }
-
-    /* Test Area 6: Smart Magnify (双指双击智能缩放) */
-    .smart-zoom-card {
-      width: 100%;
-      height: 190px;
-      background: #08090d;
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      position: relative;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-    }
-
-    .smart-zoom-content {
-      padding: 16px;
-      border-radius: 12px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
-      text-align: center;
-      max-width: 80%;
-    }
-
-    .smart-zoom-content.zoomed {
-      transform: scale(1.65);
-      box-shadow: 0 10px 40px rgba(0, 229, 255, 0.3);
-      border-color: var(--cyan);
-    }
-
-    /* Test Area 7: Two-Finger Navigation Swipe (双指翻页) */
-    .nav-swipe-stage {
-      width: 100%;
-      height: 190px;
-      background: #08090d;
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      position: relative;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-    }
-
-    .nav-card-track {
-      display: flex;
-      width: 300%;
-      height: 100%;
-      transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1);
-    }
-
-    .nav-page {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      gap: 8px;
-    }
-
-    /* Test Area 8: Multi-Finger System Gestures (Spaces & Mission Control) */
-    .system-gestures-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-    }
-
-    .gesture-indicator-box {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      transition: background 0.2s, border-color 0.2s, transform 0.2s;
-    }
-
-    .gesture-indicator-box.active {
-      background: rgba(168, 85, 247, 0.2);
-      border-color: var(--purple);
-      transform: translateY(-2px);
-    }
-
-    .gesture-icon {
-      font-size: 20px;
-    }
-
-    .gesture-info h5 {
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .gesture-info p {
+      padding: 0 8px;
+      gap: 6px;
       font-size: 10px;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+    .drag-content {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
       color: var(--text-muted);
     }
 
-    /* Test Area 9: Marquee Selection (框选多选网格) */
-    .marquee-stage {
+    /* --- Card 4: Smooth Scrolling --- */
+    .scroll-box {
       width: 100%;
-      height: 190px;
-      background: #08090d;
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      position: relative;
-      overflow: hidden;
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      padding: 12px;
-      gap: 10px;
-    }
-
-    .grid-file-item {
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 8px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      font-size: 11px;
-      transition: background 0.15s, border-color 0.15s;
-      cursor: pointer;
-    }
-
-    .grid-file-item.selected {
-      background: rgba(0, 229, 255, 0.25);
-      border-color: var(--cyan);
-      box-shadow: 0 0 12px rgba(0, 229, 255, 0.3);
-    }
-
-    .selection-rect {
-      position: absolute;
-      border: 1px solid var(--cyan);
-      background: rgba(0, 229, 255, 0.15);
-      pointer-events: none;
-      display: none;
-    }
-
-    /* Test Area 10: Right Edge Swipe Detector (右边缘滑入通知中心) */
-    .edge-swipe-stage {
-      width: 100%;
-      height: 190px;
-      background: #08090d;
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      position: relative;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .edge-trigger-zone {
-      position: absolute;
-      right: 0;
-      top: 0;
-      bottom: 0;
-      width: 40px;
-      background: rgba(245, 158, 11, 0.12);
-      border-left: 2px dashed var(--amber);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      writing-mode: vertical-rl;
-      font-size: 10px;
-      color: var(--amber);
-      letter-spacing: 2px;
-    }
-
-    .notification-drawer {
-      position: absolute;
-      right: -160px;
-      top: 10px;
-      bottom: 10px;
-      width: 150px;
-      background: rgba(30, 34, 48, 0.95);
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      padding: 10px;
-      font-size: 11px;
-      box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
-      transition: right 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+      height: 100%;
+      overflow-y: scroll;
+      padding: 8px 12px;
       display: flex;
       flex-direction: column;
       gap: 6px;
     }
-
-    .notification-drawer.open {
-      right: 10px;
+    .scroll-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-muted);
+    }
+    .scroll-item.active {
+      background: rgba(100, 210, 255, 0.1);
+      border-color: var(--apple-cyan);
+      color: #fff;
     }
 
-    /* Test Area 11: Text Selection & Dictionary Lookup */
-    .selectable-text-box {
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid var(--card-border);
+    /* --- Card 5: Pinch & 360° Rotate Compass --- */
+    .rotate-compass-stage {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .compass-dial {
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.4);
+      transition: transform 0.05s ease-out;
+    }
+    .compass-card-box {
+      width: 84px;
+      height: 84px;
+      background: linear-gradient(135deg, rgba(100, 210, 255, 0.2), rgba(191, 90, 242, 0.2));
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #fff;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      pointer-events: none;
+    }
+    .compass-needle {
+      position: absolute;
+      top: -6px;
+      width: 4px;
+      height: 12px;
+      background: var(--apple-cyan);
+      border-radius: 2px;
+      box-shadow: 0 0 8px var(--apple-cyan);
+    }
+
+    /* --- Card 6: Smart Magnify --- */
+    .magnify-box {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 8px;
+      cursor: pointer;
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .magnify-box.zoomed {
+      transform: scale(1.6);
+    }
+    .magnify-art {
+      width: 48px;
+      height: 48px;
       border-radius: 12px;
-      padding: 14px;
+      background: linear-gradient(135deg, var(--apple-blue), var(--apple-cyan));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: var(--glow-blue);
+    }
+
+    /* --- Card 7: History Swipe Track --- */
+    .history-slider {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .history-page-card {
+      width: 80%;
+      height: 80%;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
       font-size: 13px;
-      color: #d1d5db;
-      line-height: 1.7;
+      transition: transform 0.25s ease;
+    }
+
+    /* --- Card 8: Spaces Desktop Switcher --- */
+    .spaces-bar {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      align-items: center;
+      justify-content: center;
+    }
+    .space-thumb {
+      flex: 1;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--text-muted);
+      transition: all 0.2s ease;
+    }
+    .space-thumb.active {
+      background: rgba(10, 132, 255, 0.15);
+      border-color: var(--apple-blue);
+      color: #fff;
+      box-shadow: 0 0 16px rgba(10, 132, 255, 0.3);
+    }
+
+    /* --- Card 9: Dictionary Text Lookup --- */
+    .dict-field {
+      width: 100%;
+      height: 100%;
+      padding: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text);
+      overflow-y: auto;
       user-select: text;
       -webkit-user-select: text;
     }
-
-    .selectable-text-box mark {
-      background: rgba(168, 85, 247, 0.3);
-      color: #fff;
-      padding: 2px 4px;
-      border-radius: 4px;
+    .dict-field::selection {
+      background: rgba(10, 132, 255, 0.35);
     }
 
-    /* Realtime Event Stream Logger */
-    .log-container {
-      width: 100%;
-      height: 140px;
-      background: #050608;
-      border: 1px solid var(--card-border);
-      border-radius: 10px;
-      font-family: "SF Mono", Menlo, monospace;
-      font-size: 11px;
-      padding: 10px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column-reverse;
-      gap: 4px;
-    }
-
-    .log-line {
-      display: flex;
-      gap: 8px;
-      color: var(--text-muted);
-    }
-
-    .log-line .tag {
-      font-weight: bold;
-      color: var(--cyan);
-    }
-
-    .log-line.click .tag {
-      color: var(--emerald);
-    }
-
-    .log-line.wheel .tag {
-      color: var(--purple);
-    }
-
-    .log-line.drag .tag {
-      color: var(--amber);
-    }
-
-    /* Footer */
-    footer {
-      border-top: 1px solid var(--card-border);
-      padding: 16px 24px;
-      text-align: center;
-      font-size: 12px;
-      color: var(--text-muted);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 12px;
-    }
-
-    .btn-action {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid var(--card-border);
-      color: #fff;
-      padding: 6px 14px;
-      border-radius: 8px;
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background 0.15s, border-color 0.15s;
-    }
-
-    .btn-action:hover {
-      background: rgba(255, 255, 255, 0.15);
-      border-color: var(--card-hover);
-    }
-
-    /* Preferences Modal & Switchboard */
-    .modal-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.75);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      z-index: 200;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-
-    .modal-backdrop.show {
-      display: flex;
-    }
-
-    .modal-dialog {
-      background: #141620;
-      border: 1px solid rgba(255, 255, 255, 0.15);
-      border-radius: 20px;
-      width: 100%;
-      max-width: 680px;
-      max-height: 85vh;
+    /* --- Card 10: Notification Center Drawer --- */
+    .noti-drawer {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 120px;
+      background: rgba(30, 30, 35, 0.95);
+      backdrop-filter: blur(20px);
+      border-left: 1px solid var(--card-border-hover);
+      transform: translateX(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       display: flex;
       flex-direction: column;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
-      animation: modalPop 0.25s cubic-bezier(0.25, 1, 0.5, 1);
+      padding: 12px 8px;
+      gap: 6px;
+    }
+    .noti-drawer.open {
+      transform: translateX(0);
+    }
+    .noti-bubble {
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 10px;
+      color: var(--text-muted);
     }
 
-    @keyframes modalPop {
-      0% {
-        opacity: 0;
-        transform: scale(0.92);
-      }
-
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-
-    .modal-header {
+    /* Event Log Stream Footer */
+    .event-log-container {
+      grid-column: 1 / -1;
+      background: rgba(18, 18, 22, 0.7);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
       padding: 16px 20px;
-      border-bottom: 1px solid var(--card-border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .modal-header h3 {
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    .modal-body {
-      padding: 20px;
-      overflow-y: auto;
       display: flex;
       flex-direction: column;
       gap: 10px;
     }
-
-    .pref-group-title {
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--cyan);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-top: 6px;
-    }
-
-    .pref-row {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 12px 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      transition: background 0.15s, border-color 0.15s;
-    }
-
-    .pref-row:hover {
-      background: rgba(255, 255, 255, 0.06);
-    }
-
-    .pref-row strong {
-      font-size: 13px;
-      display: block;
-    }
-
-    .pref-row p {
+    .log-stream {
+      height: 110px;
+      overflow-y: auto;
+      font-family: "SF Mono", Menlo, monospace;
       font-size: 11px;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
-
-    /* iOS/macOS Style Toggle Switch */
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 44px;
-      height: 24px;
-      flex-shrink: 0;
-    }
-
-    .switch input {
-      opacity: 0;
-      width: 0;
-      height: 0;
-    }
-
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      inset: 0;
-      background-color: rgba(255, 255, 255, 0.15);
-      transition: 0.25s cubic-bezier(0.25, 1, 0.5, 1);
-      border-radius: 24px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .slider:before {
-      position: absolute;
-      content: "";
-      height: 18px;
-      width: 18px;
-      left: 2px;
-      bottom: 2px;
-      background-color: white;
-      transition: 0.25s cubic-bezier(0.25, 1, 0.5, 1);
-      border-radius: 50%;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-    }
-
-    input:checked+.slider {
-      background-color: var(--cyan);
-      border-color: var(--cyan);
-    }
-
-    input:checked+.slider:before {
-      transform: translateX(20px);
-      background-color: #000;
-    }
-
-    .modal-footer {
-      padding: 14px 20px;
-      border-top: 1px solid var(--card-border);
       display: flex;
-      justify-content: space-between;
-      align-items: center;
+      flex-direction: column-reverse;
+      gap: 4px;
+      color: var(--text-muted);
+    }
+    .log-entry {
+      display: flex;
       gap: 12px;
-      flex-wrap: wrap;
+      align-items: center;
+    }
+    .log-time { color: var(--text-dim); }
+    .log-tag {
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-weight: 600;
     }
   </style>
 </head>
 
 <body>
-
-  <!-- Header & Telemetry -->
+  <!-- Header -->
   <header>
     <div class="brand">
       <div class="brand-logo"></div>
-      <div class="brand-title">macOS Trackpad Master Diagnostic Suite</div>
+      <div>
+        <div class="brand-title">macOS 触控板交互诊断套件</div>
+        <div style="font-size: 11px; color: var(--text-muted);">Antigravity Native Precision Testbed</div>
+      </div>
     </div>
     <div class="telemetry-row">
-      <div class="telemetry-pill"><span class="live-dot"></span> 状态: <strong>实时监听</strong></div>
-      <div class="telemetry-pill">采样率: <strong id="fpsVal">0 Hz</strong></div>
-      <div class="telemetry-pill">瞬时速度: <strong id="speedVal">0 px/s</strong></div>
-      <div class="telemetry-pill">光标: <strong id="posVal">(0, 0)</strong></div>
-      <button class="btn-action" id="btnOpenPrefs"
-        style="background:rgba(0,229,255,0.15); border-color:var(--cyan); color:var(--cyan);">⚙️ 触控板功能开关</button>
+      <div class="telemetry-pill">
+        <span class="status-dot"></span>
+        <span>状态: <strong>Live Ingesting</strong></span>
+      </div>
+      <div class="telemetry-pill">
+        <span>采样率: <strong id="hzVal">120 Hz</strong></span>
+      </div>
+      <div class="telemetry-pill">
+        <span>光标坐标: <strong id="cursorPos">(0, 0)</strong></span>
+      </div>
     </div>
   </header>
 
-  <!-- Preferences Modal -->
-  <div class="modal-backdrop" id="prefsModal">
-    <div class="modal-dialog">
-      <div class="modal-header">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:20px;">⚙️</span>
-          <h3>macOS 触控板全功能配置中心 (Trackpad Settings)</h3>
-        </div>
-        <button class="btn-action" id="btnClosePrefs">&times; 关闭</button>
-      </div>
-      <div class="modal-body">
-        <div class="pref-group-title">🎯 光标与点按 (Point & Click)</div>
-        <div class="pref-row">
-          <div>
-            <strong>轻点以点按 (Tap to Click)</strong>
-            <p>单指轻点触控板进行左键单击</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefTapToClick" checked><span class="slider"></span></label>
-        </div>
-        <div class="pref-row">
-          <div>
-            <strong>双指辅助点按 (Secondary Click / 右键)</strong>
-            <p>双指轻点或按压弹出右键上下文菜单 (带 25ms 时域防抖)</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefRightClick" checked><span class="slider"></span></label>
-        </div>
-        <div class="pref-row">
-          <div>
-            <strong>三指轻点查词典与快速查看 (Look Up & Data Detectors)</strong>
-            <p>三指轻点单词弹出系统词典 / 快速预览 (支持异步抬指)</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefLookUp" checked><span class="slider"></span></label>
-        </div>
-
-        <div class="pref-group-title" style="margin-top:16px;">🖐️ 拖拽与窗口管理 (Dragging & Window Management)</div>
-        <div class="pref-row" style="background:rgba(168,85,247,0.1); border-color:var(--purple);">
-          <div>
-            <strong style="color:var(--cyan)">三指拖移 (Three-Finger Drag)</strong>
-            <p>三指滑动即抓取窗口，抬手享 500ms 悬停保护续拖</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="pref3FDrag" checked><span class="slider"></span></label>
-        </div>
-        <div class="pref-row" style="background:rgba(0,229,255,0.08); border-color:var(--cyan);">
-          <div>
-            <strong style="color:var(--cyan)">单指轻点并按住拖移 (1-Finger Tap to Drag)</strong>
-            <p>快速单指双击并在第 2 次按住滑动进行拖移 (与三指拖移双轨共存)</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="pref1FTapDrag" checked><span class="slider"></span></label>
-        </div>
-
-        <div class="pref-group-title" style="margin-top:16px;">📜 滚动与缩放 (Scroll & Zoom)</div>
-        <div class="pref-row">
-          <div>
-            <strong>自然滚动方向 (Natural Scrolling)</strong>
-            <p>内容移动方向紧随手指滑动方向</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefNaturalScroll" checked><span
-              class="slider"></span></label>
-        </div>
-        <div class="pref-row">
-          <div>
-            <strong>双指捏合缩放 (Pinch to Zoom)</strong>
-            <p>双指张开放大 / 捏合缩小</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefPinch" checked><span class="slider"></span></label>
-        </div>
-        <div class="pref-row">
-          <div>
-            <strong>双指双击智能缩放 (Smart Zoom)</strong>
-            <p>双指轻点两下快速局部对焦放大</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefSmartZoom" checked><span class="slider"></span></label>
-        </div>
-        <div class="pref-row">
-          <div>
-            <strong>双指旋转 (Rotate Gesture)</strong>
-            <p>双指顺时针/逆时针 360° 旋转图片或画布</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefRotate" checked><span class="slider"></span></label>
-        </div>
-
-        <div class="pref-group-title" style="margin-top:16px;">⚡ 系统多指轻扫手势 (More Gestures)</div>
-        <div class="pref-row">
-          <div>
-            <strong>在全屏应用间轻扫 (Swipe Between Full-Screen Apps)</strong>
-            <p>三指/四指左右轻扫切换桌面与全屏窗口</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefSpaces" checked><span class="slider"></span></label>
-        </div>
-        <div class="pref-row">
-          <div>
-            <strong>调度中心与应用程序窗口 (Mission Control & App Exposé)</strong>
-            <p>三指/四指向上轻扫打开调度中心，向下轻扫打开应用窗口</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefMissionCtrl" checked><span class="slider"></span></label>
-        </div>
-        <div class="pref-row">
-          <div>
-            <strong>从右边缘轻扫打开通知中心 (Notification Center Edge Swipe)</strong>
-            <p>双指从右边缘向左滑入呼出通知中心</p>
-          </div>
-          <label class="switch"><input type="checkbox" id="prefEdgeSwipe" checked><span class="slider"></span></label>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-action" id="btnEnableAll"
-          style="background:rgba(0,229,255,0.2); border-color:var(--cyan); color:var(--cyan);">✨ 一键开启全部功能
-          (包含双拖拽)</button>
-        <button class="btn-action" id="btnSavePrefs">保存配置并应用</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Main Test Grid -->
+  <!-- Main Cards -->
   <main>
-
-    <!-- 1: Precision & Trajectory Canvas -->
-    <div class="card" id="card-precision">
+    <!-- 1: Cursor Motion & Velocity -->
+    <div class="card" id="card-cursor">
       <div class="card-header">
-        <div class="card-title">① 光标精度与微操轨迹</div>
-        <span class="badge badge-cyan">0ms 延迟 / 0 死区</span>
+        <div class="card-title">① 单指精准位移与动态加速度</div>
+        <span class="badge badge-blue">1F Move</span>
       </div>
-      <div class="card-desc">非线性幂律加速曲线。低速滑动测试平滑微操（是否吞步），高速甩手测试跨屏爆发。</div>
-      <div class="canvas-container" id="canvasBox">
-        <canvas id="motionCanvas"></canvas>
+      <div class="card-desc">单指滑动。测试曲线加速、次像素累加及微位移动态响应。</div>
+      <div class="interactive-stage" id="radarStage">
+        <canvas id="cursorRadarCanvas"></canvas>
       </div>
-      <div class="precision-targets">
-        <span style="font-size:11px; color:var(--text-muted)">微操对齐靶点:</span>
-        <div class="target-dot" style="width: 4px; height: 4px;" title="4px 极小微操点"></div>
-        <div class="target-dot" style="width: 8px; height: 8px;" title="8px 按钮点"></div>
-        <div class="target-dot" style="width: 14px; height: 14px;" title="14px 标准图标"></div>
-        <div class="target-dot" style="width: 22px; height: 22px;" title="22px 控件"></div>
-        <button class="btn-action" id="btnClearCanvas" style="padding:2px 8px; font-size:11px;">清空画布</button>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>瞬时速度: <strong id="speedVal" style="color:var(--apple-cyan)">0.0 mm/s</strong></span>
+        <span>最大速度: <strong id="maxSpeedVal" style="color:var(--apple-blue)">0.0 mm/s</strong></span>
       </div>
     </div>
 
-    <!-- 2: Clicks, Double Clicks, Right Clicks -->
-    <div class="card" id="card-clicks">
+    <!-- 2: Clicks & Secondary Tap -->
+    <div class="card" id="card-click">
       <div class="card-header">
-        <div class="card-title">② 轻点与按压识别响应</div>
-        <span class="badge badge-emerald">时空窗口隔离</span>
+        <div class="card-title">② 单指/双指轻点按键响应</div>
+        <span class="badge badge-purple">Click Engine</span>
       </div>
-      <div class="card-desc">测试单指轻点、双击、三击、双指轻点右键。已加入 $\ge 25\text{ms}$ 时域防抖，彻底消除单指误成右键。</div>
-      <div class="click-grid">
-        <div class="click-box" id="boxLeftClick">
-          <h4>单指轻点 (Left Click)</h4>
-          <span id="cntLeft">次数: 0</span>
+      <div class="card-desc">单指轻点触发左键，双指并拢轻点触发右键上下文菜单。</div>
+      <div class="interactive-stage">
+        <div class="click-grid">
+          <div class="click-box" id="boxLeft">
+            <span style="font-size:18px;">🖱️</span>
+            <span>单指轻点 (左键)</span>
+            <span id="cntLeft" style="font-size:10px; opacity:0.8;">0 次</span>
+          </div>
+          <div class="click-box" id="boxRight">
+            <span style="font-size:18px;">📋</span>
+            <span>双指轻点 (右键)</span>
+            <span id="cntRight" style="font-size:10px; opacity:0.8;">0 次</span>
+          </div>
         </div>
-        <div class="click-box" id="boxRightClick">
-          <h4>双指轻点 (Right Click)</h4>
-          <span id="cntRight">次数: 0</span>
-        </div>
-        <div class="click-box" id="boxDblClick">
-          <h4>单指双击 (Double Click)</h4>
-          <span id="cntDbl">次数: 0</span>
-        </div>
-        <div class="click-box" id="boxTripleClick">
-          <h4>单指三击 (Triple Click)</h4>
-          <span id="cntTriple">次数: 0</span>
-        </div>
+      </div>
+      <div style="font-size:11px; color:var(--text-muted); text-align:center;">
+        支持双击防抖与毫秒级时序链
       </div>
     </div>
 
-    <!-- 3: Three-finger Drag & Drag Lock -->
+    <!-- 3: 3-Finger Drag / Tap-Drag -->
     <div class="card" id="card-drag">
       <div class="card-header">
-        <div class="card-title">③ 三指拖拽与 500ms 悬停接力</div>
-        <span class="badge badge-purple">Three-Finger Drag</span>
+        <div class="card-title">③ 三指拖移与单指轻点拖拽</div>
+        <span class="badge badge-green">Drag Lock</span>
       </div>
-      <div class="card-desc">三指触碰滑动即可抓取窗口。中途抬指触发 500ms 保护期（黄色倒计时），再次落指可无缝续拖。</div>
-      <div class="drag-stage" id="dragStage">
-        <div class="draggable-card" id="dragCard1" style="top:25px; left:30px;">
-          <span> 窗口 1</span>
-          <span style="font-size:10px; opacity:0.7">三指拖动</span>
-        </div>
-        <div class="draggable-card" id="dragCard2"
-          style="top:85px; left:180px; background:linear-gradient(135deg, rgba(0,229,255,0.3), rgba(16,185,129,0.3));">
-          <span>❖ 窗口 2</span>
-          <span style="font-size:10px; opacity:0.7">三指拖动</span>
+      <div class="card-desc">三指或单指轻点两下拖动物体。支持拖拽锁定与停顿换气。</div>
+      <div class="interactive-stage" id="dragStage">
+        <div class="draggable-window" id="dragWindow">
+          <div class="drag-titlebar">
+            <div class="window-dots">
+              <div class="window-dot dot-red"></div>
+              <div class="window-dot dot-yellow"></div>
+              <div class="window-dot dot-green"></div>
+            </div>
+            <span>Finder.app</span>
+          </div>
+          <div class="drag-content" id="dragStatus">
+            拖动我
+          </div>
         </div>
       </div>
-      <div class="drag-lock-indicator">
-        <span style="color:var(--text-muted)">Drag Lock 悬停状态:</span>
-        <div class="regrip-bar">
-          <div class="regrip-fill" id="regripBar"></div>
-        </div>
-        <strong id="dragLockStatus" style="font-family:monospace; color:var(--text-muted)">IDLE</strong>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>拖拽状态: <strong id="dragActiveStatus" style="color:var(--apple-green)">空闲</strong></span>
+        <span>位移: <strong id="dragDistance">0 px</strong></span>
       </div>
     </div>
 
-    <!-- 4: Two-finger Smooth Scroll & Momentum -->
+    <!-- 4: Smooth Pixel Scroll -->
     <div class="card" id="card-scroll">
       <div class="card-header">
-        <div class="card-title">④ 双指平滑滚动与惯性阻尼</div>
-        <span class="badge badge-cyan">Continuous Inertia</span>
+        <div class="card-title">④ 双指次像素平滑滚动与惯性</div>
+        <span class="badge badge-cyan">Smooth Scroll</span>
       </div>
-      <div class="card-desc">双指在视窗内上下左右滑动。已彻底解决死锁，落指即随动，松手享自然动量衰减。</div>
-      <div class="scroll-container" id="scrollBox">
-        <div class="scroll-content" id="scrollContent"></div>
-      </div>
-      <div
-        style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
-        <span>滚动位移: <strong id="scrollDelta" style="color:var(--text)">dx: 0, dy: 0</strong></span>
-        <span>相位: <strong id="scrollPhase" style="color:var(--purple)">None</strong></span>
-      </div>
-    </div>
-
-    <!-- 5: Pinch to Zoom & Rotate -->
-    <div class="card" id="card-pinch">
-      <div class="card-header">
-        <div class="card-title">⑤ 双指缩放、旋转与热流转</div>
-        <span class="badge badge-emerald">WebKit Gesture</span>
-      </div>
-      <div class="card-desc">双指张开/捏合（缩放）或圆周旋转。系统级派发 <strong>kIOHIDEventTypeRotation</strong>，支持 360° 旋转与中途平滑热流转。</div>
-      <div class="pinch-stage" id="pinchStage">
-        <div class="transformable-box" id="transformBox">
-          <span>Pinch / Rotate</span>
-          <span id="transformMetrics" style="font-size:10px; opacity:0.8">100% | 0°</span>
+      <div class="card-desc">双指滑动。自然滚动、橡胶圈阻尼与 RunLoop 物理惯性飞轮。</div>
+      <div class="interactive-stage">
+        <div class="scroll-box" id="scrollBox">
+          <div class="scroll-item active">01. macOS Sonoma 原生滚轮流</div>
+          <div class="scroll-item">02. 高精度 Q16.16 浮点位移派发</div>
+          <div class="scroll-item">03. 惯性衰减曲线模拟 (Inertia Phase)</div>
+          <div class="scroll-item">04. 极速滑动橡胶圈回弹测试</div>
+          <div class="scroll-item">05. 滚动中随时落指物理制动拦截</div>
+          <div class="scroll-item">06. 跨应用 WebKit & AppKit 无缝穿透</div>
         </div>
       </div>
-      <div
-        style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-muted); font-family:monospace; margin-top:4px;">
-        <span>缩放: <strong id="zoomVal" style="color:var(--cyan)">1.00×</strong></span>
-        <span>角度: <strong id="rotVal" style="color:var(--emerald)">0.0°</strong></span>
-        <button class="btn-action" id="btnResetTransform" style="padding:2px 8px; font-size:11px;">重置变换</button>
-      </div>
-      <div
-        style="font-size:11px; color:#94a3b8; background:rgba(255,255,255,0.04); padding:6px 10px; border-radius:6px; margin-top:6px;">
-        💡 <strong>测试建议</strong>：macOS 的 WebKit/Safari 原生支持网页旋转；若在 Chrome 中，Chrome 内核未向 Web DOM 暴露原生旋转事件，推荐直接切到 Mac
-        <strong>「预览 Preview」</strong>（打开任意图片）或<strong>「Apple 地图 Maps」</strong>中双指旋转，可体验原生的 360° 画布无极旋转！
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>Delta Y: <strong id="scrollDy" style="color:var(--apple-cyan)">0 px</strong></span>
+        <span>相位: <strong id="scrollPhase">Idle</strong></span>
       </div>
     </div>
 
-    <!-- 6: Smart Magnify (双指双击智能缩放) -->
-    <div class="card" id="card-smart-zoom">
+    <!-- 5: Pinch & 360° Rotate -->
+    <div class="card" id="card-rotate">
       <div class="card-header">
-        <div class="card-title">⑥ 双指双击智能缩放 (Smart Zoom)</div>
-        <span class="badge badge-blue">Smart Magnify</span>
+        <div class="card-title">⑤ 双指缩放与 360° 连续无极旋转</div>
+        <span class="badge badge-orange">Rotate & Pinch</span>
       </div>
-      <div class="card-desc">双指在下方卡片快速点按两次，触发 macOS 系统级平滑局部智能缩放对焦。</div>
-      <div class="smart-zoom-card" id="smartZoomStage">
-        <div class="smart-zoom-content" id="smartZoomBox">
-          <div style="font-size:24px; margin-bottom:4px;">🔍</div>
-          <h4 style="font-size:14px; font-weight:600;">智能对焦靶标</h4>
-          <p style="font-size:11px; color:var(--text-muted); margin-top:4px;">双指轻点两次放大 / 再次双击还原</p>
-        </div>
-      </div>
-      <div style="font-size:12px; color:var(--text-muted)">
-        状态: <strong id="smartZoomStatus" style="color:var(--text)">100% (标准视角)</strong>
-      </div>
-    </div>
-
-    <!-- 7: Navigation Swipe (双指翻页) -->
-    <div class="card" id="card-nav-swipe">
-      <div class="card-header">
-        <div class="card-title">⑦ 双指轻扫页面导航 (Navigation Swipe)</div>
-        <span class="badge badge-amber">Back / Forward</span>
-      </div>
-      <div class="card-desc">双指从左向右（后退）或从右向左（前进）轻扫，测试浏览器历史栈视差滑动翻页。</div>
-      <div class="nav-swipe-stage" id="navSwipeStage">
-        <div class="nav-card-track" id="navTrack">
-          <div class="nav-page" style="background:rgba(59,130,246,0.15)">
-            <span style="font-size:20px;">⏮</span>
-            <strong>第 1 页: 历史起点</strong>
-            <span style="font-size:11px; color:var(--text-muted)">双指往左滑前往下一页 &rarr;</span>
+      <div class="card-desc">两指捏合缩放或以圆心旋转。全面支持 WebKit 手势与坐标绑定。</div>
+      <div class="interactive-stage" id="rotateStage">
+        <div class="rotate-compass-stage">
+          <div class="compass-dial" id="compassDial">
+            <div class="compass-needle"></div>
+            <div class="compass-card-box" id="compassBox">
+              <span>CANVAS</span>
+              <span id="compassMetrics" style="font-size:10px; color:var(--apple-cyan)">0° | 1.0×</span>
+            </div>
           </div>
-          <div class="nav-page" style="background:rgba(168,85,247,0.15)">
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>旋转角: <strong id="rotDegreeVal" style="color:var(--apple-orange)">0.0°</strong></span>
+        <span>缩放: <strong id="pinchScaleVal" style="color:var(--apple-cyan)">1.00×</strong></span>
+        <button id="btnResetRotate" style="background:rgba(255,255,255,0.08); border:1px solid var(--card-border); color:var(--text); padding:3px 10px; border-radius:6px; font-size:11px; cursor:pointer;">重置</button>
+      </div>
+    </div>
+
+    <!-- 6: Smart Magnify -->
+    <div class="card" id="card-smart-magnify">
+      <div class="card-header">
+        <div class="card-title">⑥ 双指双击智能缩放对焦</div>
+        <span class="badge badge-blue">Smart Zoom</span>
+      </div>
+      <div class="card-desc">双指快速点按两次。触发 macOS 系统级靶向局部快速对焦。</div>
+      <div class="interactive-stage" id="smartZoomStage">
+        <div class="magnify-box" id="smartZoomBox">
+          <div class="magnify-art">🔍</div>
+          <span style="font-size:12px; color:var(--text-muted);">双指轻点两次对焦</span>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>倍率: <strong id="zoomScaleText" style="color:var(--apple-blue)">1.00× (标准)</strong></span>
+      </div>
+    </div>
+
+    <!-- 7: 2-Finger Navigation Swipe -->
+    <div class="card" id="card-nav">
+      <div class="card-header">
+        <div class="card-title">⑦ 双指横扫前进 / 后退翻页</div>
+        <span class="badge badge-purple">Page Swipe</span>
+      </div>
+      <div class="card-desc">在 Safari 或访达中双指横向滑动，流畅穿梭于前后历史页面。</div>
+      <div class="interactive-stage" id="navStage">
+        <div class="history-slider">
+          <div class="history-page-card" id="navCard">
             <span style="font-size:20px;">📄</span>
-            <strong>第 2 页: 当前主页</strong>
-            <span style="font-size:11px; color:var(--text-muted)">&larr; 双指往右滑后退 | 双指往左滑前进 &rarr;</span>
-          </div>
-          <div class="nav-page" style="background:rgba(16,185,129,0.15)">
-            <span style="font-size:20px;">⏭</span>
-            <strong>第 3 页: 前进目标页</strong>
-            <span style="font-size:11px; color:var(--text-muted)">&larr; 双指往右滑返回上一页</span>
+            <span id="navCardTitle">Page 2 (当前页面)</span>
+            <span style="font-size:10px; color:var(--text-muted);">双指向左/向右滑动翻页</span>
           </div>
         </div>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted)">
-        <span>当前视窗: <strong id="navPageIndex" style="color:var(--amber)">Page 2 / 3</strong></span>
-        <button class="btn-action" id="btnResetNav" style="padding:2px 8px; font-size:11px;">重置到主页</button>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>当前位置: <strong id="navPosText" style="color:var(--apple-purple)">Page 2 / 3</strong></span>
       </div>
     </div>
 
-    <!-- 8: Multi-Finger System Gestures (Spaces / Mission Control) -->
-    <div class="card" id="card-system-gestures">
+    <!-- 8: 4-Finger Spaces Switcher -->
+    <div class="card" id="card-spaces">
       <div class="card-header">
-        <div class="card-title">⑧ 三指/四指系统轻扫监视器</div>
-        <span class="badge badge-purple">Spaces / Mission Control</span>
+        <div class="card-title">⑧ 四指桌面切换 (Spaces) 与调度中心</div>
+        <span class="badge badge-green">Spaces & Mission</span>
       </div>
-      <div class="card-desc">三指或四指在触控板上做系统级轻扫，观察 Dock 广播与对应手势状态灯的实时点亮。</div>
-      <div class="system-gestures-grid">
-        <div class="gesture-indicator-box" id="boxMC">
-          <div class="gesture-icon">⬆️</div>
-          <div class="gesture-info">
-            <h5>调度中心 (Mission Control)</h5>
-            <p>三指/四指向上轻扫</p>
+      <div class="card-desc">四指左右滑动切换全屏桌面；四指上推打开 Mission Control 调度中心。</div>
+      <div class="interactive-stage" id="spacesStage">
+        <div class="spaces-bar">
+          <div class="space-thumb" id="space1">
+            <span>💻</span>
+            <span>Desktop 1</span>
           </div>
-        </div>
-        <div class="gesture-indicator-box" id="boxExpose">
-          <div class="gesture-icon">⬇️</div>
-          <div class="gesture-info">
-            <h5>App Exposé (应用程序窗口)</h5>
-            <p>三指/四指向下轻扫</p>
+          <div class="space-thumb active" id="space2">
+            <span>🚀</span>
+            <span>Desktop 2</span>
           </div>
-        </div>
-        <div class="gesture-indicator-box" id="boxSpaceLeft">
-          <div class="gesture-icon">⬅️</div>
-          <div class="gesture-info">
-            <h5>向左切换桌面 (Spaces Left)</h5>
-            <p>三指/四指向右轻扫</p>
-          </div>
-        </div>
-        <div class="gesture-indicator-box" id="boxSpaceRight">
-          <div class="gesture-icon">➡️</div>
-          <div class="gesture-info">
-            <h5>向右切换桌面 (Spaces Right)</h5>
-            <p>三指/四指向左轻扫</p>
+          <div class="space-thumb" id="space3">
+            <span>🎨</span>
+            <span>Desktop 3</span>
           </div>
         </div>
       </div>
-      <div style="font-size:12px; color:var(--text-muted)">
-        实时动作: <strong id="sysGestureText" style="color:var(--text)">等待手势中...</strong>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>当前桌面: <strong id="spaceCurrentText" style="color:var(--apple-green)">Space 2</strong></span>
       </div>
     </div>
 
-    <!-- 9: Marquee Selection (框选与批量文件整理) -->
-    <div class="card" id="card-marquee">
+    <!-- 9: 3-Finger Dictionary Lookup -->
+    <div class="card" id="card-dict">
       <div class="card-header">
-        <div class="card-title">⑨ 框选多选与文件网格整理</div>
-        <span class="badge badge-cyan">Marquee Selection</span>
+        <div class="card-title">⑨ 三指轻点查词 (Cmd+Ctrl+D)</div>
+        <span class="badge badge-cyan">Look Up</span>
       </div>
-      <div class="card-desc">在空白区域按住拖动拉出框选高亮矩形（单指/三指均可），测试多文件选择与拖拽整理。</div>
-      <div class="marquee-stage" id="marqueeStage">
-        <div class="selection-rect" id="selRect"></div>
-        <div class="grid-file-item" data-id="1"><span>📄</span><span>Doc_01.pdf</span></div>
-        <div class="grid-file-item" data-id="2"><span>🖼</span><span>Photo_02.png</span></div>
-        <div class="grid-file-item" data-id="3"><span>🎬</span><span>Video_03.mov</span></div>
-        <div class="grid-file-item" data-id="4"><span>📦</span><span>App_04.dmg</span></div>
-        <div class="grid-file-item" data-id="5"><span>🎵</span><span>Music_05.mp3</span></div>
-        <div class="grid-file-item" data-id="6"><span>📊</span><span>Sheet_06.xlsx</span></div>
-        <div class="grid-file-item" data-id="7"><span>📁</span><span>Projects</span></div>
-        <div class="grid-file-item" data-id="8"><span>⚙️</span><span>Config.json</span></div>
-      </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted)">
-        <span>已选中: <strong id="marqueeCount" style="color:var(--cyan)">0 个项目</strong></span>
-        <button class="btn-action" id="btnClearSelection" style="padding:2px 8px; font-size:11px;">清除选择</button>
-      </div>
-    </div>
-
-    <!-- 10: Right Edge Swipe Detector (右边缘滑入通知中心) -->
-    <div class="card" id="card-edge-swipe">
-      <div class="card-header">
-        <div class="card-title">⑩ 右边缘双指滑入通知中心</div>
-        <span class="badge badge-amber">Notification Center</span>
-      </div>
-      <div class="card-desc">双指从右侧边缘向内滑入，呼出 macOS 通知中心侧边抽屉面板。</div>
-      <div class="edge-swipe-stage" id="edgeStage">
-        <div style="font-size:12px; color:var(--text-muted)">双指从右侧虚线区域向左滑入 &larr;</div>
-        <div class="edge-trigger-zone">EDGE ZONE</div>
-        <div class="notification-drawer" id="notiDrawer">
-          <strong style="color:var(--text); font-size:12px;"> 通知中心</strong>
-          <div style="background:rgba(255,255,255,0.06); padding:6px; border-radius:6px;">
-            <span style="font-weight:600; color:var(--cyan)">日历</span>
-            <p style="color:var(--text-muted); font-size:10px;">下午 3:00 - 项目评审</p>
-          </div>
-          <div style="background:rgba(255,255,255,0.06); padding:6px; border-radius:6px;">
-            <span style="font-weight:600; color:var(--emerald)">天气</span>
-            <p style="color:var(--text-muted); font-size:10px;">晴朗 24°C</p>
-          </div>
+      <div class="card-desc">三指并拢轻点文本。系统自动识别词汇并弹出词典/维基百科释义。</div>
+      <div class="interactive-stage">
+        <div class="dict-field">
+          <strong>Apple Trackpad</strong> features continuous multitouch precision, sub-pixel inertial physics, and native rigid-body rotational gestures. Try 3-finger tapping on words like <em>MacBook</em>, <em>Architecture</em>, or <em>Fluidity</em>!
         </div>
       </div>
-      <div style="font-size:12px; color:var(--text-muted)">
-        状态: <strong id="edgeSwipeStatus" style="color:var(--text)">抽屉已收起</strong>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>查词捕获: <strong id="dictStatus" style="color:var(--apple-cyan)">等待三指轻点...</strong></span>
       </div>
     </div>
 
-    <!-- 11: Text Selection & Dictionary Lookup -->
-    <div class="card" id="card-lookup">
+    <!-- 10: Right-Edge 2-Finger Notification Drawer -->
+    <div class="card" id="card-edge">
       <div class="card-header">
-        <div class="card-title">⑪ 三指轻点查词典与文本框选</div>
-        <span class="badge badge-purple">Cmd + Ctrl + D</span>
+        <div class="card-title">⑩ 触控板右边缘滑入通知中心</div>
+        <span class="badge badge-orange">Edge In</span>
       </div>
-      <div class="card-desc">支持异步抬指（Split-Lift）三指轻点单词弹出词典；单指或三指在段落中滑动流畅选中文本。</div>
-      <div class="selectable-text-box" id="textBox">
-        Apple's <mark>Magic Trackpad</mark> delivers an unparalleled multi-touch experience on macOS.
-        With its precise sub-pixel acceleration curve, ultra-low latency response, and fluid gesture
-        arbitration, it seamlessly bridges natural human intuition with digital precision.
-        Try tapping three fingers on any word like <mark>unparalleled</mark> or <mark>arbitration</mark>
-        to trigger the system dictionary lookup popup!
+      <div class="card-desc">两指从触控板最右侧边缘向内滑入，滑出 macOS 通知中心小组件。</div>
+      <div class="interactive-stage" id="edgeStage">
+        <div style="font-size:12px; color:var(--text-muted); text-align:center;">
+          从右边缘向左滑入
+        </div>
+        <div class="noti-drawer" id="notiDrawer">
+          <div style="font-size:10px; font-weight:600; color:var(--text);">通知中心</div>
+          <div class="noti-bubble">📅 日历: 会议 14:00</div>
+          <div class="noti-bubble">⛅️ 晴朗 24°C</div>
+        </div>
       </div>
-      <div style="font-size:12px; color:var(--text-muted)">
-        选区: <span id="selectionStatus" style="color:var(--text)">未选择文本</span>
+      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+        <span>抽屉状态: <strong id="edgeStatus" style="color:var(--apple-orange)">收起</strong></span>
       </div>
     </div>
 
+    <!-- Event Log Stream -->
+    <div class="event-log-container">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-size:13px; font-weight:600; color:var(--text);">实时手势事件日志流 (Live Event Stream)</div>
+        <button id="btnClearLogs" style="background:rgba(255,255,255,0.06); border:1px solid var(--card-border); color:var(--text-muted); padding:3px 10px; border-radius:6px; font-size:11px; cursor:pointer;">清空日志</button>
+      </div>
+      <div class="log-stream" id="logStream">
+        <div class="log-entry">
+          <span class="log-time">[00:00:00]</span>
+          <span class="log-tag badge-blue">INIT</span>
+          <span>手势诊断环境已就绪，等待输入...</span>
+        </div>
+      </div>
+    </div>
   </main>
 
-  <!-- Fullscreen Raw Event Console -->
-  <div style="max-width:1440px; margin: 0 auto 24px; padding: 0 24px; width:100%;">
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">⑫ 底层事件流实时监视器 (Raw Event Telemetry Stream)</div>
-        <div style="display:flex; gap:8px;">
-          <button class="btn-action" id="btnClearLog">清空日志</button>
-        </div>
-      </div>
-      <div class="log-container" id="logBox">
-        <div class="log-line"><span class="tag">[SYSTEM]</span> 触控板全链路大师级诊断系统已就绪。正在监听所有底层输入流...</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Footer -->
-  <footer>
-    <div>macOS Trackpad Master Diagnostic Suite &bull; 高精度模拟触控引擎</div>
-    <div>IP: 本地服务端口 4242 &bull; 架构: Rust + WebKit Native Events + Zero-Copy UDP</div>
-  </footer>
-
+  <!-- Interactive Script -->
   <script>
-    // --- Telemetry & State Tracker ---
-    let frameCount = 0;
-    let lastFpsTime = performance.now();
-    let lastEventPos = { x: 0, y: 0, time: performance.now() };
-    let currentSpeed = 0;
-
-    const fpsEl = document.getElementById('fpsVal');
-    const speedEl = document.getElementById('speedVal');
-    const posEl = document.getElementById('posVal');
-    const eventPill = document.getElementById('eventPill');
-    const logBox = document.getElementById('logBox');
-
-    function logEvent(type, detail, cls = '') {
-      const line = document.createElement('div');
-      line.className = `log-line ${cls}`;
-      const now = new Date().toISOString().substring(11, 23);
-      line.innerHTML = `<span style="opacity:0.5">${now}</span> <span class="tag">[${type}]</span> <span>${detail}</span>`;
-      logBox.prepend(line);
-      if (logBox.children.length > 80) logBox.lastElementChild.remove();
-      if (eventPill) eventPill.textContent = type;
-    }
-
-    document.getElementById('btnClearLog').onclick = () => {
-      logBox.innerHTML = '';
-      logEvent('SYSTEM', '日志已清空');
-    };
-
-    // --- Preferences Modal Logic ---
-    const prefsModal = document.getElementById('prefsModal');
-    document.getElementById('btnOpenPrefs').onclick = () => prefsModal.classList.add('show');
-    document.getElementById('btnClosePrefs').onclick = () => prefsModal.classList.remove('show');
-
-    const prefKeys = [
-      'prefTapToClick', 'prefRightClick', 'prefLookUp', 'pref3FDrag',
-      'pref1FTapDrag', 'prefNaturalScroll', 'prefPinch', 'prefSmartZoom',
-      'prefRotate', 'prefSpaces', 'prefMissionCtrl', 'prefEdgeSwipe'
-    ];
-
-    function loadPrefs() {
-      prefKeys.forEach(k => {
-        const val = localStorage.getItem(k);
-        if (val !== null) {
-          const el = document.getElementById(k);
-          if (el) el.checked = (val === 'true');
-        }
-      });
-    }
-    loadPrefs();
-
-    document.getElementById('btnSavePrefs').onclick = () => {
-      prefKeys.forEach(k => {
-        const el = document.getElementById(k);
-        if (el) localStorage.setItem(k, el.checked);
-      });
-      prefsModal.classList.remove('show');
-      logEvent('CONFIG', '触控板偏好设置已更新并保存至本地');
-    };
-
-    document.getElementById('btnEnableAll').onclick = () => {
-      prefKeys.forEach(k => {
-        const el = document.getElementById(k);
-        if (el) {
-          el.checked = true;
-          localStorage.setItem(k, 'true');
-        }
-      });
-      logEvent('CONFIG', '✨ 已一键启用全部触控板手势 (包含三指拖拽与单指双击拖拽)');
-    };
-
-    // --- Global Pointer & Speed Tracking ---
-    window.addEventListener('pointermove', (e) => {
-      frameCount++;
-      const now = performance.now();
-      const dt = (now - lastEventPos.time) / 1000;
-      if (dt > 0.005) {
-        const dist = Math.hypot(e.clientX - lastEventPos.x, e.clientY - lastEventPos.y);
-        currentSpeed = Math.round(dist / dt);
-        lastEventPos = { x: e.clientX, y: e.clientY, time: now };
+    // --- Logging Utility ---
+    const logStream = document.getElementById('logStream');
+    function logEvent(tag, message, colorClass = 'badge-blue') {
+      const now = new Date();
+      const timeStr = `[${now.toTimeString().split(' ')[0]}.${String(now.getMilliseconds()).padStart(3, '0')}]`;
+      const div = document.createElement('div');
+      div.className = 'log-entry';
+      div.innerHTML = `<span class="log-time">${timeStr}</span><span class="log-tag ${colorClass}">${tag}</span><span>${message}</span>`;
+      logStream.prepend(div);
+      if (logStream.children.length > 40) {
+        logStream.removeChild(logStream.lastChild);
       }
-      posEl.textContent = `(${Math.round(e.clientX)}, ${Math.round(e.clientY)})`;
-      speedEl.textContent = `${currentSpeed} px/s`;
-    }, { passive: true });
+    }
+    document.getElementById('btnClearLogs').onclick = () => {
+      logStream.innerHTML = '';
+      logEvent('CLEARED', '日志已清空', 'badge-cyan');
+    };
 
-    setInterval(() => {
-      const now = performance.now();
-      const elapsed = (now - lastFpsTime) / 1000;
-      const fps = Math.round(frameCount / elapsed);
-      fpsEl.textContent = `${fps} Hz`;
-      frameCount = 0;
-      lastFpsTime = now;
-    }, 500);
-
-    // --- 1. Motion Trajectory Canvas ---
-    const canvas = document.getElementById('motionCanvas');
+    // --- 1. Cursor Radar & Velocity ---
+    const canvas = document.getElementById('cursorRadarCanvas');
     const ctx = canvas.getContext('2d');
-    let points = [];
-
+    let lastX = 0, lastY = 0, lastT = performance.now();
+    let maxSpeed = 0;
     function resizeCanvas() {
-      const rect = canvas.parentElement.getBoundingClientRect();
-      canvas.width = rect.width * window.devicePixelRatio;
-      canvas.height = rect.height * window.devicePixelRatio;
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      canvas.width = canvas.parentElement.clientWidth;
+      canvas.height = canvas.parentElement.clientHeight;
     }
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    document.getElementById('canvasBox').addEventListener('pointermove', (e) => {
+    window.addEventListener('pointermove', (e) => {
+      const now = performance.now();
+      const dt = Math.max(1, now - lastT);
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      const distPx = Math.hypot(dx, dy);
+      const speedMmPerSec = (distPx * 0.264583) / (dt / 1000); // approx 96dpi
+      if (speedMmPerSec > maxSpeed && speedMmPerSec < 4000) {
+        maxSpeed = speedMmPerSec;
+        document.getElementById('maxSpeedVal').textContent = `${maxSpeed.toFixed(1)} mm/s`;
+      }
+      document.getElementById('speedVal').textContent = `${speedMmPerSec.toFixed(1)} mm/s`;
+      document.getElementById('cursorPos').textContent = `(${e.clientX}, ${e.clientY})`;
+
+      // Draw particle trail
+      ctx.fillStyle = 'rgba(20, 20, 24, 0.2)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      points.push({ x, y, speed: currentSpeed, time: performance.now() });
-      if (points.length > 120) points.shift();
-      drawTrajectory();
-    });
-
-    function drawTrajectory() {
-      const rect = canvas.getBoundingClientRect();
-      ctx.clearRect(0, 0, rect.width, rect.height);
-      if (points.length < 2) return;
-
-      ctx.lineWidth = 2.5;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      for (let i = 1; i < points.length; i++) {
-        const p1 = points[i - 1];
-        const p2 = points[i];
-        const age = (performance.now() - p2.time) / 1000;
-        const alpha = Math.max(0, 1 - age * 0.8);
-
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
+      if (cx >= 0 && cx <= canvas.width && cy >= 0 && cy <= canvas.height) {
         ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        const hue = Math.min(280, 180 + p2.speed * 0.1);
-        ctx.strokeStyle = `hsla(${hue}, 100%, 65%, ${alpha})`;
-        ctx.stroke();
+        ctx.arc(cx, cy, Math.min(14, 4 + speedMmPerSec * 0.02), 0, Math.PI * 2);
+        ctx.fillStyle = '#64d2ff';
+        ctx.shadowColor = '#0a84ff';
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
       }
-    }
 
-    document.getElementById('btnClearCanvas').onclick = () => {
-      points = [];
-      const rect = canvas.getBoundingClientRect();
-      ctx.clearRect(0, 0, rect.width, rect.height);
-    };
-
-    // --- 2. Click Tester ---
-    let leftCount = 0, rightCount = 0, dblCount = 0, tripleCount = 0;
-    const boxLeft = document.getElementById('boxLeftClick');
-    const boxRight = document.getElementById('boxRightClick');
-    const boxDbl = document.getElementById('boxDblClick');
-    const boxTriple = document.getElementById('boxTripleClick');
-
-    function flashSuccess(el) {
-      el.classList.add('flash-success');
-      setTimeout(() => el.classList.remove('flash-success'), 150);
-    }
-
-    window.addEventListener('click', (e) => {
-      if (e.button === 0) {
-        leftCount++;
-        document.getElementById('cntLeft').textContent = `次数: ${leftCount}`;
-        flashSuccess(boxLeft);
-        logEvent('CLICK', `Left Click at (${e.clientX}, ${e.clientY})`, 'click');
-        if (e.detail === 2) {
-          dblCount++;
-          document.getElementById('cntDbl').textContent = `次数: ${dblCount}`;
-          flashSuccess(boxDbl);
-          logEvent('DBLCLICK', `Double Click at (${e.clientX}, ${e.clientY})`, 'click');
-        } else if (e.detail >= 3) {
-          tripleCount++;
-          document.getElementById('cntTriple').textContent = `次数: ${tripleCount}`;
-          flashSuccess(boxTriple);
-          logEvent('TRIPLECLICK', `Triple Click at (${e.clientX}, ${e.clientY})`, 'click');
-        }
-      }
+      lastX = e.clientX;
+      lastY = e.clientY;
+      lastT = now;
     });
 
+    // --- 2. Clicks (Left / Right / Double) ---
+    let leftCount = 0, rightCount = 0;
+    const boxLeft = document.getElementById('boxLeft');
+    const boxRight = document.getElementById('boxRight');
+    window.addEventListener('click', (e) => {
+      leftCount++;
+      document.getElementById('cntLeft').textContent = `${leftCount} 次`;
+      boxLeft.classList.add('active');
+      setTimeout(() => boxLeft.classList.remove('active'), 140);
+      logEvent('CLICK', `Left Click (Total: ${leftCount})`, 'badge-blue');
+    });
     window.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       rightCount++;
-      document.getElementById('cntRight').textContent = `次数: ${rightCount}`;
-      flashSuccess(boxRight);
-      logEvent('RIGHT_CLICK', `Two-Finger Right Click at (${e.clientX}, ${e.clientY})`, 'click');
+      document.getElementById('cntRight').textContent = `${rightCount} 次`;
+      boxRight.classList.add('active-right');
+      setTimeout(() => boxRight.classList.remove('active-right'), 140);
+      logEvent('RIGHT_CLICK', `Right Click (Total: ${rightCount})`, 'badge-purple');
     });
 
-    // --- 3. Three-Finger Draggable Windows ---
-    function makeDraggable(el) {
-      let isDragging = false;
-      let startX, startY, initialLeft, initialTop;
+    // --- 3. Window Dragging ---
+    const dragWin = document.getElementById('dragWindow');
+    const dragStage = document.getElementById('dragStage');
+    let isDragging = false, dragStartX = 0, dragStartY = 0, winStartX = 0, winStartY = 0;
+    dragWin.addEventListener('pointerdown', (e) => {
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      winStartX = dragWin.offsetLeft;
+      winStartY = dragWin.offsetTop;
+      dragWin.setPointerCapture(e.pointerId);
+      document.getElementById('dragActiveStatus').textContent = "正在拖拽";
+      document.getElementById('dragActiveStatus').style.color = "var(--apple-blue)";
+      logEvent('DRAG_START', 'Window Drag Engaged', 'badge-green');
+    });
+    dragWin.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      const stageRect = dragStage.getBoundingClientRect();
+      const newX = Math.max(0, Math.min(winStartX + dx, stageRect.width - dragWin.offsetWidth));
+      const newY = Math.max(0, Math.min(winStartY + dy, stageRect.height - dragWin.offsetHeight));
+      dragWin.style.left = `${newX}px`;
+      dragWin.style.top = `${newY}px`;
+      document.getElementById('dragDistance').textContent = `${Math.round(Math.hypot(dx, dy))} px`;
+    });
+    dragWin.addEventListener('pointerup', (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      dragWin.releasePointerCapture(e.pointerId);
+      document.getElementById('dragActiveStatus').textContent = "空闲";
+      document.getElementById('dragActiveStatus').style.color = "var(--apple-green)";
+      logEvent('DRAG_END', 'Window Released', 'badge-green');
+    });
 
-      el.addEventListener('pointerdown', (e) => {
-        isDragging = true;
-        el.setPointerCapture(e.pointerId);
-        startX = e.clientX;
-        startY = e.clientY;
-        initialLeft = el.offsetLeft;
-        initialTop = el.offsetTop;
-        logEvent('DRAG_START', `Grabbed ${el.textContent.trim().split('\n')[0]}`, 'drag');
-      });
-
-      el.addEventListener('pointermove', (e) => {
-        if (!isDragging) return;
-        const dx = e.clientX - startX;
-        const dy = e.clientY - startY;
-        el.style.left = `${initialLeft + dx}px`;
-        el.style.top = `${initialTop + dy}px`;
-      });
-
-      el.addEventListener('pointerup', (e) => {
-        if (!isDragging) return;
-        isDragging = false;
-        el.releasePointerCapture(e.pointerId);
-        logEvent('DRAG_END', `Released ${el.textContent.trim().split('\n')[0]}`, 'drag');
-        triggerRegripAnimation();
-      });
-    }
-
-    makeDraggable(document.getElementById('dragCard1'));
-    makeDraggable(document.getElementById('dragCard2'));
-
-    const regripBar = document.getElementById('regripBar');
-    const dragLockStatus = document.getElementById('dragLockStatus');
-    let regripTimer = null;
-
-    function triggerRegripAnimation() {
-      dragLockStatus.textContent = "500ms REGRIP";
-      dragLockStatus.style.color = "var(--amber)";
-      regripBar.style.transition = "none";
-      regripBar.style.width = "100%";
-      setTimeout(() => {
-        regripBar.style.transition = "width 0.5s linear";
-        regripBar.style.width = "0%";
-      }, 20);
-      clearTimeout(regripTimer);
-      regripTimer = setTimeout(() => {
-        dragLockStatus.textContent = "IDLE";
-        dragLockStatus.style.color = "var(--text-muted)";
-      }, 500);
-    }
-
-    // --- 4. Smooth Scrolling Population ---
-    const scrollContent = document.getElementById('scrollContent');
-    for (let i = 1; i <= 50; i++) {
-      const item = document.createElement('div');
-      item.className = 'scroll-item';
-      item.innerHTML = `<span>#${i} Trackpad Scroll Item — 丝滑惯性衰减测试行</span> <span style="font-family:monospace; color:var(--text-muted)">row_${i}</span>`;
-      scrollContent.appendChild(item);
-    }
-
+    // --- 4. Smooth Scrolling ---
     const scrollBox = document.getElementById('scrollBox');
-    const scrollDeltaEl = document.getElementById('scrollDelta');
-    let lastScrollTime = 0;
-
+    let scrollTimeout = null;
     scrollBox.addEventListener('wheel', (e) => {
-      scrollDeltaEl.textContent = `dx: ${Math.round(e.deltaX)}, dy: ${Math.round(e.deltaY)}`;
+      document.getElementById('scrollDy').textContent = `${Math.round(e.deltaY)} px`;
       document.getElementById('scrollPhase').textContent = "Changed";
-      logEvent('SCROLL', `dx=${Math.round(e.deltaX)} dy=${Math.round(e.deltaY)}`, 'wheel');
-      lastScrollTime = performance.now();
+      document.getElementById('scrollPhase').style.color = "var(--apple-cyan)";
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        document.getElementById('scrollPhase').textContent = "Ended";
+        document.getElementById('scrollPhase').style.color = "var(--text-muted)";
+      }, 150);
     }, { passive: true });
 
-    setInterval(() => {
-      if (performance.now() - lastScrollTime > 300) {
-        document.getElementById('scrollPhase').textContent = "None";
-      }
-    }, 200);
-
-    // --- 5. Pinch to Zoom & Rotate ---
+    // --- 5. 360° Rotate & Pinch Compass ---
+    const compassDial = document.getElementById('compassDial');
+    const rotDegreeVal = document.getElementById('rotDegreeVal');
+    const pinchScaleVal = document.getElementById('pinchScaleVal');
+    const compassMetrics = document.getElementById('compassMetrics');
+    let currentRot = 0.0;
     let currentScale = 1.0;
-    let currentRotation = 0.0;
+    let baseRot = 0.0;
     let baseScale = 1.0;
-    let baseRotation = 0.0;
-    const transformBox = document.getElementById('transformBox');
-    const zoomVal = document.getElementById('zoomVal');
-    const rotVal = document.getElementById('rotVal');
-    const transformMetrics = document.getElementById('transformMetrics');
-    const pinchStage = document.getElementById('pinchStage');
 
-    // WebKit Native Gestures (Safari & Mac WebKit)
-    pinchStage.addEventListener('gesturestart', (e) => {
+    function applyCompassTransform() {
+      compassDial.style.transform = `rotate(${currentRot}deg) scale(${currentScale})`;
+      rotDegreeVal.textContent = `${currentRot.toFixed(1)}°`;
+      pinchScaleVal.textContent = `${currentScale.toFixed(2)}×`;
+      compassMetrics.textContent = `${currentRot.toFixed(0)}° | ${currentScale.toFixed(2)}×`;
+    }
+
+    // WebKit Trackpad Native Gestures (Safari)
+    window.addEventListener('gesturestart', (e) => {
       e.preventDefault();
+      baseRot = currentRot;
       baseScale = currentScale;
-      baseRotation = currentRotation;
-      logEvent('GESTURE_START', `Pinch/Rotate Started`, 'wheel');
+      logEvent('GESTURE_START', 'Native Rotate/Pinch Gesture Began', 'badge-orange');
     });
-
-    pinchStage.addEventListener('gesturechange', (e) => {
+    window.addEventListener('gesturechange', (e) => {
       e.preventDefault();
-      if (e.scale !== undefined && e.scale !== 1) {
-        currentScale = Math.min(Math.max(0.3, baseScale * e.scale), 4.0);
-      }
       if (e.rotation !== undefined) {
-        currentRotation = baseRotation + e.rotation;
+        currentRot = baseRot + e.rotation;
       }
-      updateTransform();
-      logEvent('ROTATE_PINCH', `Scale=${currentScale.toFixed(2)}x Rot=${currentRotation.toFixed(1)}°`, 'wheel');
+      if (e.scale !== undefined && e.scale > 0) {
+        currentScale = Math.min(Math.max(0.4, baseScale * e.scale), 3.0);
+      }
+      applyCompassTransform();
+      logEvent('GESTURE_MOVE', `Rot=${currentRot.toFixed(1)}° Scale=${currentScale.toFixed(2)}×`, 'badge-orange');
     });
-
-    pinchStage.addEventListener('gestureend', (e) => {
+    window.addEventListener('gestureend', (e) => {
       e.preventDefault();
-      logEvent('GESTURE_END', `Pinch/Rotate Ended`, 'wheel');
+      logEvent('GESTURE_END', 'Native Rotate/Pinch Ended', 'badge-orange');
     });
 
-    // Chrome / Generic Wheel Simulation
-    pinchStage.addEventListener('wheel', (e) => {
+    // Fallback Wheel for Chrome / Touchpad Track
+    document.getElementById('rotateStage').addEventListener('wheel', (e) => {
       if (e.ctrlKey) {
         e.preventDefault();
-        currentScale -= e.deltaY * 0.01;
-        currentScale = Math.min(Math.max(0.3, currentScale), 4.0);
-        updateTransform();
-        logEvent('PINCH', `Scale = ${currentScale.toFixed(2)}×`, 'wheel');
+        currentScale = Math.min(Math.max(0.4, currentScale - e.deltaY * 0.01), 3.0);
+        applyCompassTransform();
+        logEvent('PINCH', `Scale = ${currentScale.toFixed(2)}×`, 'badge-cyan');
       } else if (e.shiftKey) {
         e.preventDefault();
-        currentRotation += e.deltaY * 0.5;
-        updateTransform();
-        logEvent('ROTATE', `Rot = ${currentRotation.toFixed(1)}°`, 'wheel');
+        currentRot += e.deltaY * 0.4;
+        applyCompassTransform();
+        logEvent('ROTATE', `Rot = ${currentRot.toFixed(1)}°`, 'badge-orange');
       }
     }, { passive: false });
 
-    function updateTransform() {
-      transformBox.style.transform = `scale(${currentScale}) rotate(${currentRotation}deg)`;
-      zoomVal.textContent = `${currentScale.toFixed(2)}×`;
-      rotVal.textContent = `${currentRotation.toFixed(1)}°`;
-      transformMetrics.textContent = `${Math.round(currentScale * 100)}% | ${currentRotation.toFixed(0)}°`;
-    }
-
-    document.getElementById('btnResetTransform').onclick = () => {
+    document.getElementById('btnResetRotate').onclick = () => {
+      currentRot = 0.0;
       currentScale = 1.0;
-      currentRotation = 0.0;
-      updateTransform();
+      applyCompassTransform();
+      logEvent('RESET', 'Rotation & Scale Reset to 0°', 'badge-cyan');
     };
 
-    // --- 6. Smart Magnify (双指双击智能缩放) ---
+    // --- 6. Smart Magnify ---
     const smartBox = document.getElementById('smartZoomBox');
-    const smartStatus = document.getElementById('smartZoomStatus');
     let isSmartZoomed = false;
-
-    document.getElementById('smartZoomStage').addEventListener('dblclick', (e) => {
+    document.getElementById('smartZoomStage').addEventListener('dblclick', () => {
       isSmartZoomed = !isSmartZoomed;
       if (isSmartZoomed) {
         smartBox.classList.add('zoomed');
-        smartStatus.textContent = "165% (智能放大对焦)";
-        smartStatus.style.color = "var(--cyan)";
-        logEvent('SMART_MAGNIFY', 'Zoomed In (165%)', 'click');
+        document.getElementById('zoomScaleText').textContent = "1.60× (智能放大)";
+        document.getElementById('zoomScaleText').style.color = "var(--apple-blue)";
+        logEvent('SMART_ZOOM', 'Smart Magnify Engaged (160%)', 'badge-blue');
       } else {
         smartBox.classList.remove('zoomed');
-        smartStatus.textContent = "100% (标准视角)";
-        smartStatus.style.color = "var(--text)";
-        logEvent('SMART_MAGNIFY', 'Zoomed Out (100%)', 'click');
+        document.getElementById('zoomScaleText').textContent = "1.00× (标准)";
+        document.getElementById('zoomScaleText').style.color = "var(--text-muted)";
+        logEvent('SMART_ZOOM', 'Smart Magnify Reset (100%)', 'badge-blue');
       }
     });
 
-    // --- 7. Navigation Swipe Simulator ---
-    let navCurrentPage = 1;
-    const navTrack = document.getElementById('navTrack');
-    const navPageIndex = document.getElementById('navPageIndex');
-
-    function updateNavPage() {
-      navTrack.style.transform = `translateX(-${navCurrentPage * 33.333}%)`;
-      navPageIndex.textContent = `Page ${navCurrentPage + 1} / 3`;
-    }
-    updateNavPage();
-
-    document.getElementById('navSwipeStage').addEventListener('wheel', (e) => {
-      if (Math.abs(e.deltaX) > 40 && Math.abs(e.deltaY) < 20) {
-        if (e.deltaX > 40 && navCurrentPage < 2) {
-          navCurrentPage++;
-          updateNavPage();
-          logEvent('NAV_SWIPE', 'Navigated Forward (Next Page)', 'wheel');
-        } else if (e.deltaX < -40 && navCurrentPage > 0) {
-          navCurrentPage--;
-          updateNavPage();
-          logEvent('NAV_SWIPE', 'Navigated Backward (Prev Page)', 'wheel');
+    // --- 7. Navigation Swipe ---
+    let navPage = 2;
+    const navCard = document.getElementById('navCard');
+    const navCardTitle = document.getElementById('navCardTitle');
+    const navPosText = document.getElementById('navPosText');
+    document.getElementById('navStage').addEventListener('wheel', (e) => {
+      if (Math.abs(e.deltaX) > 35 && Math.abs(e.deltaY) < 20) {
+        if (e.deltaX > 35 && navPage < 3) {
+          navPage++;
+          updateNav();
+        } else if (e.deltaX < -35 && navPage > 1) {
+          navPage--;
+          updateNav();
         }
       }
     }, { passive: true });
-
-    document.getElementById('btnResetNav').onclick = () => {
-      navCurrentPage = 1;
-      updateNavPage();
-    };
-
-    // --- 8. Multi-Finger System Gestures Lamp Tracker ---
-    function triggerSystemGestureLamp(id, text) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.classList.add('active');
-      document.getElementById('sysGestureText').textContent = text;
-      document.getElementById('sysGestureText').style.color = "var(--purple)";
-      logEvent('SYS_GESTURE', text, 'wheel');
-      setTimeout(() => {
-        el.classList.remove('active');
-        document.getElementById('sysGestureText').textContent = "等待手势中...";
-        document.getElementById('sysGestureText').style.color = "var(--text)";
-      }, 1200);
+    function updateNav() {
+      navCardTitle.textContent = `Page ${navPage} (当前页面)`;
+      navPosText.textContent = `Page ${navPage} / 3`;
+      navCard.style.transform = `scale(0.95)`;
+      setTimeout(() => navCard.style.transform = `scale(1)`, 180);
+      logEvent('PAGE_SWIPE', `Navigated to Page ${navPage}`, 'badge-purple');
     }
 
-    // --- 9. Marquee Selection Box ---
-    const marqueeStage = document.getElementById('marqueeStage');
-    const selRect = document.getElementById('selRect');
-    let isSelecting = false;
-    let selStartX = 0, selStartY = 0;
-    const fileItems = document.querySelectorAll('.grid-file-item');
-
-    marqueeStage.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.grid-file-item')) {
-        const item = e.target.closest('.grid-file-item');
-        item.classList.toggle('selected');
-        updateMarqueeCount();
-        return;
-      }
-      isSelecting = true;
-      marqueeStage.setPointerCapture(e.pointerId);
-      const rect = marqueeStage.getBoundingClientRect();
-      selStartX = e.clientX - rect.left;
-      selStartY = e.clientY - rect.top;
-      selRect.style.left = `${selStartX}px`;
-      selRect.style.top = `${selStartY}px`;
-      selRect.style.width = '0px';
-      selRect.style.height = '0px';
-      selRect.style.display = 'block';
-    });
-
-    marqueeStage.addEventListener('pointermove', (e) => {
-      if (!isSelecting) return;
-      const rect = marqueeStage.getBoundingClientRect();
-      const curX = e.clientX - rect.left;
-      const curY = e.clientY - rect.top;
-      const left = Math.min(selStartX, curX);
-      const top = Math.min(selStartY, curY);
-      const width = Math.abs(curX - selStartX);
-      const height = Math.abs(curY - selStartY);
-
-      selRect.style.left = `${left}px`;
-      selRect.style.top = `${top}px`;
-      selRect.style.width = `${width}px`;
-      selRect.style.height = `${height}px`;
-
-      fileItems.forEach(item => {
-        const itemRect = item.getBoundingClientRect();
-        const stageRect = marqueeStage.getBoundingClientRect();
-        const iLeft = itemRect.left - stageRect.left;
-        const iTop = itemRect.top - stageRect.top;
-        const iRight = iLeft + itemRect.width;
-        const iBottom = iTop + itemRect.height;
-
-        const overlaps = !(left > iRight || left + width < iLeft || top > iBottom || top + height < iTop);
-        if (overlaps) {
-          item.classList.add('selected');
+    // --- 8. Spaces Switcher ---
+    let activeSpace = 2;
+    document.getElementById('spacesStage').addEventListener('wheel', (e) => {
+      if (Math.abs(e.deltaX) > 40 && Math.abs(e.deltaY) < 25) {
+        if (e.deltaX > 40 && activeSpace < 3) {
+          activeSpace++;
+          updateSpace();
+        } else if (e.deltaX < -40 && activeSpace > 1) {
+          activeSpace--;
+          updateSpace();
         }
+      }
+    }, { passive: true });
+    function updateSpace() {
+      [1, 2, 3].forEach(i => {
+        document.getElementById(`space${i}`).classList.toggle('active', i === activeSpace);
       });
-      updateMarqueeCount();
-    });
-
-    marqueeStage.addEventListener('pointerup', (e) => {
-      if (!isSelecting) return;
-      isSelecting = false;
-      marqueeStage.releasePointerCapture(e.pointerId);
-      selRect.style.display = 'none';
-      logEvent('MARQUEE_SELECT', `Selected ${document.querySelectorAll('.grid-file-item.selected').length} items`, 'drag');
-    });
-
-    function updateMarqueeCount() {
-      const count = document.querySelectorAll('.grid-file-item.selected').length;
-      document.getElementById('marqueeCount').textContent = `${count} 个项目`;
+      document.getElementById('spaceCurrentText').textContent = `Space ${activeSpace}`;
+      logEvent('SPACE_SWITCH', `Switched to Desktop Space ${activeSpace}`, 'badge-green');
     }
 
-    document.getElementById('btnClearSelection').onclick = () => {
-      fileItems.forEach(i => i.classList.remove('selected'));
-      updateMarqueeCount();
-    };
+    // --- 9. Dictionary Lookup Key Detection ---
+    window.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+        document.getElementById('dictStatus').textContent = "Cmd+Ctrl+D 查词激活!";
+        document.getElementById('dictStatus').style.color = "var(--apple-cyan)";
+        logEvent('LOOKUP', 'Dictionary Lookup Triggered (Cmd+Ctrl+D)', 'badge-cyan');
+        setTimeout(() => {
+          document.getElementById('dictStatus').textContent = "等待三指轻点...";
+          document.getElementById('dictStatus').style.color = "var(--text-muted)";
+        }, 1500);
+      }
+    });
 
     // --- 10. Edge Swipe Notification Center ---
     const notiDrawer = document.getElementById('notiDrawer');
-    const edgeStage = document.getElementById('edgeStage');
-    let isEdgeOpen = false;
-
-    edgeStage.addEventListener('wheel', (e) => {
-      if (e.deltaX < -20 && !isEdgeOpen) {
-        isEdgeOpen = true;
+    let isDrawerOpen = false;
+    document.getElementById('edgeStage').addEventListener('wheel', (e) => {
+      if (e.deltaX < -25 && !isDrawerOpen) {
+        isDrawerOpen = true;
         notiDrawer.classList.add('open');
-        document.getElementById('edgeSwipeStatus').textContent = "双指滑入成功 (抽屉已展开)";
-        document.getElementById('edgeSwipeStatus').style.color = "var(--amber)";
-        logEvent('EDGE_SWIPE', `2-Finger Edge Swipe (deltaX=${Math.round(e.deltaX)})`, 'wheel');
-      } else if (e.deltaX > 20 && isEdgeOpen) {
-        isEdgeOpen = false;
+        document.getElementById('edgeStatus').textContent = "展开";
+        document.getElementById('edgeStatus').style.color = "var(--apple-orange)";
+        logEvent('NOTI_DRAWER', 'Notification Center Opened', 'badge-orange');
+      } else if (e.deltaX > 25 && isDrawerOpen) {
+        isDrawerOpen = false;
         notiDrawer.classList.remove('open');
-        document.getElementById('edgeSwipeStatus').textContent = "抽屉已收起";
-        document.getElementById('edgeSwipeStatus').style.color = "var(--text)";
-        logEvent('EDGE_SWIPE', 'Notification Center Dismissed', 'wheel');
+        document.getElementById('edgeStatus').textContent = "收起";
+        document.getElementById('edgeStatus').style.color = "var(--text-muted)";
+        logEvent('NOTI_DRAWER', 'Notification Center Dismissed', 'badge-orange');
       }
     }, { passive: true });
-
-    document.getElementById('notiDrawer').addEventListener('click', () => {
-      isEdgeOpen = false;
+    notiDrawer.addEventListener('click', () => {
+      isDrawerOpen = false;
       notiDrawer.classList.remove('open');
-      document.getElementById('edgeSwipeStatus').textContent = "抽屉已收起";
-    });
-
-    // --- 11. Text Selection Monitoring ---
-    document.addEventListener('selectionchange', () => {
-      const sel = window.getSelection().toString().trim();
-      const status = document.getElementById('selectionStatus');
-      if (sel.length > 0) {
-        status.textContent = `选中 "${sel.length > 25 ? sel.substring(0, 25) + '...' : sel}" (${sel.length} 字符)`;
-        status.style.color = "var(--cyan)";
-      } else {
-        status.textContent = "未选择文本";
-        status.style.color = "var(--text)";
-      }
-    });
-
-    // --- Key Events (for Cmd+Ctrl+D dictionary check) ---
-    window.addEventListener('keydown', (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
-        logEvent('LOOKUP', `Triggered Dictionary Lookup (Cmd+Ctrl+D)`, 'click');
-      }
+      document.getElementById('edgeStatus').textContent = "收起";
     });
   </script>
 </body>
