@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -116,8 +117,17 @@
     }
 
     @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(0.85); }
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.5;
+        transform: scale(0.85);
+      }
     }
 
     /* Main Container */
@@ -175,11 +185,35 @@
       letter-spacing: 0.5px;
     }
 
-    .badge-cyan { background: rgba(0, 229, 255, 0.15); color: var(--cyan); border: 1px solid rgba(0, 229, 255, 0.3); }
-    .badge-purple { background: rgba(168, 85, 247, 0.15); color: var(--purple); border: 1px solid rgba(168, 85, 247, 0.3); }
-    .badge-emerald { background: rgba(16, 185, 129, 0.15); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.3); }
-    .badge-amber { background: rgba(245, 158, 11, 0.15); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3); }
-    .badge-blue { background: rgba(59, 130, 246, 0.15); color: var(--blue); border: 1px solid rgba(59, 130, 246, 0.3); }
+    .badge-cyan {
+      background: rgba(0, 229, 255, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+    }
+
+    .badge-purple {
+      background: rgba(168, 85, 247, 0.15);
+      color: var(--purple);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+
+    .badge-emerald {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--emerald);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .badge-amber {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--amber);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .badge-blue {
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--blue);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
 
     .card-desc {
       font-size: 12px;
@@ -641,9 +675,17 @@
       color: var(--cyan);
     }
 
-    .log-line.click .tag { color: var(--emerald); }
-    .log-line.wheel .tag { color: var(--purple); }
-    .log-line.drag .tag { color: var(--amber); }
+    .log-line.click .tag {
+      color: var(--emerald);
+    }
+
+    .log-line.wheel .tag {
+      color: var(--purple);
+    }
+
+    .log-line.drag .tag {
+      color: var(--amber);
+    }
 
     /* Footer */
     footer {
@@ -708,8 +750,15 @@
     }
 
     @keyframes modalPop {
-      0% { opacity: 0; transform: scale(0.92); }
-      100% { opacity: 1; transform: scale(1); }
+      0% {
+        opacity: 0;
+        transform: scale(0.92);
+      }
+
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
     }
 
     .modal-header {
@@ -807,12 +856,12 @@
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
     }
 
-    input:checked + .slider {
+    input:checked+.slider {
       background-color: var(--cyan);
       border-color: var(--cyan);
     }
 
-    input:checked + .slider:before {
+    input:checked+.slider:before {
       transform: translateX(20px);
       background-color: #000;
     }
@@ -828,6 +877,7 @@
     }
   </style>
 </head>
+
 <body>
 
   <!-- Header & Telemetry -->
@@ -841,7 +891,8 @@
       <div class="telemetry-pill">采样率: <strong id="fpsVal">0 Hz</strong></div>
       <div class="telemetry-pill">瞬时速度: <strong id="speedVal">0 px/s</strong></div>
       <div class="telemetry-pill">光标: <strong id="posVal">(0, 0)</strong></div>
-      <button class="btn-action" id="btnOpenPrefs" style="background:rgba(0,229,255,0.15); border-color:var(--cyan); color:var(--cyan);">⚙️ 触控板功能开关</button>
+      <button class="btn-action" id="btnOpenPrefs"
+        style="background:rgba(0,229,255,0.15); border-color:var(--cyan); color:var(--cyan);">⚙️ 触控板功能开关</button>
     </div>
   </header>
 
@@ -901,7 +952,8 @@
             <strong>自然滚动方向 (Natural Scrolling)</strong>
             <p>内容移动方向紧随手指滑动方向</p>
           </div>
-          <label class="switch"><input type="checkbox" id="prefNaturalScroll" checked><span class="slider"></span></label>
+          <label class="switch"><input type="checkbox" id="prefNaturalScroll" checked><span
+              class="slider"></span></label>
         </div>
         <div class="pref-row">
           <div>
@@ -949,7 +1001,9 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn-action" id="btnEnableAll" style="background:rgba(0,229,255,0.2); border-color:var(--cyan); color:var(--cyan);">✨ 一键开启全部功能 (包含双拖拽)</button>
+        <button class="btn-action" id="btnEnableAll"
+          style="background:rgba(0,229,255,0.2); border-color:var(--cyan); color:var(--cyan);">✨ 一键开启全部功能
+          (包含双拖拽)</button>
         <button class="btn-action" id="btnSavePrefs">保存配置并应用</button>
       </div>
     </div>
@@ -1017,14 +1071,17 @@
           <span> 窗口 1</span>
           <span style="font-size:10px; opacity:0.7">三指拖动</span>
         </div>
-        <div class="draggable-card" id="dragCard2" style="top:85px; left:180px; background:linear-gradient(135deg, rgba(0,229,255,0.3), rgba(16,185,129,0.3));">
+        <div class="draggable-card" id="dragCard2"
+          style="top:85px; left:180px; background:linear-gradient(135deg, rgba(0,229,255,0.3), rgba(16,185,129,0.3));">
           <span>❖ 窗口 2</span>
           <span style="font-size:10px; opacity:0.7">三指拖动</span>
         </div>
       </div>
       <div class="drag-lock-indicator">
         <span style="color:var(--text-muted)">Drag Lock 悬停状态:</span>
-        <div class="regrip-bar"><div class="regrip-fill" id="regripBar"></div></div>
+        <div class="regrip-bar">
+          <div class="regrip-fill" id="regripBar"></div>
+        </div>
         <strong id="dragLockStatus" style="font-family:monospace; color:var(--text-muted)">IDLE</strong>
       </div>
     </div>
@@ -1039,7 +1096,8 @@
       <div class="scroll-container" id="scrollBox">
         <div class="scroll-content" id="scrollContent"></div>
       </div>
-      <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
+      <div
+        style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); font-family:monospace;">
         <span>滚动位移: <strong id="scrollDelta" style="color:var(--text)">dx: 0, dy: 0</strong></span>
         <span>相位: <strong id="scrollPhase" style="color:var(--purple)">None</strong></span>
       </div>
@@ -1058,13 +1116,16 @@
           <span id="transformMetrics" style="font-size:10px; opacity:0.8">100% | 0°</span>
         </div>
       </div>
-      <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-muted); font-family:monospace; margin-top:4px;">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-muted); font-family:monospace; margin-top:4px;">
         <span>缩放: <strong id="zoomVal" style="color:var(--cyan)">1.00×</strong></span>
         <span>角度: <strong id="rotVal" style="color:var(--emerald)">0.0°</strong></span>
         <button class="btn-action" id="btnResetTransform" style="padding:2px 8px; font-size:11px;">重置变换</button>
       </div>
-      <div style="font-size:11px; color:#94a3b8; background:rgba(255,255,255,0.04); padding:6px 10px; border-radius:6px; margin-top:6px;">
-        💡 <strong>测试建议</strong>：macOS 的 WebKit/Safari 原生支持网页旋转；若在 Chrome 中，Chrome 内核未向 Web DOM 暴露原生旋转事件，推荐直接切到 Mac <strong>「预览 Preview」</strong>（打开任意图片）或<strong>「Apple 地图 Maps」</strong>中双指旋转，可体验原生的 360° 画布无极旋转！
+      <div
+        style="font-size:11px; color:#94a3b8; background:rgba(255,255,255,0.04); padding:6px 10px; border-radius:6px; margin-top:6px;">
+        💡 <strong>测试建议</strong>：macOS 的 WebKit/Safari 原生支持网页旋转；若在 Chrome 中，Chrome 内核未向 Web DOM 暴露原生旋转事件，推荐直接切到 Mac
+        <strong>「预览 Preview」</strong>（打开任意图片）或<strong>「Apple 地图 Maps」</strong>中双指旋转，可体验原生的 360° 画布无极旋转！
       </div>
     </div>
 
@@ -1220,10 +1281,10 @@
       </div>
       <div class="card-desc">支持异步抬指（Split-Lift）三指轻点单词弹出词典；单指或三指在段落中滑动流畅选中文本。</div>
       <div class="selectable-text-box" id="textBox">
-        Apple's <mark>Magic Trackpad</mark> delivers an unparalleled multi-touch experience on macOS. 
-        With its precise sub-pixel acceleration curve, ultra-low latency response, and fluid gesture 
+        Apple's <mark>Magic Trackpad</mark> delivers an unparalleled multi-touch experience on macOS.
+        With its precise sub-pixel acceleration curve, ultra-low latency response, and fluid gesture
         arbitration, it seamlessly bridges natural human intuition with digital precision.
-        Try tapping three fingers on any word like <mark>unparalleled</mark> or <mark>arbitration</mark> 
+        Try tapping three fingers on any word like <mark>unparalleled</mark> or <mark>arbitration</mark>
         to trigger the system dictionary lookup popup!
       </div>
       <div style="font-size:12px; color:var(--text-muted)">
@@ -1288,8 +1349,8 @@
     document.getElementById('btnClosePrefs').onclick = () => prefsModal.classList.remove('show');
 
     const prefKeys = [
-      'prefTapToClick', 'prefRightClick', 'prefLookUp', 'pref3FDrag', 
-      'pref1FTapDrag', 'prefNaturalScroll', 'prefPinch', 'prefSmartZoom', 
+      'prefTapToClick', 'prefRightClick', 'prefLookUp', 'pref3FDrag',
+      'pref1FTapDrag', 'prefNaturalScroll', 'prefPinch', 'prefSmartZoom',
       'prefRotate', 'prefSpaces', 'prefMissionCtrl', 'prefEdgeSwipe'
     ];
 
@@ -1773,4 +1834,5 @@
     });
   </script>
 </body>
+
 </html>

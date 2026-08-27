@@ -233,7 +233,22 @@ class TouchPadView(context: Context) : View(context) {
         for (i in 0 until event.pointerCount) {
             val pid = event.getPointerId(i)
             if (!cidByPointer.containsKey(pid)) {
-                cidByPointer[pid] = if (freeIds.isNotEmpty()) freeIds.removeFirst() else (nextCid++ % 255 + 1)
+                val curX = event.getX(i) * mmPerPx * scale
+                val curY = event.getY(i) * mmPerPx * scale
+                var isSplit = false
+                for (j in 0 until event.pointerCount) {
+                    if (i != j && cidByPointer.containsKey(event.getPointerId(j))) {
+                        val otherX = event.getX(j) * mmPerPx * scale
+                        val otherY = event.getY(j) * mmPerPx * scale
+                        if (Math.hypot((curX - otherX).toDouble(), (curY - otherY).toDouble()) < 9.0) {
+                            isSplit = true
+                            break
+                        }
+                    }
+                }
+                if (!isSplit) {
+                    cidByPointer[pid] = if (freeIds.isNotEmpty()) freeIds.removeFirst() else (nextCid++ % 255 + 1)
+                }
             }
         }
     }
