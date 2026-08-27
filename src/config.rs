@@ -23,9 +23,9 @@
 //! # file  = "~/Library/Logs/macos-trackpad-companion.log"
 //!
 //! [cursor]
-//! sensitivity   = 25.0
-//! accel_exponent = 1.0
-//! accel_ref     = 80.0
+//! sensitivity   = 28.0
+//! accel_exponent = 1.35
+//! accel_ref     = 70.0
 //!
 //! [scroll]
 //! sensitivity = 20.0
@@ -400,7 +400,9 @@ mod tests {
     #[test]
     fn empty_input_yields_defaults() {
         let cfg: Config = toml::from_str("").unwrap();
-        assert_eq!(cfg.cursor.sensitivity, 25.0);
+        assert_eq!(cfg.cursor.sensitivity, 28.0);
+        assert_eq!(cfg.cursor.accel_exponent, 1.35);
+        assert_eq!(cfg.cursor.accel_ref, 70.0);
         assert_eq!(cfg.scroll.sensitivity, 20.0);
         assert!(cfg.scroll.natural);
         assert_eq!(cfg.gestures.pinch.enable, GestureEnable::On);

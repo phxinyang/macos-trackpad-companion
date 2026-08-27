@@ -89,3 +89,30 @@ gesture engine. The net path reuses both halves unchanged: decode an
 ATP1 packet, truncate scan_time to its low 16 bits, hand the same
 clock-mapped timestamp to `gesture::State::on_frame_at`. From there on
 it *is* the same pipeline.
+
+## Reporting cadence and the silence watchdog
+
+Clients must send a frame for every contact state, not only for changes.
+A resting finger has to keep producing frames at roughly display rate —
+the Android client resends the last contact set every 16 ms, the browser
+client sends one per animation frame — each with a fresh sequence number
+and a current timestamp.
+
+This is not redundancy for its own sake. Both platforms only deliver
+touch callbacks when a pointer *moves* (`ACTION_MOVE`, `pointermove`), so
+a finger held still stops the stream entirely, and a stopped stream is
+indistinguishable from a client that walked away. Physical trackpads
+report at a fixed rate regardless of motion; clients of this protocol
+must do the same.
+
+The receiver treats `IDLE_LIFT_AFTER` (250 ms) of silence with contacts
+down as a **link fault, not a lift**: the gesture is canceled via
+`gesture::State::cancel_touch`, which closes out held buttons and phased
+event streams but suppresses every tap path. Ending such a gesture as if
+the user had lifted is what previously manufactured `dur=0ms` taps, which
+macOS then coalesced with a preceding real tap into a double-click that
+was never performed.
+
+The all-lifted frame remains the one transition worth retransmitting
+(×3 at 0/30/90 ms), since losing it strands the receiver mid-gesture
+until the watchdog fires.

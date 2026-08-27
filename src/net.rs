@@ -62,6 +62,10 @@ enum Incoming {
 pub trait InputSink {
     fn on_frame(&mut self, frame: Frame, ts: Timestamp);
     fn idle_tick(&mut self, now: Timestamp);
+    /// The link went silent while contacts were still down. This is not
+    /// a lift — the fingers may well still be on the pad — so the
+    /// gesture is canceled rather than completed.
+    fn on_link_timeout(&mut self, now: Timestamp);
 }
 
 impl<S: InputSink + ?Sized> InputSink for &mut S {
@@ -70,6 +74,9 @@ impl<S: InputSink + ?Sized> InputSink for &mut S {
     }
     fn idle_tick(&mut self, now: Timestamp) {
         (**self).idle_tick(now)
+    }
+    fn on_link_timeout(&mut self, now: Timestamp) {
+        (**self).on_link_timeout(now)
     }
 }
 
@@ -80,6 +87,10 @@ impl<O: Output> InputSink for gesture::State<O> {
 
     fn idle_tick(&mut self, now: Timestamp) {
         self.tick(now);
+    }
+
+    fn on_link_timeout(&mut self, now: Timestamp) {
+        self.cancel_touch(now);
     }
 }
 
@@ -184,10 +195,6 @@ fn stats_loop(stats: Arc<Stats>) {
 
 fn pump(rx: mpsc::Receiver<Incoming>, stats: &Stats, sink: &mut dyn InputSink) -> Result<()> {
     let mut scan_clock = ScanTimeClock::new();
-    // Scan time of the most recent real frame; the watchdog's
-    // synthesized lift continues from it (+1 tick) so the clock never
-    // sees a second source.
-    let mut last_raw_scan = 0u16;
     let mut contacts_down = false;
     let mut last_arrival = Instant::now();
 
@@ -204,8 +211,7 @@ fn pump(rx: mpsc::Receiver<Incoming>, stats: &Stats, sink: &mut dyn InputSink) -
                 // Same clock mapping as the HID bridge: per-frame deltas
                 // follow the *sender's* scan-time deltas, immune to
                 // network jitter between touch instant and arrival here.
-                last_raw_scan = wire.scan_time_u16();
-                let aligned_ts = scan_clock.observe(last_raw_scan, Timestamp::now());
+                let aligned_ts = scan_clock.observe(wire.scan_time_u16(), Timestamp::now());
                 last_arrival = Instant::now();
                 sink.on_frame(to_report_frame(wire), aligned_ts);
             }
@@ -218,24 +224,19 @@ fn pump(rx: mpsc::Receiver<Incoming>, stats: &Stats, sink: &mut dyn InputSink) -
         }
 
         if contacts_down && last_arrival.elapsed() > IDLE_LIFT_AFTER {
-            // Lost "all fingers up" — synthesize it so pending taps fire
-            // and scroll/pinch lock release. Scan time continues from the
-            // last real frame (+1) — same source, no cross-clock jump.
+            // The client stopped sending while contacts were down. That
+            // is a link fault, not a lift: a phone whose finger is
+            // resting still has the finger on the glass, and any client
+            // that only transmits on movement looks exactly like one
+            // that walked away. Cancel the gesture instead of
+            // completing it — completing it manufactures taps the user
+            // never made.
             contacts_down = false;
-            let ticks = last_raw_scan.wrapping_add(1);
-            let aligned_ts = scan_clock.observe(ticks, Timestamp::now());
             log::info!(
-                "[net] no frames for {:?} with contacts down — synthesizing lift",
+                "[net] no frames for {:?} with contacts down — canceling touch (link fault, not a lift)",
                 IDLE_LIFT_AFTER
             );
-            sink.on_frame(
-                Frame {
-                    contacts: vec![],
-                    scan_time_100us: ticks,
-                    button: false,
-                },
-                aligned_ts,
-            );
+            sink.on_link_timeout(Timestamp::now());
         }
     }
 }

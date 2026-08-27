@@ -93,9 +93,9 @@ level = "info"              # error | warn | info | debug | trace
                             # `~/` is expanded and parent dirs are created.
 
 [cursor]
-sensitivity   = 25.0        # px per mm of finger motion at accel_ref
-accel_exponent = 1.0        # 1.0 = linear; >1 boosts fast flicks
-accel_ref     = 80.0        # mm/s — velocity at which sensitivity is the linear feel
+sensitivity   = 28.0        # px per mm of finger motion at accel_ref
+accel_exponent = 1.35       # 1.0 = linear; >1 boosts fast flicks
+accel_ref     = 70.0        # mm/s — velocity at which sensitivity is the linear feel
 
 [scroll]
 sensitivity = 20.0          # px per mm
@@ -138,18 +138,27 @@ backend = "synthetic"         # synthetic | notification | off
 enable  = "on"
 backend = "synthetic"
 
-[gestures.three_finger_drag]  # companion-net: three fingers → left-button drag
-enable = "on"                 # four-finger swipes remain available
+[gestures.three_finger_drag]  # three fingers → left-button drag
+enable = "on"                 # "off" restores three-finger swipes
 ```
 
-With this option, three fingers must move past a small jitter guard before
-the engine posts `LeftMouseDown`; movement is then emitted as standard Quartz
-`LeftMouseDragged` events and the final finger lift posts `LeftMouseUp`.
-That reproduces the application-level behavior of macOS's Three-Finger Drag
-style. It is not a real Apple multitouch stream: macOS receives synthesized
-mouse events, not the original three-finger contacts. The HID daemon keeps
-its historical three-finger swipe behavior; only `companion-net` enables this
-mode by default.
+Three-finger drag is on by default. Three fingers must move past a small
+jitter guard before the engine posts `LeftMouseDown`; movement is then
+emitted as standard Quartz `LeftMouseDragged` events and the final finger
+lift posts `LeftMouseUp`. That reproduces the application-level behavior of
+macOS's Three-Finger Drag style. It is not a real Apple multitouch stream:
+macOS receives synthesized mouse events, not the original three-finger
+contacts.
+
+Set `enable = "off"` to get the stock-macOS arrangement instead, where three
+fingers drive Mission Control / Spaces swipes and a stationary three-finger
+tap looks a word up. Drag then lives on four fingers only.
+
+`[gestures.one_finger_tap_drag]` (tap twice, keep the second contact down,
+drag) is also on by default. The second contact does not press the button on
+the frame it lands: if it lifts again within 200 ms without moving, the pair
+is dispatched as a double-click instead. Only a contact that moves past the
+jitter guard or outlasts that window becomes a drag.
 
 ## Permissions
 

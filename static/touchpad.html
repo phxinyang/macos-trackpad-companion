@@ -263,12 +263,19 @@
   function loop() {
     rafId = 0;
     drawVisualizer();
-    if (!dirty) return;
-    dirty = false;
     if (pointers.size > 0) {
+      // Keep reporting every frame while contacts are down, moving or
+      // not. A browser stops delivering pointermove for a finger that
+      // is held still, and from the receiver's side a stream that goes
+      // quiet is indistinguishable from a client that went away — it
+      // used to resolve that by ending the touch, which turned a held
+      // finger into a phantom tap. A real trackpad reports at a fixed
+      // rate regardless of motion; so does this now.
+      dirty = false;
       sendRaw(encodeFrame(snapshot()));
       rafId = requestAnimationFrame(loop);
-    } else {
+    } else if (dirty) {
+      dirty = false;
       echoLift();
     }
   }
