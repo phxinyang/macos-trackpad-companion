@@ -1727,21 +1727,26 @@
     const edgeStage = document.getElementById('edgeStage');
     let isEdgeOpen = false;
 
-    edgeStage.addEventListener('pointermove', (e) => {
-      const rect = edgeStage.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      if (x > rect.width - 45 && !isEdgeOpen) {
+    edgeStage.addEventListener('wheel', (e) => {
+      if (e.deltaX < -20 && !isEdgeOpen) {
         isEdgeOpen = true;
         notiDrawer.classList.add('open');
-        document.getElementById('edgeSwipeStatus').textContent = "抽屉已滑出 (展开状态)";
+        document.getElementById('edgeSwipeStatus').textContent = "双指滑入成功 (抽屉已展开)";
         document.getElementById('edgeSwipeStatus').style.color = "var(--amber)";
-        logEvent('EDGE_SWIPE', 'Notification Center Opened', 'wheel');
-      } else if (x < rect.width - 160 && isEdgeOpen) {
+        logEvent('EDGE_SWIPE', `2-Finger Edge Swipe (deltaX=${Math.round(e.deltaX)})`, 'wheel');
+      } else if (e.deltaX > 20 && isEdgeOpen) {
         isEdgeOpen = false;
         notiDrawer.classList.remove('open');
         document.getElementById('edgeSwipeStatus').textContent = "抽屉已收起";
         document.getElementById('edgeSwipeStatus').style.color = "var(--text)";
+        logEvent('EDGE_SWIPE', 'Notification Center Dismissed', 'wheel');
       }
+    }, { passive: true });
+
+    document.getElementById('notiDrawer').addEventListener('click', () => {
+      isEdgeOpen = false;
+      notiDrawer.classList.remove('open');
+      document.getElementById('edgeSwipeStatus').textContent = "抽屉已收起";
     });
 
     // --- 11. Text Selection Monitoring ---
