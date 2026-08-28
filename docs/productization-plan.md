@@ -146,23 +146,25 @@
 
 **结果：** 双击 `.app` 后可以启动/停止 `companion-net`，菜单栏显示真实状态；CLI 行为不变。
 
-- SwiftUI 增加 `ServiceSupervisor`：启动、停止、重启、stdout/stderr 归档、退出码和崩溃退避。
+- SwiftUI 增加 `ServiceSupervisor`：启动、停止、重启、stdout/stderr 状态显示、退出码和权限错误识别。
 - 增加 `PermissionModel`：Accessibility 检查/提示；HID 模式额外检查 Input Monitoring；提供打开对应系统设置的 deep link。
 - Rust 增加机器可读 `--status-json` 或 helper status 输出，避免 GUI 解析自然语言日志。
 - 使用统一状态模型和错误码，网络未绑定、权限缺失、端口冲突、子进程退出分别展示。
 - 验收：冷启动、重复启动、停止时无残留进程、权限拒绝、子进程崩溃、Mac 睡眠唤醒。
 
-**执行状态：已实现，待 macOS 真机验收。** `companion-config doctor` 已提供结构化配置/平台诊断；SwiftUI 设置 app 已提供服务总览、启动/停止/重启、Accessibility 深链和 helper 状态显示。Linux 已通过 Rust workspace 测试，SwiftUI 与 TCC/进程归属仍需 macOS runner 和真机确认。
+**执行状态：已实现，待 macOS 真机验收。** `companion-config doctor` 已提供结构化配置/平台诊断；SwiftUI 设置 app 已提供服务总览、启动/停止/重启、Accessibility 深链和 helper 状态显示。崩溃自动退避、日志归档和更细的错误码仍是 P4/P6 工作。Linux 已通过 Rust workspace 测试，SwiftUI 与 TCC/进程归属仍需 macOS runner 和真机确认。
 
 ### P2：Bonjour 发现与安全配对
 
 **结果：** Mac 自动出现在同网设备列表；默认新安装进入安全配对，不再把空 token 当成产品默认。
 
-- `companion-net` 发布 `_mtc-trackpad._tcp` Bonjour 服务，TXT 至少包含协议版本、HTTP/WS 版本、显示名称、认证模式和服务实例 ID。
+- SwiftUI app 的 bundled supervisor 发布 `_mtc-trackpad._tcp` Bonjour 服务，TXT 至少包含协议版本、HTTP/WS 版本、显示名称、认证模式和服务实例 ID；裸 `companion-net` 继续提供手动 URL 回退。
 - 管理模式首次启动生成 CSPRNG token，写入用户配置；旧 CLI 无 token 的行为保留兼容，但 GUI 新建配置默认启用 token。
 - 定义 `mtc://pair?host=&port=&token=` 配对 URI；二维码只包含局域网地址和令牌，不经过云端。
 - peer 变更、令牌轮换、旧设备撤销要写入诊断日志并取消活动触点。
 - 验收：多台 Mac 同网、端口 0、无 Bonjour、路由器隔离、错误令牌、令牌轮换、旧手机被撤销。
+
+**执行状态：部分完成。** app 已发布 `_mtc-trackpad._tcp`（TXT schema v1），GUI 首次启动通过 `companion-config ensure-token` 生成稳定的 256-bit Token，并生成 `mtc://pair` 链接；Bonjour 在 macOS 真机和网络隔离环境下仍待验收。
 
 ### P3：Android/浏览器连接体验
 
@@ -174,6 +176,8 @@
 - `UdpSender` 增加连接状态、最近错误、重连退避、peer 接管提示；不改变 ATP1 编码。
 - Web 页面优先使用当前 URL 的 token；从配对 URI 打开时保存同源 token，退出/撤销时清除。
 - 验收：首次发现、无发现手动回退、Wi-Fi 切换、Mac 重启、后台恢复、错误令牌、两个手机竞争连接。
+
+**执行状态：部分完成。** Android 已接入 `NsdManager`、发现列表、`mtc://pair` intent 解析和输入校验；QR 相机入口、自动重连/退避、Web 配对状态和真机网络矩阵待后续迭代。
 
 ### P4：原生设置与诊断整合
 
@@ -197,6 +201,8 @@
 - GitHub Actions 增加 macOS 构建矩阵、artifact 校验、版本 tag 触发 Release；无签名 secrets 时只产出未签名开发包，不伪装成正式发行版。
 - 验收：全新用户安装/首次启动/权限、升级覆盖、卸载登录项、Gatekeeper、公证 ticket、Apple Silicon 真机。
 
+**执行状态：部分完成。** `packaging/macos/build-app.sh` 可在 macOS 13+ 构建内嵌 helper 的 unsigned `.app`/`.zip`，`package-dmg.sh` 可生成 DMG；CI 已增加 bundle 内容校验和 artifact。登录项、图标、签名、公证和 Finder 安装验收待 release 环境。
+
 ### P6：发布前质量与运维
 
 **结果：** 每个版本有可复现的质量门槛和回滚路径。
@@ -213,10 +219,10 @@
 
 | 表面 | 变更 | 兼容策略 |
 | --- | --- | --- |
-| Bonjour | `_mtc-trackpad._tcp` + TXT schema v1 | 未发现时继续手动 URL |
+| Bonjour | app supervisor 发布 `_mtc-trackpad._tcp` + TXT schema v1 | 未发现时继续手动 URL |
 | 配对 URI | `mtc://pair` | 同时接受现有 `http(s)` URL |
 | 配置 | GUI managed mode 的 token/服务设置 | 旧无 token CLI 配置继续可运行 |
-| Helper CLI | `companion-config doctor/status-json` | 旧 `dump/set` 保留 |
+| Helper CLI | `companion-config doctor/ensure-token` | 旧 `dump/set` 保留 |
 | macOS 包 | `.app` 内嵌 daemon/helper | 裸 `companion-net`/TUI 不删除 |
 | 日志 | 结构化状态/错误码 | 自然语言日志继续给人看 |
 

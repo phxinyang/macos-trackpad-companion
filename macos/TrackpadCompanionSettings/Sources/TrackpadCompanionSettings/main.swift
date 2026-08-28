@@ -2,13 +2,17 @@ import Foundation
 import SwiftUI
 #if os(macOS)
 import AppKit
+import ApplicationServices
 #endif
 
 @main
 struct TrackpadCompanionSettingsApp: App {
+    @StateObject private var supervisor = ServiceSupervisor()
+
     var body: some Scene {
         WindowGroup {
             SettingsView()
+                .environmentObject(supervisor)
                 .frame(minWidth: 760, minHeight: 520)
         }
         .windowResizability(.contentSize)
@@ -17,6 +21,11 @@ struct TrackpadCompanionSettingsApp: App {
                 Button("Toggle Language") { NotificationCenter.default.post(name: .toggleLanguage, object: nil) }
                     .keyboardShortcut("l", modifiers: [.command, .option])
             }
+        }
+        MenuBarExtra {
+            MenuBarView(supervisor: supervisor)
+        } label: {
+            Label("Trackpad Companion", systemImage: supervisor.state.symbol)
         }
     }
 }
@@ -61,10 +70,45 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 }
 
 enum ServiceState: String {
-    case stopped, starting, running, failed
+    case stopped, starting, waitingForPermission, running, degraded, failed
 
     var symbol: String {
-        switch self { case .stopped: return "circle", .starting: return "arrow.triangle.2.circlepath", .running: return "checkmark.circle.fill", .failed: return "exclamationmark.triangle.fill" }
+        switch self {
+        case .stopped: return "circle"
+        case .starting: return "arrow.triangle.2.circlepath"
+        case .waitingForPermission: return "hand.raised"
+        case .running: return "checkmark.circle.fill"
+        case .degraded: return "bolt.horizontal.circle"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+}
+
+final class BonjourAdvertiser: NSObject, NetServiceDelegate {
+    private var service: NetService?
+
+    func publish(port: Int, serviceID: String, authenticated: Bool) {
+        stop()
+        let name = "Trackpad Companion - \(Host.current().localizedName ?? ProcessInfo.processInfo.hostName)"
+        let service = NetService(domain: "local.", type: "_mtc-trackpad._tcp.", name: name, port: Int32(port))
+        service.delegate = self
+        service.setTXTRecord(NetService.data(fromTXTRecord: [
+            "v": Data("1".utf8),
+            "proto": Data("atp1".utf8),
+            "auth": Data((authenticated ? "token" : "none").utf8),
+            "id": Data(serviceID.utf8),
+        ]))
+        service.publish(options: [.listenForConnections])
+        self.service = service
+    }
+
+    func stop() {
+        service?.stop()
+        service = nil
+    }
+
+    func netService(_ sender: NetService, didNotPublish errorDict: [String : NSNumber]) {
+        NSLog("Bonjour publish failed: %@", errorDict)
     }
 }
 
@@ -73,16 +117,44 @@ final class ServiceSupervisor: ObservableObject {
     @Published private(set) var state: ServiceState = .stopped
     @Published private(set) var message = ""
     @Published private(set) var endpoint = "http://localhost:4242/"
+    @Published private(set) var pairingURI = ""
+    @Published private(set) var accessibilityGranted = false
+    @Published private(set) var tokenConfigured = false
     private var process: Process?
     private var outputPipe: Pipe?
+    private let bonjour = BonjourAdvertiser()
+    private let serviceID: String
+    private var terminationObserver: NSObjectProtocol?
+
+    init() {
+        let defaults = UserDefaults.standard
+        serviceID = defaults.string(forKey: "TrackpadCompanion.serviceID") ?? {
+            let value = UUID().uuidString.lowercased()
+            defaults.set(value, forKey: "TrackpadCompanion.serviceID")
+            return value
+        }()
+        terminationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stop()
+        }
+    }
 
     deinit {
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         process?.terminate()
+        bonjour.stop()
+        if let terminationObserver {
+            NotificationCenter.default.removeObserver(terminationObserver)
+        }
     }
 
     func start() {
         guard process?.isRunning != true else { return }
+        refreshPermissions()
+        preparePairing()
         guard let executable = locate("COMPANION_NET_BIN", bundledName: "companion-net") else {
             state = .failed
             message = "companion-net was not found. Build the Rust daemon or set COMPANION_NET_BIN."
@@ -99,8 +171,18 @@ final class ServiceSupervisor: ObservableObject {
             guard !data.isEmpty else { return }
             let text = String(data: data, encoding: .utf8) ?? ""
             Task { @MainActor in
-                self?.message = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if text.contains("listening on") { self?.state = .running }
+                guard let self else { return }
+                let status = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !status.isEmpty { self.message = status }
+                if let port = self.port(from: status) {
+                    self.endpoint = "http://\(ProcessInfo.processInfo.hostName):\(port)/"
+                    self.publishBonjour(port: port)
+                }
+                if text.localizedCaseInsensitiveContains("accessibility permission required") {
+                    self.state = .waitingForPermission
+                } else if text.contains("listening on") {
+                    self.state = .running
+                }
             }
         }
         child.terminationHandler = { [weak self] process in
@@ -123,18 +205,108 @@ final class ServiceSupervisor: ObservableObject {
     }
 
     func stop() {
-        guard let process, process.isRunning else { state = .stopped; return }
+        guard let process, process.isRunning else {
+            bonjour.stop()
+            state = .stopped
+            return
+        }
         state = .stopped
         message = "Service stopped"
+        bonjour.stop()
         process.terminate()
         self.process = nil
     }
 
-    func restart() { stop(); start() }
+    func restart() {
+        stop()
+        // Process termination is asynchronous. Give the instance lock a
+        // short handoff window before starting the replacement helper.
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120)) { [weak self] in
+            self?.start()
+        }
+    }
 
     func openAccessibilitySettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
         NSWorkspace.shared.open(url)
+    }
+
+    func refreshPermissions() {
+        accessibilityGranted = AXIsProcessTrusted()
+    }
+
+    func copyPairingURI() {
+        guard !pairingURI.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(pairingURI, forType: .string)
+    }
+
+    private func publishBonjour(port: Int) {
+        bonjour.publish(port: port, serviceID: serviceID, authenticated: tokenConfigured)
+        var components = URLComponents()
+        components.scheme = "mtc"
+        components.host = "pair"
+        components.queryItems = [
+            URLQueryItem(name: "host", value: ProcessInfo.processInfo.hostName),
+            URLQueryItem(name: "port", value: String(port)),
+        ]
+        if let token = pairingToken {
+            components.queryItems?.append(URLQueryItem(name: "token", value: token))
+        }
+        pairingURI = components.string ?? ""
+    }
+
+    private var pairingToken: String?
+
+    private func preparePairing() {
+        guard let executable = locate("COMPANION_CONFIG_BIN", bundledName: "companion-config") else {
+            tokenConfigured = false
+            pairingToken = nil
+            return
+        }
+        do {
+            _ = try run(executable: executable, arguments: ["ensure-token"])
+            let data = try run(executable: executable, arguments: ["dump"])
+            guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let config = root["config"] as? [String: Any],
+                  let net = config["net"] as? [String: Any],
+                  let token = net["token"] as? String, !token.isEmpty else {
+                tokenConfigured = false
+                pairingToken = nil
+                return
+            }
+            pairingToken = token
+            tokenConfigured = true
+        } catch {
+            message = "Pairing setup unavailable: \(error.localizedDescription)"
+            tokenConfigured = false
+            pairingToken = nil
+        }
+    }
+
+    private func port(from status: String) -> Int? {
+        let marker = "touchpad page at "
+        guard let start = status.range(of: marker)?.upperBound else { return nil }
+        let suffix = status[start...]
+        guard let colon = suffix.lastIndex(of: ":") else { return nil }
+        let digits = suffix[suffix.index(after: colon)...].prefix { $0.isNumber }
+        return Int(digits)
+    }
+
+    private func run(executable: String, arguments: [String]) throws -> Data {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.standardOutput = pipe
+        process.standardError = pipe
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw NSError(domain: "TrackpadCompanionSettings", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? "helper failed"])
+        }
+        return data
     }
 
     private func locate(_ environmentKey: String, bundledName: String) -> String? {
@@ -146,6 +318,41 @@ final class ServiceSupervisor: ObservableObject {
             NSHomeDirectory() + "/.cargo/bin/\(bundledName)",
         ].compactMap { $0 }
         return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+    }
+}
+
+struct MenuBarView: View {
+    @ObservedObject var supervisor: ServiceSupervisor
+
+    var body: some View {
+        Text("Trackpad Companion")
+            .font(.headline)
+        Label(statusText, systemImage: supervisor.state.symbol)
+            .foregroundStyle(supervisor.state == .running ? .green : supervisor.state == .failed ? .red : .secondary)
+        Divider()
+        Button("Start Service", systemImage: "play.fill") { supervisor.start() }
+            .disabled(supervisor.state == .running || supervisor.state == .starting)
+        Button("Stop Service", systemImage: "stop.fill") { supervisor.stop() }
+            .disabled(supervisor.state == .stopped)
+        Button("Open Settings", systemImage: "gearshape") {
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.sendAction(#selector(NSWindow.makeKeyAndOrderFront(_:)), to: nil, from: nil)
+        }
+        Button("Copy Pairing Link", systemImage: "doc.on.doc") { supervisor.copyPairingURI() }
+            .disabled(supervisor.pairingURI.isEmpty)
+        Divider()
+        Button("Quit", systemImage: "power") { NSApp.terminate(nil) }
+    }
+
+    private var statusText: String {
+        switch supervisor.state {
+        case .stopped: return "Stopped"
+        case .starting: return "Starting"
+        case .waitingForPermission: return "Waiting for permission"
+        case .running: return "Ready"
+        case .degraded: return "Degraded"
+        case .failed: return "Needs attention"
+        }
     }
 }
 
@@ -264,7 +471,7 @@ final class SettingsModel: ObservableObject {
 
 struct SettingsView: View {
     @StateObject private var model = SettingsModel()
-    @StateObject private var supervisor = ServiceSupervisor()
+    @EnvironmentObject private var supervisor: ServiceSupervisor
 
     var body: some View {
         NavigationSplitView {
@@ -314,7 +521,10 @@ struct SettingsView: View {
                 }
             }
         }
-        .onAppear { supervisor.start() }
+        .onAppear {
+            supervisor.refreshPermissions()
+            supervisor.start()
+        }
     }
 
     @ViewBuilder
@@ -338,6 +548,11 @@ struct SettingsView: View {
                 LabeledContent(model.language.text("Endpoint", "连接地址")) {
                     Text(supervisor.endpoint).font(.caption.monospaced()).textSelection(.enabled)
                 }
+                if !supervisor.pairingURI.isEmpty {
+                    LabeledContent(model.language.text("Pairing link", "配对链接")) {
+                        Text(supervisor.pairingURI).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                }
             }
             Section {
                 HStack {
@@ -349,9 +564,18 @@ struct SettingsView: View {
                 }
             }
             Section(model.language.text("Permissions", "权限")) {
-                Label(model.language.text("Accessibility is required for synthetic cursor, click, scroll, and gesture events.", "合成光标、点击、滚动和手势事件需要辅助功能权限。"), systemImage: "hand.raised")
+                Label(model.language.text(supervisor.accessibilityGranted ? "Accessibility is ready." : "Accessibility is required for synthetic cursor, click, scroll, and gesture events.", supervisor.accessibilityGranted ? "辅助功能权限已就绪。" : "合成光标、点击、滚动和手势事件需要辅助功能权限。"), systemImage: supervisor.accessibilityGranted ? "checkmark.shield" : "hand.raised")
                     .font(.callout)
-                Button(model.language.text("Open Accessibility Settings", "打开辅助功能设置"), systemImage: "arrow.up.forward.app") { supervisor.openAccessibilitySettings() }
+                    .foregroundStyle(supervisor.accessibilityGranted ? .green : .primary)
+                if !supervisor.accessibilityGranted {
+                    Button(model.language.text("Open Accessibility Settings", "打开辅助功能设置"), systemImage: "arrow.up.forward.app") { supervisor.openAccessibilitySettings() }
+                }
+            }
+            if !supervisor.pairingURI.isEmpty {
+                Section(model.language.text("Pairing", "配对")) {
+                    Button(model.language.text("Copy pairing link", "复制配对链接"), systemImage: "doc.on.doc") { supervisor.copyPairingURI() }
+                        .help(model.language.text("Paste this link into the Android app or a QR generator on the same LAN.", "可将此链接粘贴到 Android 应用或局域网内的二维码工具。"))
+                }
             }
             if !supervisor.message.isEmpty {
                 Section(model.language.text("Latest status", "最新状态")) {

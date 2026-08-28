@@ -1,6 +1,7 @@
 package com.mtc.touchpad
 
 import android.app.Activity
+import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -118,6 +119,8 @@ class MainActivity : Activity() {
     private lateinit var padFrame: FrameLayout
     private lateinit var deepPressBar: DeepPressBarView
     private lateinit var fullscreenFloatBtn: Button
+    private lateinit var discovery: MacDiscovery
+    private var discoveredEndpoints: List<MacDiscovery.MacEndpoint> = emptyList()
     private var isFullscreenMode = false
 
     private val deepButtonHeartbeat = object : Runnable {
@@ -132,7 +135,20 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("touchpad", MODE_PRIVATE)
+        applyPairingIntent(intent)
         sender = UdpSender()
+        discovery = MacDiscovery(this, object : MacDiscovery.Listener {
+            override fun onDiscoveryChanged(endpoints: List<MacDiscovery.MacEndpoint>) {
+                runOnUiThread { discoveredEndpoints = endpoints }
+            }
+
+            override fun onDiscoveryError(message: String) {
+                // Discovery is optional. Keep the manual connection path quiet
+                // unless the user explicitly opens the connection sheet.
+                runOnUiThread { discoveredEndpoints = discovery.snapshot() }
+            }
+        })
+        discovery.start()
         val palette = themePalette()
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -422,11 +438,7 @@ class MainActivity : Activity() {
             if (palette.usesLiquidGlass) {
                 val padGlass = LiquidGlassView(this@MainActivity).apply {
                     cornerRadius = dp(24).toFloat()
-                    material = if (ThemeMode.from(prefs.getString(KEY_THEME, ThemeMode.LIGHT_GLASS.key)) == ThemeMode.LIGHT_GLASS) {
-                        GlassMaterial.CLEAR
-                    } else {
-                        GlassMaterial.REGULAR
-                    }
+                    material = GlassMaterial.REGULAR
                     useShaderPipeline = true
                     enableDynamicBackground = true
                     enableBackdropBlur = true
@@ -434,11 +446,13 @@ class MainActivity : Activity() {
                     enableChromaticDispersion = true
                     enableEdgeHighlight = true
                     enableSensorHighlight = true
-                    enableAdaptiveTint = true
-                    bevelWidth = dp(18).toFloat()
-                    refractionHeight = dp(52).toFloat()
-                    dispersionStrength = 0.18f
-                    blurAmount = 0.075f
+                    enableAdaptiveTint = ThemeMode.from(prefs.getString(KEY_THEME, ThemeMode.LIGHT_GLASS.key)) != ThemeMode.LIGHT_GLASS
+                    // Match the library's showcase scale: the large pad needs
+                    // a real lens profile, otherwise the rim reads as blur.
+                    bevelWidth = 46f
+                    refractionHeight = 240f
+                    dispersionStrength = 0.20f
+                    blurAmount = 0.055f
                     saturation = 150f
                     edgeHighlightOpacity = 86f
                     enablePressEffect = false
@@ -474,11 +488,7 @@ class MainActivity : Activity() {
             }
             val glass = LiquidGlassView(this).apply {
                 cornerRadius = dp(radius).toFloat()
-                material = if (ThemeMode.from(prefs.getString(KEY_THEME, ThemeMode.LIGHT_GLASS.key)) == ThemeMode.LIGHT_GLASS) {
-                    GlassMaterial.CLEAR
-                } else {
-                    GlassMaterial.REGULAR
-                }
+                material = GlassMaterial.REGULAR
                 useShaderPipeline = true
                 enableDynamicBackground = true
                 enableBackdropBlur = true
@@ -486,11 +496,11 @@ class MainActivity : Activity() {
                 enableChromaticDispersion = true
                 enableEdgeHighlight = true
                 enableSensorHighlight = true
-                enableAdaptiveTint = true
-                bevelWidth = dp(if (top) 14 else 12).toFloat()
-                refractionHeight = dp(if (top) 34 else 28).toFloat()
-                dispersionStrength = 0.14f
-                blurAmount = 0.06f
+                enableAdaptiveTint = ThemeMode.from(prefs.getString(KEY_THEME, ThemeMode.LIGHT_GLASS.key)) != ThemeMode.LIGHT_GLASS
+                bevelWidth = if (top) 28f else 24f
+                refractionHeight = if (top) 140f else 118f
+                dispersionStrength = 0.16f
+                blurAmount = 0.055f
                 saturation = 145f
                 edgeHighlightOpacity = 78f
                 enablePressEffect = false
@@ -647,13 +657,63 @@ class MainActivity : Activity() {
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         }
         val subtitle = TextView(this).apply {
-            text = "在 Mac 上运行 companion-net，然后填写局域网地址。"
+            text = "选择附近的 Mac，或使用下方的手动地址。"
             setTextColor(palette.secondary)
             textSize = 13f
             setPadding(0, dp(5), 0, dp(16))
         }
         container.addView(title)
         container.addView(subtitle)
+
+        val nearby = discovery.snapshot()
+        if (nearby.isNotEmpty()) {
+            container.addView(TextView(this).apply {
+                text = "附近的 Mac"
+                setTextColor(palette.label)
+                textSize = 14f
+                typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                setPadding(0, 0, 0, dp(8))
+            })
+            nearby.forEach { endpoint ->
+                val row = Button(this).apply {
+                    text = "${endpoint.name}\n${endpoint.host.hostAddress}:${endpoint.port}"
+                    isAllCaps = false
+                    gravity = Gravity.START or Gravity.CENTER_VERTICAL
+                    minHeight = dp(54)
+                    setTextColor(palette.label)
+                    background = GradientDrawable().apply {
+                        setColor(palette.button)
+                        cornerRadius = dp(12).toFloat()
+                        setStroke(dp(1), palette.buttonStroke)
+                    }
+                    setOnClickListener {
+                        val token = prefs.getString(KEY_TOKEN, "") ?: ""
+                        if (endpoint.authentication == "token" && token.isEmpty()) {
+                            Toast.makeText(this@MainActivity, "该 Mac 需要配对 Token，请使用二维码或手动输入。", Toast.LENGTH_LONG).show()
+                        } else {
+                            connectToMac(endpoint.host.hostAddress ?: "", endpoint.port.toString(), token)
+                            dialog.dismiss()
+                        }
+                    }
+                }
+                container.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(58)).apply {
+                    bottomMargin = dp(8)
+                })
+            }
+            container.addView(TextView(this).apply {
+                text = "找不到 Mac？确认两台设备在同一 Wi-Fi，或继续手动输入。"
+                setTextColor(palette.secondary)
+                textSize = 12f
+                setPadding(0, 0, 0, dp(10))
+            })
+        } else {
+            container.addView(TextView(this).apply {
+                text = "正在搜索附近的 Mac；也可以直接手动输入地址。"
+                setTextColor(palette.secondary)
+                textSize = 12f
+                setPadding(0, 0, 0, dp(12))
+            })
+        }
 
         fun input(label: String, value: String, password: Boolean = false): EditText {
             val field = EditText(this).apply {
@@ -1106,12 +1166,38 @@ class MainActivity : Activity() {
         if (hasFocus) immersive()
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (applyPairingIntent(intent)) {
+            if (::pad.isInitialized) {
+                connectToMac(
+                    prefs.getString(KEY_HOST, "") ?: "",
+                    prefs.getString(KEY_PORT, "4242") ?: "4242",
+                    prefs.getString(KEY_TOKEN, "") ?: "",
+                )
+            }
+            Toast.makeText(this, "已载入配对信息", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun applyPairingIntent(intent: Intent?): Boolean {
+        val target = PairingUri.parse(intent?.dataString) ?: return false
+        prefs.edit()
+            .putString(KEY_HOST, target.host)
+            .putString(KEY_PORT, target.port.toString())
+            .putString(KEY_TOKEN, target.token.orEmpty())
+            .apply()
+        return true
+    }
+
     override fun onDestroy() {
         if (::deepPressBar.isInitialized) {
             deepPressBar.cancelPress()
             pad.removeCallbacks(deepButtonHeartbeat)
         }
         sender.close()
+        if (::discovery.isInitialized) discovery.stop()
         super.onDestroy()
     }
 

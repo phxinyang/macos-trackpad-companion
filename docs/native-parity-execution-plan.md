@@ -459,6 +459,6 @@ Ketch 的开源代码检索还核对了 `NavigationSplitView` 在 macOS 设置�
 - I5：已完成。Web 保持二进制协议与 pointer capture，完成工具栏、底部操作 dock、产品标识、状态层级、fullscreen 同步和可访问性降级。
 - I6：部分完成。ADB 与 Playwright 截图验收覆盖 Android 横屏、Web 375px/1280px、诊断页两种尺寸；静态 server 无 `/ws`，实时 WebSocket 仍需 macOS companion-net 实例验收。
 - I7：已完成。README、Apple 产品设计规范和本规划书已回写；GitHub 发布前仍需真实 macOS 应用矩阵与网络安全复核。
-- I8：已完成。调研并核对 `QmDeve/AndroidLiquidGlassView`（MIT、Maven Central）与 `PallavAg/liquid-glass-web-react`（MIT、SVG 位移图）后，Android 触控面接入 `LiquidGlassView` 的 API 33+ 实时 AGSL 折射/色散管线，Web 触控面接入同类几何位移滤镜并保留 `backdrop-filter` 降级。
-- I9：已完成。主题矩阵统一为 `light-glass`（默认）、`dark-glass`、`classic-light`、`classic-dark`、`high-contrast`；Android 使用 SharedPreferences，Web/诊断页使用同一 `localStorage` key。
-- I10：部分完成。API 36 Redmi 实机已启动并截图确认触控面玻璃层、动态后景和底部操作层；Safari/Firefox 的 SVG `backdrop-filter` 仍按公开 WebKit 限制走 blur fallback，需目标浏览器和 macOS 主机做最终矩阵。
+- I8：已完成。调研并核对 `QWEA0/Liquid-Glass-Android`（MIT、JitPack `com.github.QWEA0:liquidglass:v2.0.2`）与 `PallavAg/liquid-glass-web-react`（MIT、SVG 位移图）后，Android 触控面接入 QWEA0 的 API 33+ 单遍 AGSL/SDF 实时折射、物理色散、传感器高光和 Regular/Clear 材质管线；Web 触控面接入同类几何位移滤镜并保留 `backdrop-filter` 降级。
+- I9：已完成。主题矩阵统一为 `light-glass`（默认）、`dark-glass`、`classic-light`、`classic-dark`、`high-contrast`；Android 使用 SharedPreferences，Web/诊断页使用同一 `localStorage` key。两种玻璃主题都使用 QWEA0 `REGULAR` 透镜；浅色关闭自适应染色以保持明亮中性，深色开启自适应染色保证文字可读性。
+- I10：部分完成。API 36 Redmi 实机已重新安装并启动 QWEA0 v2.0.2，截图确认全窗口动态后景、SDF 玻璃宿主、边缘高光和触控层无崩溃；Safari/Firefox 的 SVG `backdrop-filter` 仍按公开 WebKit 限制走 blur fallback，需目标浏览器和 macOS 主机做最终矩阵。

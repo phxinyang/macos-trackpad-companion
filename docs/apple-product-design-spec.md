@@ -23,7 +23,7 @@ The touch surface is the primary content layer and now uses a bounded liquid-gla
 - Material 3 component guidance: <https://m3.material.io/>. The Android implementation uses the same semantic surface vocabulary and 8dp rhythm, but keeps the existing View stack to avoid adding a new UI runtime.
 - Mousedroid, an open-source remote input product: <https://github.com/darusc/Mousedroid>. Its connection modes, explicit gesture guide, and separate input modes are useful product patterns for a remote input utility.
 - Open Apple HIG skill family used during implementation: <https://github.com/0xKoru/apple-hig-codex-skills> and <https://github.com/s1gmamale1/apple-design-skills>.
-- Android liquid material: <https://github.com/QmDeve/AndroidLiquidGlassView> (MIT; Maven Central `com.qmdeve.liquidglass:core:1.0.3`). The APK uses its `LiquidGlassView` ViewGroup and API 33+ AGSL refraction/dispersion pipeline; older Android versions keep the opaque theme fallback.
+- Android liquid material: <https://github.com/QWEA0/Liquid-Glass-Android> (MIT; JitPack `com.github.QWEA0:liquidglass:v2.0.2`). The APK uses its View-based `LiquidGlassView`, API 33+ single-pass AGSL/SDF lens with live backdrop capture, refraction, physical dispersion, sensor highlight, and Regular/Clear material variants; older Android versions keep the opaque theme fallback. The default light theme uses the Regular lens with adaptive tint disabled so the bright sampled scene stays neutral and the rim remains visible; dark glass enables adaptive tint for legibility.
 - Web liquid lens reference: <https://github.com/PallavAg/liquid-glass-web-react> (MIT). The static client uses its geometry-derived displacement-map approach for the SVG `feDisplacementMap` enhancement and keeps `backdrop-filter` as the cross-browser readable baseline.
 
 ## Visual thesis
@@ -36,7 +36,7 @@ Both clients persist the same theme key (`light-glass` by default) locally.
 
 | Key | Surface | Material | Use |
 |---|---|---|---|
-| `light-glass` | blue/white/peach sampled backdrop | LiquidGlassView + blur + refraction | Default Apple-style appearance |
+| `light-glass` | blue/white/peach sampled backdrop | LiquidGlassView Regular + blur + refraction + dispersion | Default Apple-style appearance |
 | `dark-glass` | graphite/blue sampled backdrop | LiquidGlassView + blur + refraction | Low-light rooms |
 | `classic-light` | solid system light surfaces | No blur/refraction | Battery and clarity |
 | `classic-dark` | solid system dark surfaces | No blur/refraction | OLED-friendly utility mode |

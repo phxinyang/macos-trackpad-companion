@@ -3,11 +3,19 @@ package com.mtc.touchpad
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
 
 /** Millimeters in one Android physical pixel, using the device's reported DPI. */
 internal fun mmPerPixel(xdpi: Float, ydpi: Float, densityDpi: Int): Float {
@@ -33,6 +41,8 @@ class TouchPadView(context: Context) : View(context) {
         private const val SWIPE_COMMIT_THRESHOLD_MM = 10.0f
         private const val TAP_MAX_TRAVEL_MM = 1.5f
         private const val TAP_MAX_TIME_MS = 240L
+        private const val TRAIL_POINTS = 8
+        private const val RELEASE_FADE_MS = 280L
 
         /**
          * Resend interval for resting contacts. 16 ms ≈ 60 Hz: dense
@@ -72,23 +82,45 @@ class TouchPadView(context: Context) : View(context) {
     private var initialCentroidX = 0f
     private var initialCentroidY = 0f
 
-    // Visualizer Paints
+    // Visualizer Paints. The touch markers intentionally use restrained
+    // spectral colors so the glass rim remains the primary material cue.
     private val touchPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 3f * resources.displayMetrics.density
+        strokeWidth = 1.5f * resources.displayMetrics.density
     }
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textSize = 14f * resources.displayMetrics.density
-        textAlign = Paint.Align.CENTER
+    private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val density = resources.displayMetrics.density
+    private val visualColors = intArrayOf(
+        0xFF7DD8FF.toInt(),
+        0xFFC1A4FF.toInt(),
+        0xFF83E7B2.toInt(),
+        0xFFFFC979.toInt(),
+    )
+
+    // Visual state is keyed by Android pointer id, not contact id. This keeps
+    // each marker continuous when another finger joins or lifts mid-gesture.
+    private data class TrailPoint(val x: Float, val y: Float, val timeMs: Long)
+    private class VisualTouch(
+        val pointerId: Int,
+        var x: Float,
+        var y: Float,
+        var velocityX: Float,
+        var velocityY: Float,
+        var lastTimeMs: Long,
+    ) {
+        val trail = ArrayDeque<TrailPoint>()
+        var releasedAtMs = 0L
     }
 
-    // Active touch points for visualization
-    private class VisualTouch(var x: Float, var y: Float, var id: Int)
-    private val activeVisualTouches = ArrayList<VisualTouch>()
+    private val activeVisualTouches = LinkedHashMap<Int, VisualTouch>()
+    private val releasedVisualTouches = ArrayList<VisualTouch>()
+    private var visualFrameTimeMs = 0L
 
     init {
         setWillNotDraw(false)
@@ -96,48 +128,172 @@ class TouchPadView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val n = activeVisualTouches.size
-        if (n == 0) return
-
-        // Color theme based on finger count:
-        // 1F: Electric Cyan, 2F: Violet, 3F: Emerald, 4F+: Sunset Amber
-        val (baseColor, glowColor) = when (n) {
-            1 -> Pair(0xFF00E5FF.toInt(), 0x3300E5FF.toInt())
-            2 -> Pair(0xFFA855F7.toInt(), 0x33A855F7.toInt())
-            3 -> Pair(0xFF10B981.toInt(), 0x3310B981.toInt())
-            else -> Pair(0xFFF59E0B.toInt(), 0x33F59E0B.toInt())
+        visualFrameTimeMs = if (visualFrameTimeMs == 0L) {
+            SystemClock.uptimeMillis()
+        } else {
+            max(visualFrameTimeMs, SystemClock.uptimeMillis())
         }
 
-        val radiusPx = 36f * resources.displayMetrics.density
-        ringPaint.color = baseColor
+        activeVisualTouches.values.forEach { drawVisualTouch(canvas, it, 1f, visualFrameTimeMs) }
+        val iterator = releasedVisualTouches.iterator()
+        while (iterator.hasNext()) {
+            val touch = iterator.next()
+            val elapsed = visualFrameTimeMs - touch.releasedAtMs
+            val progress = (elapsed / RELEASE_FADE_MS.toFloat()).coerceIn(0f, 1f)
+            if (progress >= 1f) {
+                iterator.remove()
+            } else {
+                // A quick ease-out leaves a soft optical afterimage without
+                // making the pad feel like it is emitting particles.
+                val alpha = 1f - progress * progress
+                drawVisualTouch(canvas, touch, alpha, visualFrameTimeMs)
+            }
+        }
 
-        for (touch in activeVisualTouches) {
-            // Glowing radial background
-            touchPaint.shader = RadialGradient(
-                touch.x, touch.y, radiusPx,
-                intArrayOf(glowColor, 0x00000000),
-                floatArrayOf(0.4f, 1.0f),
-                Shader.TileMode.CLAMP
-            )
-            canvas.drawCircle(touch.x, touch.y, radiusPx, touchPaint)
-            touchPaint.shader = null
-
-            // Outer crisp halo ring
-            canvas.drawCircle(touch.x, touch.y, radiusPx * 0.55f, ringPaint)
-
-            // Inner touch dot
-            touchPaint.color = baseColor
-            canvas.drawCircle(touch.x, touch.y, 6f * resources.displayMetrics.density, touchPaint)
+        if (activeVisualTouches.isNotEmpty() || releasedVisualTouches.isNotEmpty()) {
+            postInvalidateOnAnimation()
         }
     }
 
-    private fun updateVisualTouches(event: MotionEvent) {
-        activeVisualTouches.clear()
-        for (i in 0 until event.pointerCount) {
-            val pid = event.getPointerId(i)
-            val cid = cidByPointer[pid] ?: (i + 1)
-            activeVisualTouches.add(VisualTouch(event.getX(i), event.getY(i), cid))
+    private fun drawVisualTouch(canvas: Canvas, touch: VisualTouch, alpha: Float, nowMs: Long) {
+        val color = visualColors[Math.floorMod(touch.pointerId, visualColors.size)]
+        val speed = hypot(touch.velocityX, touch.velocityY)
+        val direction = if (speed > 0.5f) atan2(touch.velocityY, touch.velocityX) else -Math.PI.toFloat() / 2f
+        val pulse = (sin(nowMs * 0.010f + touch.pointerId) * 0.5f + 0.5f) * density
+        val coreRadius = (5.5f + min(speed * 0.018f, 2.5f)) * density
+        val haloRadius = (22f + min(speed * 0.045f, 9f) + pulse * 2f) * density
+        val glowRadius = haloRadius * 2.25f
+
+        // Broad glow: the alpha is low enough to preserve the sampled glass
+        // colors beneath it, while movement visibly changes the light field.
+        touchPaint.shader = RadialGradient(
+            touch.x, touch.y, glowRadius,
+            intArrayOf(withAlpha(color, (0x38 * alpha).toInt()), withAlpha(color, (0x12 * alpha).toInt()), 0x00000000),
+            floatArrayOf(0f, 0.42f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawCircle(touch.x, touch.y, glowRadius, touchPaint)
+        touchPaint.shader = null
+
+        // Velocity ribbon. It is drawn behind the core and fades toward the
+        // previous positions, producing a liquid smear instead of a cursor dot.
+        if (touch.trail.isNotEmpty() && speed > 0.8f) {
+            trailPaint.color = withAlpha(color, (0x34 * alpha).toInt())
+            trailPaint.strokeWidth = (4f + min(speed * 0.04f, 7f)) * density
+            var previousX = touch.x
+            var previousY = touch.y
+            touch.trail.reversed().forEachIndexed { index, point ->
+                val age = (index + 1) / (touch.trail.size + 1f)
+                trailPaint.alpha = (0x50 * alpha * (1f - age)).toInt().coerceIn(0, 255)
+                canvas.drawLine(previousX, previousY, point.x, point.y, trailPaint)
+                previousX = point.x
+                previousY = point.y
+            }
+            trailPaint.alpha = 255
         }
+
+        // Two optical rings: a thin colored rim and a softer inner ring. The
+        // changing radius makes a resting finger feel seated in the glass.
+        ringPaint.color = withAlpha(color, (0xB0 * alpha).toInt())
+        ringPaint.strokeWidth = 1.35f * density
+        canvas.drawCircle(touch.x, touch.y, haloRadius, ringPaint)
+        ringPaint.color = withAlpha(Color.WHITE, (0x55 * alpha).toInt())
+        ringPaint.strokeWidth = 1f * density
+        canvas.drawCircle(touch.x, touch.y, haloRadius * 0.72f, ringPaint)
+
+        // Directional specular streak, aligned to the current motion vector.
+        val streakLength = (18f + min(speed * 0.12f, 26f)) * density
+        val streakWidth = 3f * density
+        val cx = touch.x - cos(direction) * haloRadius * 0.18f
+        val cy = touch.y - sin(direction) * haloRadius * 0.18f
+        canvas.save()
+        canvas.rotate(Math.toDegrees(direction.toDouble()).toFloat(), cx, cy)
+        touchPaint.shader = LinearGradient(
+            cx - streakLength * 0.5f, cy,
+            cx + streakLength * 0.5f, cy,
+            intArrayOf(0x00FFFFFF, withAlpha(Color.WHITE, (0x7A * alpha).toInt()), 0x00FFFFFF),
+            null,
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawRoundRect(
+            cx - streakLength * 0.5f,
+            cy - streakWidth * 0.5f,
+            cx + streakLength * 0.5f,
+            cy + streakWidth * 0.5f,
+            streakWidth,
+            streakWidth,
+            touchPaint,
+        )
+        touchPaint.shader = null
+        canvas.restore()
+
+        // Crisp contact point and a tiny white specular dot.
+        touchPaint.color = withAlpha(color, (0xD8 * alpha).toInt())
+        canvas.drawCircle(touch.x, touch.y, coreRadius, touchPaint)
+        touchPaint.color = withAlpha(Color.WHITE, (0xDC * alpha).toInt())
+        canvas.drawCircle(touch.x - coreRadius * 0.30f, touch.y - coreRadius * 0.30f, coreRadius * 0.34f, touchPaint)
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha.coerceIn(0, 255), Color.red(color), Color.green(color), Color.blue(color))
+
+    private fun updateVisualTouches(event: MotionEvent) {
+        val seen = HashSet<Int>(event.pointerCount)
+        val eventTime = event.eventTime
+        val skipIndex = if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) event.actionIndex else -1
+        for (i in 0 until event.pointerCount) {
+            if (i == skipIndex) continue
+            val pid = event.getPointerId(i)
+            seen += pid
+            val x = event.getX(i)
+            val y = event.getY(i)
+            val touch = activeVisualTouches[pid]
+            if (touch == null) {
+                activeVisualTouches[pid] = VisualTouch(pid, x, y, 0f, 0f, eventTime)
+            } else {
+                val dt = (eventTime - touch.lastTimeMs).coerceIn(1L, 64L).toFloat()
+                val dx = x - touch.x
+                val dy = y - touch.y
+                touch.trail.addLast(TrailPoint(touch.x, touch.y, eventTime))
+                while (touch.trail.size > TRAIL_POINTS) touch.trail.removeFirst()
+                // Smooth the instantaneous velocity so the ribbon does not
+                // jitter on high-rate Android MotionEvent batches.
+                touch.velocityX = touch.velocityX * 0.60f + (dx / dt * 16f) * 0.40f
+                touch.velocityY = touch.velocityY * 0.60f + (dy / dt * 16f) * 0.40f
+                touch.x = x
+                touch.y = y
+                touch.lastTimeMs = eventTime
+            }
+        }
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_UP) {
+            val index = event.actionIndex
+            releaseVisualTouch(event.getPointerId(index), event.getX(index), event.getY(index), eventTime)
+        }
+        activeVisualTouches.keys.toList().forEach { pid ->
+            if (pid !in seen) releaseVisualTouch(pid, activeVisualTouches[pid]?.x ?: 0f, activeVisualTouches[pid]?.y ?: 0f, eventTime)
+        }
+        invalidate()
+    }
+
+    private fun releaseVisualTouch(pointerId: Int, x: Float, y: Float, eventTime: Long) {
+        val touch = activeVisualTouches.remove(pointerId) ?: return
+        touch.x = x
+        touch.y = y
+        touch.releasedAtMs = eventTime
+        releasedVisualTouches += touch
+    }
+
+    private fun releaseAllVisualTouches(eventTime: Long) {
+        activeVisualTouches.values.toList().forEach { touch ->
+            touch.releasedAtMs = eventTime
+            releasedVisualTouches += touch
+        }
+        activeVisualTouches.clear()
+        invalidate()
+    }
+
+    private fun clearVisualTouches() {
+        activeVisualTouches.clear()
+        releasedVisualTouches.clear()
         invalidate()
     }
 
@@ -146,6 +302,7 @@ class TouchPadView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
                 freeAll()
+                clearVisualTouches()
                 touchDownTimeMs = System.currentTimeMillis()
                 maxFingersInSession = 1
                 dragEngageHapticFired = false
@@ -227,8 +384,11 @@ class TouchPadView(context: Context) : View(context) {
                     }
                 }
                 freeAll()
-                activeVisualTouches.clear()
-                invalidate()
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    releaseAllVisualTouches(event.eventTime)
+                } else {
+                    clearVisualTouches()
+                }
                 echoLift()
             }
         }
