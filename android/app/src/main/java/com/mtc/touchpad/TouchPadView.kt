@@ -252,7 +252,9 @@ class TouchPadView(context: Context) : View(context) {
                     if (i != j && cidByPointer.containsKey(event.getPointerId(j))) {
                         val otherX = event.getX(j) * mmPerPx * scale
                         val otherY = event.getY(j) * mmPerPx * scale
-                        if (Math.hypot((curX - otherX).toDouble(), (curY - otherY).toDouble()) < 9.0) {
+                        // Only filter out impossible capacitive hardware ghosting (< 3.0mm).
+                        // Real human fingers placed close together can naturally be 5-8mm apart.
+                        if (Math.hypot((curX - otherX).toDouble(), (curY - otherY).toDouble()) < 3.0) {
                             isSplit = true
                             break
                         }
