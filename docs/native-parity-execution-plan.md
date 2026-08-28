@@ -245,6 +245,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] F1. 新增 Core Foundation 系统设置读取、主/回退 domain 冲突记录和 normalized policy。
 - [x] F2. 固定 TOML 显式字段优先级，启动时合并到 HID 与 network 两条入口。
 - [x] F3. 增加滚动/点击/智能缩放/查词/三指拖移/四指 swipe 的高确定性开关映射。
+- [x] F3a. `HIDScrollZoomModifierMask` 只应用已知 Quartz modifier 位，未知位/负值写入 `unsupported` 诊断并保留默认策略。
 - [x] F4. 采用 `NSHapticFeedbackManager.defaultPerformer()` 提供设备感知触觉确认，并修复 Android `ACTION_CANCEL` 误震动。
 - [x] R1-R3. 完成旋转/缩放相对增量过滤、phase 生命周期统一和 1:1 旋转默认值；新增纯逻辑回归测试。
 - [x] C2. 从 descriptor 发现 Input Mode feature report ID，新增非 `0x08` report ID 回归 fixture，并处理无编号 report 的 payload 规则。
