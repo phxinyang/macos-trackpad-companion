@@ -102,12 +102,12 @@ test; the Python sender produces byte-identical output.
 
 ## Relationship to the HID path
 
-`hid.rs` decodes a PTP report into `report::Frame` and maps the chip's
-scan time onto the host clock via `ScanTimeClock` before calling the
-gesture engine. The net path reuses both halves unchanged: decode an
-ATP1 packet, truncate scan_time to its low 16 bits, hand the same
-clock-mapped timestamp to `gesture::State::on_frame_at`. From there on
-it *is* the same pipeline.
+`hid.rs` decodes a PTP report into `report::Frame`, reassembles supported
+parallel/hybrid fragments sharing one Scan Time, and maps the resulting
+chip time onto the host clock via `ScanTimeClock` before calling the gesture
+engine. The net path reuses the same gesture half: decode an ATP1 packet,
+truncate `scan_time` to its low 16 bits, and hand the clock-mapped timestamp
+to `gesture::State::on_frame_at`. From there on it *is* the same pipeline.
 
 ## Reporting cadence and the silence watchdog
 

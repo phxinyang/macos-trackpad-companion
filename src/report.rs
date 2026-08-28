@@ -121,7 +121,7 @@ pub(crate) fn decode_parts(layout: &Layout, report: &[u8]) -> Option<DecodedRepo
     if report.len() < layout.total_payload_bytes {
         return None;
     }
-    if report[0] != layout.report_id {
+    if layout.report_id != 0 && report[0] != layout.report_id {
         return None;
     }
 
@@ -466,5 +466,26 @@ mod tests {
             })
             .expect("two-finger hybrid frame");
         assert_eq!(frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(), vec![5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn unnumbered_input_report_does_not_consume_first_data_byte_as_id() {
+        let mut layout = fake_layout();
+        layout.report_id = 0;
+        layout.fingers_offset = 0;
+        layout.fingers_bit_offset = 0;
+        layout.scan_time_offset = 30;
+        layout.contact_count_offset = 32;
+        layout.button_offset = 33;
+        layout.total_payload_bytes = 34;
+        let mut buf = vec![0u8; 34];
+        buf[0] = 0x03; // confidence + tip of the first contact
+        buf[1] = 7;
+        buf[2..4].copy_from_slice(&1968u16.to_le_bytes());
+        buf[4..6].copy_from_slice(&1212u16.to_le_bytes());
+        buf[32] = 1;
+        let frame = decode(&layout, &buf).expect("decode unnumbered report");
+        assert_eq!(frame.contacts[0].id, 7);
+        assert!(frame.contacts[0].tip);
     }
 }
