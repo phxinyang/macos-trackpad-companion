@@ -96,6 +96,13 @@ pub struct RawTrackpadPreferences {
 }
 
 impl RawTrackpadPreferences {
+    /// Number of preference values collected across the primary, fallback,
+    /// and global domains. This is intentionally exposed for diagnostics;
+    /// callers should use `value` for individual settings.
+    pub fn value_count(&self) -> usize {
+        self.values.len()
+    }
+
     pub fn value(&self, key: &str) -> Option<PreferenceValue> {
         self.values.get(key).copied()
     }
