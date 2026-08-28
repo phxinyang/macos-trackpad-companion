@@ -46,6 +46,10 @@ diagnostics:
 python3 tools/synthetic_sender.py --host <mac-ip> --mode circle
 ```
 
+When `[net].token` is configured, append `?token=<token>` to the browser URL,
+enter the same value in the Android Token field, or pass
+`--token <token>` to `tools/synthetic_sender.py`.
+
 Android and browser clients encode coordinates in millimeters using one
 isotropic pixel scale. This keeps equal finger motion equally sensitive in X
 and Y; use the `A−` / `A＋` controls for overall calibration. The Android
@@ -55,8 +59,8 @@ not expose reliable physical DPI.
 
 The network listener needs Accessibility permission to post CGEvents, but it
 does not need Input Monitoring because it never reads a local HID device.
-Only run it on a trusted network: protocol v1 is intentionally unauthenticated
-and any host that can reach the port can inject pointer or gesture events.
+For a LAN deployment set `[net].token`; without one, any host that can reach
+the port can inject pointer or gesture events.
 
 CLI flags (network binding can be overridden for one `companion-net` run):
 
@@ -66,7 +70,7 @@ CLI flags (network binding can be overridden for one `companion-net` run):
 | `-v`, `-vv` | info | Increase log level. Overrides `[log].level` from the file. |
 | `--port PORT` | 4242 | `companion-net` UDP + HTTP/WebSocket port override. |
 | `--listen-ip IP` | all interfaces | `companion-net` bind-address override. |
-| `--token TOKEN` | unset | Reserved in protocol v1; accepted but authentication is not enabled. |
+| `--token TOKEN` | unset | Bearer token for WebSocket and authenticated UDP clients. |
 
 ## Configuration
 
@@ -84,7 +88,7 @@ rejected so typos surface at startup.
 [net]                       # companion-net UDP + WebSocket listener
 # listen_ip = "0.0.0.0"    # bind address (default: all interfaces)
 # port      = 4242
-# token     = ""            # reserved; v1 is unauthenticated
+# token     = "change-me"   # optional bearer token; see docs/wire-protocol.md
 
 [log]
 level = "info"              # error | warn | info | debug | trace
@@ -136,10 +140,14 @@ backend = "synthetic"         # synthetic | notification | off
 
 [gestures.swipe.vertical]     # up/down 3F/4F → Mission Control / App Exposé
 enable  = "on"
-backend = "synthetic"
+backend = "synthetic"        # synthetic animates; notification commits on lift
 
 [gestures.three_finger_drag]  # three fingers → left-button drag
 enable = "on"                 # "off" restores three-finger swipes
+release_delay_ms = 500        # 500 = 500ms 换把悬停延续 (0 = 抬手即松)
+
+[gestures.one_finger_tap_drag] # double-tap, hold, then drag
+enable = "on"
 ```
 
 Three-finger drag is on by default. Three fingers must move past a small

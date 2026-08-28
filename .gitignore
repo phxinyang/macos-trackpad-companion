@@ -6,3 +6,6 @@
 __pycache__/
 *.pyc
 .zcode/
+.agent/
+.playwright-cli/
+*.log

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!-- Phone-as-trackpad web client for companion-net.
      Served at http://<mac>:4242/ ; streams touch frames via WebSocket to /ws.
+     When [net].token is enabled, open this page as /?token=<token>.
 -->
 <html lang="zh-CN">
 <head>
@@ -224,7 +225,13 @@
   }
   function connect() {
     setStatus("wait");
-    const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+    // When the server has [net].token enabled, pass the bearer token from
+    // the page URL through to the WebSocket handshake. Keeping it in the
+    // query is the only browser-native way to authenticate a WebSocket
+    // constructor; native clients may use Authorization instead.
+    const token = new URLSearchParams(location.search).get("token");
+    const authQuery = token ? `?token=${encodeURIComponent(token)}` : "";
+    const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws" + authQuery;
     try { ws = new WebSocket(url); } catch (e) { retry(); return; }
     ws.binaryType = "arraybuffer";
     ws.onopen = () => { setStatus("on"); backoff = 1000; };

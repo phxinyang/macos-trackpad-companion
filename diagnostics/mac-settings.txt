@@ -1,0 +1,82 @@
+=== 系统信息 (System Info) ===
+ProductName:		macOS
+ProductVersion:		26.5.2
+BuildVersion:		25F84
+Darwin Fmini.local 25.5.0 Darwin Kernel Version 25.5.0: Tue Jun  9 22:26:22 PDT 2026; root:xnu-12377.121.10~1/RELEASE_ARM64_T8132 arm64
+
+=== 触控板设置: com.apple.AppleMultitouchTrackpad ===
+{
+    ActuateDetents = 1;
+    Clicking = 0;
+    DragLock = 0;
+    Dragging = 0;
+    FirstClickThreshold = 1;
+    ForceSuppressed = 0;
+    HIDScrollZoomModifierMask = 262144;
+    SecondClickThreshold = 1;
+    TrackpadCornerSecondaryClick = 0;
+    TrackpadFiveFingerPinchGesture = 2;
+    TrackpadFourFingerHorizSwipeGesture = 2;
+    TrackpadFourFingerPinchGesture = 2;
+    TrackpadFourFingerVertSwipeGesture = 2;
+    TrackpadHandResting = 1;
+    TrackpadHorizScroll = 1;
+    TrackpadMomentumScroll = 1;
+    TrackpadPinch = 1;
+    TrackpadRightClick = 1;
+    TrackpadRotate = 1;
+    TrackpadScroll = 1;
+    TrackpadThreeFingerDrag = 1;
+    TrackpadThreeFingerHorizSwipeGesture = 0;
+    TrackpadThreeFingerTapGesture = 2;
+    TrackpadThreeFingerVertSwipeGesture = 0;
+    TrackpadTwoFingerDoubleTapGesture = 1;
+    TrackpadTwoFingerFromRightEdgeSwipeGesture = 3;
+    USBMouseStopsTrackpad = 0;
+    UserPreferences = 1;
+    version = 12;
+}
+
+=== 触控板设置: com.apple.driver.AppleBluetoothMultitouch.trackpad ===
+{
+    Clicking = 0;
+    DragLock = 0;
+    Dragging = 0;
+    HIDScrollZoomModifierMask = 262144;
+    TrackpadCornerSecondaryClick = 0;
+    TrackpadFiveFingerPinchGesture = 2;
+    TrackpadFourFingerHorizSwipeGesture = 2;
+    TrackpadFourFingerPinchGesture = 2;
+    TrackpadFourFingerVertSwipeGesture = 2;
+    TrackpadHandResting = 1;
+    TrackpadHorizScroll = 1;
+    TrackpadMomentumScroll = 1;
+    TrackpadPinch = 1;
+    TrackpadRightClick = 1;
+    TrackpadRotate = 1;
+    TrackpadScroll = 1;
+    TrackpadThreeFingerDrag = 0;
+    TrackpadThreeFingerHorizSwipeGesture = 2;
+    TrackpadThreeFingerTapGesture = 2;
+    TrackpadThreeFingerVertSwipeGesture = 2;
+    TrackpadTwoFingerDoubleTapGesture = 1;
+    TrackpadTwoFingerFromRightEdgeSwipeGesture = 3;
+    USBMouseStopsTrackpad = 0;
+    UserPreferences = 1;
+    version = 5;
+}
+
+=== 全局手势设置 (Global Defaults) ===
+TrackpadTwoFingerDoubleTapGesture: 未设置
+TrackpadThreeFingerTapGesture: 未设置
+TrackpadThreeFingerDrag: 未设置
+TrackpadPinch: 未设置
+TrackpadRotate: 未设置
+TrackpadScaling: 未设置
+NaturalScroll: 1
+
+=== Dock 手势与 Space 设置 (com.apple.dock) ===
+showMissionControlGestureEnabled: (默认)
+1
+showDesktopGestureEnabled: (默认)
+

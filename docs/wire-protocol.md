@@ -12,6 +12,25 @@ no session state; every frame stands alone, exactly like a PTP input
 report. Loss only matters for the *final* all-lifted frame of a gesture,
 so senders retransmit that one a few times.
 
+## Optional authentication
+
+Authentication is disabled when `[net].token` is absent or empty, preserving
+the original ATP1 wire format. When a token is configured, WebSocket clients
+must send either `Authorization: Bearer <token>` during the upgrade or put the
+URL-encoded token in `/ws?token=<token>`. UDP datagrams must use this envelope:
+
+```text
+offset  size  field
+0       4     magic "ATK1"
+4       2     token length u16 (little-endian, 1..256)
+6       n     UTF-8 bearer token
+6+n     ...   unchanged ATP1 frame
+```
+
+The envelope is authentication, not encryption; use a trusted network or a
+VPN/TLS tunnel when frame confidentiality matters. Existing unauthenticated
+clients continue to work only while the server token is unset.
+
 ## Layout
 
 All integers little-endian.

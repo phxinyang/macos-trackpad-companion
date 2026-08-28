@@ -16,7 +16,7 @@
 //! # listen_ip = "0.0.0.0" # UDP+TCP bind address
 //! # port      = 4242      # UDP frames arrive here; the touchpad web
 //!                         # page is served over TCP on the same port
-//! # token     = ""        # reserved (v1 ships unauthenticated)
+//! # token     = "..."     # optional bearer token for network clients
 //!
 //! [log]
 //! level = "info"
@@ -72,8 +72,9 @@ pub struct Net {
     /// that serves the touchpad web page + WebSocket endpoint.
     pub listen_ip: Option<String>,
     pub port: u16,
-    /// Reserved. v1 ships without authentication; setting this is a
-    /// no-op and warns at startup.
+    /// Optional bearer token. When set, WebSocket clients must provide
+    /// `Authorization: Bearer <token>` or `?token=<token>` and UDP clients
+    /// must wrap ATP1 in the documented ATK1 envelope.
     pub token: Option<String>,
 }
 
@@ -182,23 +183,31 @@ pub struct OneFingerTapDrag {
 
 impl Default for OneFingerTapDrag {
     fn default() -> Self {
-        Self { enable: GestureEnable::On }
+        Self {
+            enable: GestureEnable::On,
+        }
     }
 }
 
 /// `[gestures.three_finger_drag]` — companion-net's 拖移样式 = 三指拖移.
 /// While on, three-finger motion drags (left-button held) instead of firing
-/// Dock swipes; four fingers keep the full swipe surface. The HID daemon
-/// keeps its historical three-finger swipe behavior via `State::new`.
+/// Dock swipes; four fingers keep the full swipe surface. Both HID and
+/// network binaries use the same resolved options via `boot::gesture_options`.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct ThreeFingerDrag {
     pub enable: GestureEnable,
+    pub release_delay_ms: u64,
 }
 
 impl Default for ThreeFingerDrag {
     fn default() -> Self {
-        Self { enable: GestureEnable::On }
+        Self {
+            enable: GestureEnable::On,
+            // Default 500ms drag-lock delay allows lifting fingers and re-gripping (换把悬停)
+            // to continue dragging across large screens. Set to 0 for instant lift-to-release.
+            release_delay_ms: 500,
+        }
     }
 }
 
@@ -292,18 +301,13 @@ pub enum SwipeBackend {
 /// can't kill its own gesture. Mirrors how macOS itself dispatches
 /// pinch/rotate/scroll/click — to the window under the cursor, not
 /// strictly the frontmost app.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum GestureEnable {
+    #[default]
     On,
     Off,
     Only(Vec<String>),
     Except(Vec<String>),
-}
-
-impl Default for GestureEnable {
-    fn default() -> Self {
-        Self::On
-    }
 }
 
 impl<'de> Deserialize<'de> for GestureEnable {

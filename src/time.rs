@@ -15,12 +15,14 @@
 use std::ops::{Add, Sub};
 use std::time::Duration;
 
+#[cfg(target_os = "macos")]
 unsafe extern "C" {
     fn clock_gettime_nsec_np(clock_id: u32) -> u64;
 }
 
 /// `CLOCK_UPTIME_RAW` from `<time.h>`. Identical to `mach_absolute_time()`
 /// after timebase conversion; doesn't advance during sleep.
+#[cfg(target_os = "macos")]
 const CLOCK_UPTIME_RAW: u32 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -28,7 +30,22 @@ pub struct Timestamp(u64);
 
 impl Timestamp {
     pub fn now() -> Self {
-        Self(unsafe { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) })
+        #[cfg(target_os = "macos")]
+        {
+            Self(unsafe { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) })
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            // Linux CI has no CLOCK_UPTIME_RAW. Keep the same monotonic
+            // semantics with a process-local Instant origin; event
+            // timestamps are only meaningful within this process on the
+            // non-macOS test path.
+            use std::sync::OnceLock;
+            use std::time::Instant;
+            static ORIGIN: OnceLock<Instant> = OnceLock::new();
+            let elapsed = ORIGIN.get_or_init(Instant::now).elapsed();
+            Self(elapsed.as_nanos().min(u64::MAX as u128) as u64)
+        }
     }
 
     /// Construct from a raw nanosecond-since-boot value. Use when you

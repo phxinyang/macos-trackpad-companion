@@ -7,6 +7,8 @@ package com.mtc.touchpad
  */
 object FrameEncoder {
 
+    private val AUTH_MAGIC = byteArrayOf('A'.code.toByte(), 'T'.code.toByte(), 'K'.code.toByte(), '1'.code.toByte())
+
     /** Contacts are present/tip-down; confidence can be disabled when the
      * platform reports a palm or otherwise uncertain contact. */
     data class Contact(
@@ -40,6 +42,19 @@ object FrameEncoder {
             putF32(buf, o + 6, c.y)
         }
         return buf
+    }
+
+    /** Wrap an ATP1 frame in the optional authenticated UDP envelope. */
+    fun authenticate(token: String, frame: ByteArray): ByteArray {
+        val tokenBytes = token.toByteArray(Charsets.UTF_8)
+        require(tokenBytes.isNotEmpty() && tokenBytes.size <= 256) { "token must be 1..256 UTF-8 bytes" }
+        val out = ByteArray(6 + tokenBytes.size + frame.size)
+        AUTH_MAGIC.copyInto(out, 0)
+        out[4] = tokenBytes.size.toByte()
+        out[5] = (tokenBytes.size ushr 8).toByte()
+        tokenBytes.copyInto(out, 6)
+        frame.copyInto(out, 6 + tokenBytes.size)
+        return out
     }
 
     private fun putU32(b: ByteArray, off: Int, v: Int) {

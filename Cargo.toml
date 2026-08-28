@@ -23,10 +23,6 @@ path = "src/bin/gesture_tap.rs"
 [dependencies]
 touchpad-proto       = { path = "crates/touchpad-proto" }
 sha1                 = "0.10"
-core-foundation     = "0.10"
-core-foundation-sys = "0.8"
-core-graphics       = "0.25"
-io-kit-sys          = "0.5"
 libc                = "0.2"
 log                 = "0.4"
 env_logger          = "0.11"
@@ -34,9 +30,15 @@ anyhow              = "1"
 clap                = { version = "4", features = ["derive"] }
 serde               = { version = "1", features = ["derive"] }
 toml                = "0.8"
-objc2 = "0.6.4"
-objc2-app-kit = "0.3.2"
-objc2-foundation = "0.3.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation     = "0.10"
+core-foundation-sys = "0.8"
+core-graphics       = "0.25"
+io-kit-sys          = "0.5"
+objc2               = "0.6.4"
+objc2-app-kit       = "0.3.2"
+objc2-foundation    = "0.3.2"
 
 [profile.release]
 lto = "fat"
