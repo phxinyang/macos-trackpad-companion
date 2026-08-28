@@ -44,10 +44,12 @@ cargo build --release --bin companion-net
 ./target/release/companion-net -v
 ```
 
-Open the printed URL on a phone connected to the same LAN. The Android MVP
-is under `android/`; build it from that directory with
-`./gradlew assembleDebug`, then enter the Mac's LAN address and port in the
-app. A synthetic sender is available for
+Open the printed URL on a phone connected to the same LAN. The Android app
+also discovers a bundled macOS app advertising `_mtc-trackpad._tcp`; open the
+connection sheet to select a nearby Mac, or use a `mtc://pair?...` link shared
+by the macOS menu bar. Manual host/port/token entry remains available when
+multicast DNS is blocked by the network. The Android MVP is under `android/`;
+build it from that directory with `./gradlew assembleDebug`. A synthetic sender is available for
 diagnostics:
 
 ```sh
@@ -57,6 +59,12 @@ python3 tools/synthetic_sender.py --host <mac-ip> --mode circle
 When `[net].token` is configured, append `?token=<token>` to the browser URL,
 enter the same value in the Android Token field, or pass
 `--token <token>` to `tools/synthetic_sender.py`.
+
+The macOS settings app creates a token automatically on first launch in its
+managed configuration and advertises the authentication mode in Bonjour TXT.
+Legacy CLI configurations without a token remain compatible; run
+`companion-config ensure-token` explicitly when you want to enable pairing
+authentication outside the GUI.
 
 The web client exposes the main touch surface at `/` and the instrumented
 gesture diagnostics at `/test`. Both pages use the system font stack, semantic
@@ -302,9 +310,11 @@ cargo run --release --bin companion-tui
 
 The repository also includes a native macOS SwiftUI settings app. It follows
 the same three Apple sections (`Point & Click`, `Scroll & Zoom`, and `More
-Gestures`) and keeps virtual-input-only controls under `Companion`. Changes are
-written immediately through the shared `companion-config` helper, so the GUI
-and TUI cannot silently diverge from `companion-net`'s TOML parser:
+Gestures`) and keeps virtual-input-only controls under `Companion`. Its
+`Overview` page and menu bar item supervise `companion-net`, show Accessibility
+state, and expose a local pairing link. Changes are written immediately through
+the shared `companion-config` helper, so the GUI and TUI cannot silently
+diverge from `companion-net`'s TOML parser:
 
 ```sh
 # Build the helper first, then build the GUI on macOS 13+
@@ -314,11 +324,11 @@ cd macos/TrackpadCompanionSettings
 COMPANION_CONFIG_BIN="$repo/target/release/companion-config" swift build -c release
 ```
 
-For a bundled app, place `companion-config` beside the executable or set
-`COMPANION_CONFIG_BIN` to its absolute path. SwiftUI is intentionally kept in a
-macOS-only package; Linux CI validates the Rust helper and configuration
-contract, while final window, dark-mode, and accessibility checks belong on a
-Mac host.
+For a bundled app, use `./packaging/macos/build-app.sh`; it places both Rust
+helpers under `Contents/Resources` and emits a ZIP. SwiftUI is intentionally
+kept in a macOS-only package; Linux CI validates the Rust helper and
+configuration contract, while final window, dark-mode, permission, Bonjour,
+and accessibility checks belong on a Mac host.
 
 The TUI writes the same `config.toml` used by `companion-net`. Save the changes
 and restart `companion-net`; explicit TOML values take precedence over any

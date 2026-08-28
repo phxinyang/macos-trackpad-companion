@@ -46,6 +46,26 @@ jobs:
           COMPANION_CONFIG_BIN: ${{ github.workspace }}/target/release/companion-config
         run: swift build -c release
 
+  macos-package:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build unsigned app bundle
+        run: ./packaging/macos/build-app.sh
+      - name: Verify bundle contents
+        run: |
+          test -x "dist/macos/Trackpad Companion.app/Contents/MacOS/TrackpadCompanion"
+          test -x "dist/macos/Trackpad Companion.app/Contents/Resources/companion-net"
+          test -x "dist/macos/Trackpad Companion.app/Contents/Resources/companion-config"
+          unzip -t dist/macos/*-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trackpad-companion-macos-unsigned
+          path: dist/macos/*
+
   android:
     runs-on: ubuntu-latest
     steps:

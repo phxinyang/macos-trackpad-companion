@@ -4,7 +4,7 @@
 //! Keeping TOML ownership here means TUI, GUI, and companion-net all use the
 //! same parser and atomic writer.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use macos_trackpad_companion::config;
 use serde_json::json;
@@ -36,6 +36,8 @@ enum Command {
     },
     /// Report machine-readable configuration and environment diagnostics.
     Doctor,
+    /// Create a random LAN pairing token when the config has none.
+    EnsureToken,
 }
 
 fn main() -> Result<()> {
@@ -44,7 +46,53 @@ fn main() -> Result<()> {
         Command::Dump => dump(args.config.as_deref()),
         Command::Set { path, value } => set(args.config.as_deref(), &path, &value),
         Command::Doctor => doctor(args.config.as_deref()),
+        Command::EnsureToken => ensure_token(args.config.as_deref()),
     }
+}
+
+fn ensure_token(path: Option<&Path>) -> Result<()> {
+    let resolved = path.map(PathBuf::from).unwrap_or_else(config::default_path);
+    let mut root = if resolved.exists() {
+        let source = std::fs::read_to_string(&resolved)
+            .with_context(|| format!("read config {}", resolved.display()))?;
+        toml::from_str::<toml::Value>(&source).context("parse config for token")?
+    } else {
+        toml::Value::Table(toml::map::Map::new())
+    };
+    let existing = root
+        .get("net")
+        .and_then(|net| net.get("token"))
+        .and_then(toml::Value::as_str)
+        .filter(|token| !token.is_empty());
+    if existing.is_some() {
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "path": resolved,
+                "created": false,
+                "token_configured": true,
+            }))?
+        );
+        return Ok(());
+    }
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes)
+        .map_err(|error| anyhow::anyhow!("generate secure pairing token: {error:?}"))?;
+    let token = bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    set_value(&mut root, &["net", "token"], toml::Value::String(token));
+    write_config(&resolved, &root)?;
+    println!(
+        "{}",
+        serde_json::to_string(&json!({
+            "path": resolved,
+            "created": true,
+            "token_configured": true,
+        }))?
+    );
+    Ok(())
 }
 
 fn doctor(path: Option<&Path>) -> Result<()> {
@@ -62,10 +110,7 @@ fn doctor(path: Option<&Path>) -> Result<()> {
                 "haptic_feedback": format!("{:?}", cfg.macos.haptic_feedback),
             }),
         ),
-        Err(error) => (
-            false,
-            json!({ "error": error.to_string() }),
-        ),
+        Err(error) => (false, json!({ "error": error.to_string() })),
     };
     let mut report = json!({
         "config_path": resolved,
@@ -123,7 +168,16 @@ fn set(path: Option<&Path>, dotted: &str, raw_value: &str) -> Result<()> {
         let value = parse_value(raw_value)?;
         set_value(&mut root, &segments, value);
     }
-    let rendered = toml::to_string_pretty(&root).context("render config")?;
+    write_config(&resolved, &root)?;
+    println!(
+        "{}",
+        serde_json::to_string(&json!({ "path": resolved, "updated": dotted }))?
+    );
+    Ok(())
+}
+
+fn write_config(resolved: &Path, root: &toml::Value) -> Result<()> {
+    let rendered = toml::to_string_pretty(root).context("render config")?;
     let tmp = resolved.with_extension("toml.tmp");
     if let Some(parent) = resolved.parent() {
         std::fs::create_dir_all(parent)
@@ -132,10 +186,12 @@ fn set(path: Option<&Path>, dotted: &str, raw_value: &str) -> Result<()> {
     std::fs::write(&tmp, rendered).with_context(|| format!("write {}", tmp.display()))?;
     std::fs::rename(&tmp, &resolved)
         .with_context(|| format!("replace config {}", resolved.display()))?;
-    println!(
-        "{}",
-        serde_json::to_string(&json!({ "path": resolved, "updated": dotted }))?
-    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&resolved, std::fs::Permissions::from_mode(0o600))
+            .with_context(|| format!("protect config {}", resolved.display()))?;
+    }
     Ok(())
 }
 
@@ -210,5 +266,17 @@ mod tests {
             toml::Value::Float(30.0),
         );
         assert_eq!(root["cursor"]["sensitivity"].as_float(), Some(30.0));
+    }
+
+    #[test]
+    fn generated_pairing_token_is_hex() {
+        let mut bytes = [0u8; 32];
+        getrandom::fill(&mut bytes).unwrap();
+        let token = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        assert_eq!(token.len(), 64);
+        assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
     }
 }

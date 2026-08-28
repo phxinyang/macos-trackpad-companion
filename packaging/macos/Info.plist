@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Trackpad Companion</string>
+    <key>CFBundleExecutable</key>
+    <string>TrackpadCompanion</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.mtc.trackpad-companion</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Trackpad Companion</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Trackpad Companion discovers nearby phones and publishes this Mac on your local network.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_mtc-trackpad._tcp</string>
+    </array>
+    <key>NSHumanReadableCopyright</key>
+    <string>Trackpad Companion contributors</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+</dict>
+</plist>
