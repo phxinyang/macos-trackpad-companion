@@ -1457,22 +1457,40 @@ impl Emitter {
     pub fn scroll(&self, dx_mm: f64, dy_mm: f64, phase: Phase) {
         let sign = if self.cfg.natural_scroll { 1.0 } else { -1.0 };
         let now = self.event_timestamp();
-        // Reset per-stroke state on Began. Carry would otherwise leak a
-        // fraction-of-a-pixel from the previous stroke; `scroll_last_time`
-        // would inflate dt across the gap between strokes and corrupt the
-        // first Changed event's velocity.
         if matches!(phase, Phase::Began) {
             self.scroll_carry_x_px.set(0.0);
             self.scroll_carry_y_px.set(0.0);
             self.scroll_last_time.set(None);
         }
+
+        let mods = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
+        const MOD_CMD: u64 = 0x0010_0000;
+        const MOD_CTRL: u64 = 0x0004_0000;
+        const MOD_SHIFT: u64 = 0x0002_0000;
+
+        if (mods & (MOD_CMD | MOD_CTRL)) != 0 {
+            // Command/Control + 2F slide: Convert to native pinch-to-zoom (magnification) stream,
+            // matching Mac Mouse Fix and native trackpad zoom in all macOS apps.
+            let mag_delta = -sign * dy_mm * 0.035;
+            self.pinch(mag_delta, phase);
+            return;
+        }
+
+        let mut eff_dx_mm = dx_mm;
+        let mut eff_dy_mm = dy_mm;
+        if (mods & MOD_SHIFT) != 0 && eff_dx_mm.abs() < 1e-4 && eff_dy_mm.abs() > 1e-4 {
+            // Shift + 2F vertical slide: Convert to horizontal scroll.
+            eff_dx_mm = eff_dy_mm;
+            eff_dy_mm = 0.0;
+        }
+
         let prev_time = self.scroll_last_time.replace(Some(now));
         let dt = match prev_time {
             Some(t) => (now - t).as_secs_f64().clamp(0.001, 0.1),
             None => 1.0 / 60.0,
         };
-        let vx = dx_mm / dt;
-        let vy = dy_mm / dt;
+        let vx = eff_dx_mm / dt;
+        let vy = eff_dy_mm / dt;
         let dx_px = sign * accelerate_scroll(vx, self.cfg.scroll_accel) * dt;
         let dy_px = sign * accelerate_scroll(vy, self.cfg.scroll_accel) * dt;
         let total_x = self.scroll_carry_x_px.get() + dx_px;
