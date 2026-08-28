@@ -6,7 +6,7 @@
 //! [`crate::report::Frame`] and an [`Output`] sink — so the heuristics
 //! can be unit-tested.
 
-use crate::output::{MouseButton, Output, Phase, SwipeAxis};
+use crate::output::{HapticKind, MouseButton, Output, Phase, SwipeAxis};
 use crate::report::{Contact, Frame};
 use crate::time::Timestamp;
 use std::collections::HashMap;
@@ -396,6 +396,18 @@ fn compute_radial_spread(active: &[Contact], centroid: (f64, f64)) -> f64 {
 /// behavior untouched).
 #[derive(Clone, Copy, Debug)]
 pub struct GestureOptions {
+    /// Whether a short one-finger touch produces a left click.
+    pub tap_to_click: bool,
+    /// Whether a short two-finger touch produces a secondary click.
+    pub secondary_click: bool,
+    /// Whether a two-finger double tap invokes Smart Zoom.
+    pub smart_zoom: bool,
+    /// Whether a three-finger tap invokes Dictionary Lookup.
+    pub dictionary_lookup: bool,
+    /// Whether two-finger translation emits scroll events.
+    pub scroll_enabled: bool,
+    /// Whether a right-edge two-finger swipe toggles Notification Center.
+    pub right_edge_swipe: bool,
     /// 拖移样式 = 三指拖移: three-finger motion drags instead of firing
     /// Dock swipes. Four fingers keep the full swipe surface.
     pub three_finger_drag: bool,
@@ -418,6 +430,12 @@ pub struct GestureOptions {
 impl Default for GestureOptions {
     fn default() -> Self {
         Self {
+            tap_to_click: true,
+            secondary_click: true,
+            smart_zoom: true,
+            dictionary_lookup: true,
+            scroll_enabled: true,
+            right_edge_swipe: true,
             three_finger_drag: true,
             release_delay_ms: 500,
             one_finger_tap_drag: true,
@@ -655,6 +673,49 @@ impl<O: Output> State<O> {
         }
     }
 
+    fn emit_tap_click(&self, button: MouseButton) {
+        let allowed = match button {
+            MouseButton::Left => self.options.tap_to_click,
+            MouseButton::Right => self.options.secondary_click,
+        };
+        if allowed {
+            self.out.haptic(HapticKind::Click);
+            self.out.click(button);
+        } else {
+            log::debug!("tap click suppressed by macOS/config policy: {button:?}");
+        }
+    }
+
+    fn emit_smart_zoom(&self) {
+        if self.options.smart_zoom {
+            self.out.haptic(HapticKind::GestureCommitted);
+            self.out.smart_magnify();
+        } else {
+            log::debug!("smart zoom suppressed by macOS/config policy");
+        }
+    }
+
+    fn emit_dictionary_lookup(&self) {
+        if self.options.dictionary_lookup {
+            self.out.haptic(HapticKind::GestureCommitted);
+            self.out.look_up_dictionary();
+        } else {
+            log::debug!("dictionary lookup suppressed by macOS/config policy");
+        }
+    }
+
+    fn emit_scroll(&self, dx_mm: f64, dy_mm: f64, phase: Phase) {
+        if self.options.scroll_enabled {
+            self.out.scroll(dx_mm, dy_mm, phase);
+        }
+    }
+
+    fn emit_scroll_inertia(&self, vx_mm_per_sec: f64, vy_mm_per_sec: f64) {
+        if self.options.scroll_enabled {
+            self.out.scroll_inertia(vx_mm_per_sec, vy_mm_per_sec);
+        }
+    }
+
     /// Convenience wrapper that stamps the frame with the current
     /// host time. Used only by tests where timing isn't load-bearing
     /// (e.g. integrated-button edge cases). Production goes through
@@ -794,7 +855,7 @@ impl<O: Output> State<O> {
         // start momentum and the Dock does not commit a partial swipe.
         match self.kind {
             GestureKind::TwoFingerPan => {
-                self.out.scroll(0.0, 0.0, Phase::Cancelled);
+                self.emit_scroll(0.0, 0.0, Phase::Cancelled);
                 let _ = self.out.cancel_inertia();
             }
             GestureKind::TwoFingerPinchAndRotate => {
@@ -864,7 +925,7 @@ impl<O: Output> State<O> {
                     "2f tap: confirmed after double-tap window ({}ms) -> click Right",
                     TWO_FINGER_DOUBLE_TAP_WINDOW.as_millis()
                 );
-                self.out.click(MouseButton::Right);
+                self.emit_tap_click(MouseButton::Right);
             }
         }
         let Some(expires_at) = self.pending_drag_release else {
@@ -899,7 +960,7 @@ impl<O: Output> State<O> {
     fn flush_pending_right_click(&mut self) {
         if let Some(_) = self.pending_right_click.take() {
             log::debug!("2f tap: flushing pending right-click -> click Right");
-            self.out.click(MouseButton::Right);
+            self.emit_tap_click(MouseButton::Right);
         }
     }
 
@@ -912,11 +973,11 @@ impl<O: Output> State<O> {
                     "2f double tap: smart zoom / smart magnify (interval={}ms)",
                     now.saturating_duration_since(prev).as_millis()
                 );
-                self.out.smart_magnify();
+                self.emit_smart_zoom();
                 return;
             } else {
                 log::debug!("2f tap: previous right-click expired, flushing");
-                self.out.click(MouseButton::Right);
+                self.emit_tap_click(MouseButton::Right);
             }
         }
         log::debug!("2f tap: pending right-click (debouncing for double tap smart zoom)");
@@ -1093,7 +1154,7 @@ impl<O: Output> State<O> {
                             "1f tap-drag: second tap lifted undecided after {}ms — dispatching double-click",
                             dur.as_millis(),
                         );
-                        self.out.click(MouseButton::Left);
+                        self.emit_tap_click(MouseButton::Left);
                         self.last_1f_tap = None;
                         self.tap_drag_candidate = false;
                     } else if let Some(p3) = pending_3f {
@@ -1107,7 +1168,7 @@ impl<O: Output> State<O> {
                                 total_dur.as_millis(),
                                 combined_max_move,
                             );
-                            self.out.look_up_dictionary();
+                            self.emit_dictionary_lookup();
                         }
                     } else if let Some(p) = pending_2f {
                         self.last_1f_tap = None;
@@ -1125,7 +1186,7 @@ impl<O: Output> State<O> {
                                     p.initial_distance,
                                     total_dur.as_millis(),
                                 );
-                                self.out.click(MouseButton::Left);
+                                self.emit_tap_click(MouseButton::Left);
                                 self.last_1f_tap = Some(now);
                             } else {
                                 log::debug!(
@@ -1149,7 +1210,7 @@ impl<O: Output> State<O> {
                                     "1f tap after canceled 2f split: click Left (dur={}ms)",
                                     dur_1f.as_millis()
                                 );
-                                self.out.click(MouseButton::Left);
+                                self.emit_tap_click(MouseButton::Left);
                                 self.last_1f_tap = Some(now);
                             }
                         }
@@ -1174,7 +1235,7 @@ impl<O: Output> State<O> {
                                     ""
                                 },
                             );
-                            self.out.click(MouseButton::Left);
+                            self.emit_tap_click(MouseButton::Left);
                             self.last_1f_tap = Some(now);
                         } else {
                             self.last_1f_tap = None;
@@ -1219,11 +1280,11 @@ impl<O: Output> State<O> {
                     vy,
                     speed,
                 );
-                self.out.scroll(0.0, 0.0, Phase::Ended);
+                self.emit_scroll(0.0, 0.0, Phase::Ended);
                 // Seed inertia from the lift velocity. `Output` decides
                 // whether the seed is fast enough to coast on; gesture-side
                 // we always offer it.
-                self.out.scroll_inertia(vx, vy);
+                self.emit_scroll_inertia(vx, vy);
                 if matches!(new_kind, GestureKind::Idle) {
                     if let Some(base) = self.two_baseline {
                         if base.right_edge_candidate && base.cumulative_dx <= -5.0 {
@@ -1311,7 +1372,7 @@ impl<O: Output> State<O> {
                                 total_dur.as_millis(),
                                 combined_max_move,
                             );
-                            self.out.look_up_dictionary();
+                            self.emit_dictionary_lookup();
                         } else {
                             log::debug!(
                                 "3f split lift via 2f, no lookup: total_dur={}ms combined_max_move={:.2}mm",
@@ -1330,7 +1391,7 @@ impl<O: Output> State<O> {
                             "2f tap reclassified as 1f: contacts only {:.1}mm apart (fat-finger split) — click Left",
                             split_distance,
                         );
-                        self.out.click(MouseButton::Left);
+                        self.emit_tap_click(MouseButton::Left);
                         self.last_1f_tap = Some(now);
                         self.pending_right_click = None;
                     } else if tap_eligible {
@@ -1386,7 +1447,7 @@ impl<O: Output> State<O> {
                             dur.as_millis(),
                             max_move
                         );
-                        self.out.look_up_dictionary();
+                        self.emit_dictionary_lookup();
                     } else {
                         log::debug!(
                             "3f drag → partial lift: pending 3f tap lookup (dur={}ms max_move={:.2}mm)",
@@ -1485,7 +1546,7 @@ impl<O: Output> State<O> {
                                 dur.as_millis(),
                                 max_move
                             );
-                            self.out.look_up_dictionary();
+                            self.emit_dictionary_lookup();
                         } else {
                             log::debug!(
                                 "3f live → partial lift: pending 3f tap lookup (dur={}ms max_move={:.2}mm)",
@@ -1762,7 +1823,7 @@ impl<O: Output> State<O> {
         match recent.kind {
             GestureKind::TwoFingerPan => {
                 let _ = self.out.cancel_inertia();
-                self.out.scroll(0.0, 0.0, Phase::Began);
+                self.emit_scroll(0.0, 0.0, Phase::Began);
             }
             GestureKind::TwoFingerPinchAndRotate => {
                 self.out.pinch(0.0, Phase::Began);
@@ -1871,6 +1932,7 @@ impl<O: Output> State<O> {
                 log::debug!(
                     "3f drag: engage at travel={travel:.2}mm (centroid=({cx:.2},{cy:.2})mm)"
                 );
+                self.out.haptic(HapticKind::DragEngaged);
                 self.out.set_drag_button_held(true);
                 self.drag_button_held = true;
                 base.engaged = true;
@@ -1949,6 +2011,7 @@ impl<O: Output> State<O> {
                 .map(|t| now.saturating_duration_since(t))
                 .unwrap_or_default();
             if max_move >= DRAG_ENGAGE_MM || held >= TAP_DRAG_CONFIRM {
+                self.out.haptic(HapticKind::DragEngaged);
                 self.out.set_drag_button_held(true);
                 self.drag_button_held = true;
                 self.tap_drag_active = true;
@@ -2328,7 +2391,7 @@ impl<O: Output> State<O> {
                             alignment,
                             balance,
                         );
-                        self.out.scroll(0.0, 0.0, Phase::Began);
+                        self.emit_scroll(0.0, 0.0, Phase::Began);
                         // Claim the Began here. The pan dispatch below
                         // also opens a stream when `last_scroll_time` is
                         // still unset (that path serves the partial-lift
@@ -2389,7 +2452,7 @@ impl<O: Output> State<O> {
                 let ddy = centroid.1 - base.last_centroid.1;
 
                 if base.last_scroll_time.is_none() {
-                    self.out.scroll(0.0, 0.0, Phase::Began);
+                    self.emit_scroll(0.0, 0.0, Phase::Began);
                 }
                 if ddx.abs() > MOTION_DEAD_ZONE_MM || ddy.abs() > MOTION_DEAD_ZONE_MM {
                     if let Some(prev) = base.last_scroll_time {
@@ -2427,34 +2490,66 @@ impl<O: Output> State<O> {
                         base.scroll_velocity.0,
                         base.scroll_velocity.1,
                     );
-                    self.out.scroll(ddx, ddy, Phase::Changed);
+                    self.emit_scroll(ddx, ddy, Phase::Changed);
                     base.cumulative_dx += ddx;
-                    if base.right_edge_candidate && !base.right_edge_latched && base.cumulative_dx <= -3.8 {
+                    if self.options.right_edge_swipe
+                        && base.right_edge_candidate
+                        && !base.right_edge_latched
+                        && base.cumulative_dx <= -3.8
+                    {
                         log::info!(
                             "2f right-edge swipe in: toggle notification center (cumulative_dx={:.2}mm)",
                             base.cumulative_dx
                         );
+                        self.out.haptic(HapticKind::GestureCommitted);
                         self.out.toggle_notification_center();
                         base.right_edge_latched = true;
                     }
                     base.last_centroid = centroid;
                 }
-                base.prev_scale = scale;
-                base.prev_angle = ang;
-
                 // Dynamic transition to PinchAndRotate if user distinctly pinches or rotates mid-scroll
                 let scale_rel = (dist / base.initial_distance - 1.0).abs();
                 let frame_rot = angle_delta(ang, base.prev_angle).abs();
                 let total_rot = angle_delta(ang, base.initial_angle).abs();
-                if (base.pinch_admitted && scale_rel >= 0.25)
-                    || (base.rotate_admitted && (frame_rot >= 2.0_f64.to_radians() || total_rot >= 15.0_f64.to_radians()))
+                // A lagging scroll finger can change the pair's angle or
+                // distance without being an intentional pinch/rotate. Only
+                // switch away from an established pan when the two contacts'
+                // accumulated motion is not strongly co-directed. This keeps
+                // same-direction trailing-finger motion in the scroll stream,
+                // while anti-parallel pinch/rotate motion remains eligible.
+                let (init_a, init_b) = if a.id == base.initial_a.0 {
+                    (base.initial_a.1, base.initial_b.1)
+                } else {
+                    (base.initial_b.1, base.initial_a.1)
+                };
+                let da = (a.x - init_a.0, a.y - init_a.1);
+                let db = (b.x - init_b.0, b.y - init_b.1);
+                let da_mag = (da.0.powi(2) + da.1.powi(2)).sqrt();
+                let db_mag = (db.0.powi(2) + db.1.powi(2)).sqrt();
+                let relative_alignment = if da_mag > 0.0 && db_mag > 0.0 {
+                    (da.0 * db.0 + da.1 * db.1) / (da_mag * db_mag)
+                } else {
+                    -1.0
+                };
+                let min_relative_motion = da_mag.min(db_mag);
+                let max_relative_motion = da_mag.max(db_mag);
+                let relative_motion_is_gesture = relative_alignment <= 0.3
+                    || (min_relative_motion <= ANCHORED_FINGER_FLOOR_MM
+                        && max_relative_motion >= TAP_MAX_MOVE_MM
+                        && relative_alignment < 0.0);
+                if (base.pinch_admitted && scale_rel >= 0.25 && relative_motion_is_gesture)
+                    || (base.rotate_admitted
+                        && (frame_rot >= 2.0_f64.to_radians()
+                            || total_rot >= 15.0_f64.to_radians())
+                        && relative_motion_is_gesture)
                 {
                     log::info!(
-                        "2F dynamic transition from Pan -> PinchAndRotate (scale_rel={:.2} frame_rot={:.2}rad)",
+                        "2F dynamic transition from Pan -> PinchAndRotate (scale_rel={:.2} frame_rot={:.2}rad align={:.2})",
                         scale_rel,
-                        frame_rot
+                        frame_rot,
+                        relative_alignment,
                     );
-                    self.out.scroll(0.0, 0.0, Phase::Ended);
+                    self.emit_scroll(0.0, 0.0, Phase::Ended);
                     self.kind = GestureKind::TwoFingerPinchAndRotate;
                     if base.pinch_admitted {
                         self.out.pinch(0.0, Phase::Began);
@@ -2467,6 +2562,8 @@ impl<O: Output> State<O> {
                     self.two_baseline = Some(base);
                     return;
                 }
+                base.prev_scale = scale;
+                base.prev_angle = ang;
             }
             GestureKind::TwoFingerPinchAndRotate => {
                 let prev_dist = if base.prev_scale > 1e-4 {
@@ -2621,6 +2718,7 @@ impl<O: Output> State<O> {
             // Pinch in: fingers move toward centroid -> Launchpad (启动台)
             if ratio <= 0.72 && travel < 4.5 {
                 log::info!("4f radial pinch-in: toggle Launchpad (ratio={ratio:.2})");
+                self.out.haptic(HapticKind::GestureCommitted);
                 self.out.toggle_launchpad();
                 base.radial_action_latched = true;
                 base.last_centroid = (cx, cy);
@@ -2632,6 +2730,7 @@ impl<O: Output> State<O> {
             // Spread out: fingers move away from centroid -> Show Desktop (显示桌面)
             if ratio >= 1.28 && travel < 4.5 {
                 log::info!("4f radial spread-out: toggle Show Desktop (ratio={ratio:.2})");
+                self.out.haptic(HapticKind::GestureCommitted);
                 self.out.toggle_show_desktop();
                 base.radial_action_latched = true;
                 base.last_centroid = (cx, cy);
@@ -2710,6 +2809,9 @@ impl<O: Output> State<O> {
             );
             Phase::Began
         };
+        if matches!(phase, Phase::Began) {
+            self.out.haptic(HapticKind::GestureCommitted);
+        }
         self.out
             .swipe(axis, signed_progress, /* velocity */ 0.0, phase);
         self.multi_baseline = Some(base);
@@ -2796,6 +2898,9 @@ mod tests {
     }
 
     impl Output for &Recorder {
+        fn haptic(&self, kind: HapticKind) {
+            self.log.borrow_mut().push(format!("haptic {kind:?}"));
+        }
         fn move_cursor_by(&self, dx_px: i32, dy_px: i32) {
             self.log.borrow_mut().push(format!("move {dx_px} {dy_px}"));
         }

@@ -6,7 +6,7 @@
 //! Both `companion` and `companion-net` go through this module so their
 //! gesture behavior stays identical.
 
-use crate::config::{self, GestureEnable, SwipeAxisCfg};
+use crate::config::{self, GestureEnable, HapticSetting, SwipeAxisCfg};
 use crate::gesture;
 use crate::output;
 
@@ -14,6 +14,13 @@ pub fn emitter_config(cfg: &config::Config) -> output::Config {
     output::Config {
         scroll_accel: cfg.scroll.sensitivity,
         natural_scroll: cfg.scroll.natural,
+        horizontal_scroll: cfg.scroll.horizontal,
+        momentum_scroll: cfg.scroll.momentum,
+        modifier_zoom_mask: cfg
+            .scroll
+            .modifier_zoom_mask
+            .unwrap_or(crate::scroll_policy::DEFAULT_MODIFIER_ZOOM_MASK),
+        haptic_feedback: !matches!(cfg.macos.haptic_feedback, HapticSetting::Off),
         pinch: enable_to_policy(&cfg.gestures.pinch.enable),
         rotate: enable_to_policy(&cfg.gestures.rotate.enable),
         horizontal_swipe: resolve_swipe(&cfg.gestures.swipe.horizontal),
@@ -38,10 +45,16 @@ pub fn gesture_options(cfg: &config::Config) -> gesture::GestureOptions {
     let one_finger_tap_drag =
         !matches!(cfg.gestures.one_finger_tap_drag.enable, GestureEnable::Off);
     gesture::GestureOptions {
+        tap_to_click: !matches!(cfg.gestures.tap_to_click, GestureEnable::Off),
+        secondary_click: !matches!(cfg.gestures.secondary_click, GestureEnable::Off),
+        smart_zoom: !matches!(cfg.gestures.smart_zoom, GestureEnable::Off),
+        dictionary_lookup: !matches!(cfg.gestures.dictionary_lookup, GestureEnable::Off),
+        scroll_enabled: cfg.scroll.enable,
+        right_edge_swipe: !matches!(cfg.gestures.right_edge_swipe, GestureEnable::Off),
         three_finger_drag,
         one_finger_tap_drag,
         release_delay_ms: cfg.gestures.three_finger_drag.release_delay_ms,
-        press_and_hold_drag: false,
+        press_and_hold_drag: !matches!(cfg.gestures.press_and_hold_drag.enable, GestureEnable::Off),
     }
 }
 
@@ -64,5 +77,23 @@ fn resolve_swipe(c: &SwipeAxisCfg) -> output::SwipeConfig {
     output::SwipeConfig {
         policy: enable_to_policy(&c.enable),
         backend,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn press_and_hold_setting_reaches_gesture_options() {
+        let cfg: config::Config = toml::from_str(
+            r#"
+            [gestures.press_and_hold_drag]
+            enable = "on"
+        "#,
+        )
+        .unwrap();
+        assert!(gesture_options(&cfg).press_and_hold_drag);
+        assert!(!gesture_options(&config::Config::default()).press_and_hold_drag);
     }
 }

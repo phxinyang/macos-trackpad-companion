@@ -22,6 +22,10 @@
 //! level = "info"
 //! # file  = "~/Library/Logs/macos-trackpad-companion.log"
 //!
+//! [macos]
+//! sync_system_settings = true  # use System Settings when a field is not explicit below
+//! haptic_feedback = "auto"     # auto | on | off
+//!
 //! [cursor]
 //! sensitivity   = 28.0
 //! accel_exponent = 1.35
@@ -30,6 +34,10 @@
 //! [scroll]
 //! sensitivity = 20.0
 //! natural     = true
+//! enable      = true
+//! horizontal  = true
+//! momentum    = true
+//! # modifier_zoom_mask = 262144  # optional Quartz modifier mask
 //!
 //! [gestures.pinch]                 # enable = "on" | "off" |
 //! enable = "on"                    #   { only = ["bundle.id", ..] } |
@@ -41,6 +49,8 @@
 //! [gestures.swipe.vertical]
 //! enable  = "on"
 //! backend = "synthetic"
+//! [gestures.press_and_hold_drag]
+//! enable = "off"                  # optional; stock macOS default is off
 //!
 //! [overlay]                        # debug HUD; off by default
 //! enable      = false
@@ -49,6 +59,7 @@
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 #[derive(Deserialize, Debug, Default, Clone)]
@@ -61,6 +72,78 @@ pub struct Config {
     pub scroll: Scroll,
     pub gestures: Gestures,
     pub overlay: Overlay,
+    pub macos: Macos,
+    /// Paths explicitly present in the TOML source. This is provenance
+    /// metadata used when macOS settings are merged after parsing.
+    #[serde(skip)]
+    explicit: ExplicitConfig,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct Macos {
+    /// Read the user's macOS trackpad preferences at startup and use them as
+    /// defaults for companion behavior. Explicit TOML fields still win.
+    pub sync_system_settings: bool,
+    /// Whether companion emits semantic haptic confirmations. `auto` follows
+    /// the system's `ActuateDetents` preference when available.
+    pub haptic_feedback: HapticSetting,
+}
+
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum HapticSetting {
+    Auto,
+    On,
+    Off,
+}
+
+impl Default for Macos {
+    fn default() -> Self {
+        Self {
+            sync_system_settings: true,
+            haptic_feedback: HapticSetting::Auto,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct ExplicitConfig {
+    paths: BTreeSet<String>,
+}
+
+impl Config {
+    /// Parse TOML while retaining which leaf fields were explicitly written.
+    /// The normal `toml::from_str::<Config>` path remains supported for tests
+    /// and callers that do not need system-preference merging.
+    pub fn parse_str(source: &str) -> Result<Self> {
+        let mut cfg: Self = toml::from_str(source).context("parse config")?;
+        let value: toml::Value = toml::from_str(source).context("parse config metadata")?;
+        collect_explicit_paths(&value, "", &mut cfg.explicit.paths);
+        Ok(cfg)
+    }
+
+    pub(crate) fn has_explicit(&self, path: &str) -> bool {
+        self.explicit.paths.contains(path)
+    }
+}
+
+fn collect_explicit_paths(value: &toml::Value, prefix: &str, paths: &mut BTreeSet<String>) {
+    let toml::Value::Table(table) = value else {
+        return;
+    };
+    for (key, child) in table {
+        let path = if prefix.is_empty() {
+            key.clone()
+        } else {
+            format!("{prefix}.{key}")
+        };
+        if child.is_table() {
+            collect_explicit_paths(child, &path, paths);
+        } else {
+            paths.insert(path);
+        }
+    }
 }
 
 /// `[net]` — companion-net's transport bindings. HID-device ingestion
@@ -153,6 +236,15 @@ impl Default for Cursor {
 pub struct Scroll {
     pub sensitivity: f64,
     pub natural: bool,
+    /// Whether two-finger translation emits scroll events.
+    pub enable: bool,
+    /// Whether horizontal scroll deltas are preserved.
+    pub horizontal: bool,
+    /// Whether a lift seeds a momentum-phase scroll coast.
+    pub momentum: bool,
+    /// Optional Quartz modifier mask for scroll-to-zoom routing. `None`
+    /// keeps the built-in Command/Control compatibility mask.
+    pub modifier_zoom_mask: Option<u64>,
 }
 
 impl Default for Scroll {
@@ -160,6 +252,10 @@ impl Default for Scroll {
         Self {
             sensitivity: 20.0,
             natural: true,
+            enable: true,
+            horizontal: true,
+            momentum: true,
+            modifier_zoom_mask: None,
         }
     }
 }
@@ -167,11 +263,22 @@ impl Default for Scroll {
 #[derive(Deserialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Gestures {
+    /// Tap-to-click (the Point & Click "Tap to click" setting).
+    pub tap_to_click: GestureEnable,
+    /// Two-finger secondary click.
+    pub secondary_click: GestureEnable,
+    /// Two-finger smart zoom.
+    pub smart_zoom: GestureEnable,
+    /// Three-finger dictionary lookup.
+    pub dictionary_lookup: GestureEnable,
+    /// Two-finger right-edge swipe to Notification Center.
+    pub right_edge_swipe: GestureEnable,
     pub pinch: Pinch,
     pub rotate: Rotate,
     pub swipe: Swipe,
     pub three_finger_drag: ThreeFingerDrag,
     pub one_finger_tap_drag: OneFingerTapDrag,
+    pub press_and_hold_drag: PressAndHoldDrag,
 }
 
 /// `[gestures.one_finger_tap_drag]` — companion-net's 拖移样式 = 单指双击拖移.
@@ -185,6 +292,23 @@ impl Default for OneFingerTapDrag {
     fn default() -> Self {
         Self {
             enable: GestureEnable::On,
+        }
+    }
+}
+
+/// `[gestures.press_and_hold_drag]` — optional accessibility-style drag.
+/// This is deliberately off by default: ordinary macOS trackpad settings do
+/// not turn a stationary single finger into a held mouse button.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct PressAndHoldDrag {
+    pub enable: GestureEnable,
+}
+
+impl Default for PressAndHoldDrag {
+    fn default() -> Self {
+        Self {
+            enable: GestureEnable::Off,
         }
     }
 }
@@ -392,8 +516,8 @@ pub fn load(path: Option<&Path>) -> Result<(Config, PathBuf)> {
     }
     let s = std::fs::read_to_string(&resolved)
         .with_context(|| format!("read config {}", resolved.display()))?;
-    let cfg: Config =
-        toml::from_str(&s).with_context(|| format!("parse config {}", resolved.display()))?;
+    let cfg = Config::parse_str(&s)
+        .with_context(|| format!("parse config {}", resolved.display()))?;
     Ok((cfg, resolved))
 }
 
@@ -409,11 +533,20 @@ mod tests {
         assert_eq!(cfg.cursor.accel_ref, 70.0);
         assert_eq!(cfg.scroll.sensitivity, 20.0);
         assert!(cfg.scroll.natural);
+        assert!(cfg.scroll.enable);
+        assert!(cfg.scroll.horizontal);
+        assert_eq!(cfg.gestures.tap_to_click, GestureEnable::On);
+        assert_eq!(cfg.gestures.secondary_click, GestureEnable::On);
+        assert_eq!(cfg.gestures.smart_zoom, GestureEnable::On);
+        assert_eq!(cfg.gestures.dictionary_lookup, GestureEnable::On);
+        assert_eq!(cfg.gestures.right_edge_swipe, GestureEnable::On);
         assert_eq!(cfg.gestures.pinch.enable, GestureEnable::On);
         assert_eq!(
             cfg.gestures.swipe.horizontal.backend,
             SwipeBackend::Synthetic
         );
+        assert_eq!(cfg.gestures.press_and_hold_drag.enable, GestureEnable::Off);
+        assert_eq!(cfg.macos.haptic_feedback, HapticSetting::Auto);
     }
 
     #[test]
@@ -459,6 +592,18 @@ mod tests {
             cfg.gestures.rotate.enable,
             GestureEnable::Except(vec!["com.apple.Terminal".into()])
         );
+    }
+
+    #[test]
+    fn press_and_hold_drag_is_opt_in() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [gestures.press_and_hold_drag]
+            enable = "on"
+        "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.gestures.press_and_hold_drag.enable, GestureEnable::On);
     }
 
     #[test]
@@ -546,5 +691,30 @@ mod tests {
         assert_eq!(cfg.net.listen_ip.as_deref(), Some("127.0.0.1"));
         assert_eq!(cfg.net.port, 5000);
         assert!(cfg.net.token.is_none());
+    }
+
+    #[test]
+    fn parse_str_tracks_explicit_leaf_fields() {
+        let cfg = Config::parse_str(
+            r#"
+            [scroll]
+            natural = false
+            enable = false
+            horizontal = false
+            [gestures]
+            tap_to_click = "off"
+            [macos]
+            sync_system_settings = false
+            haptic_feedback = "off"
+            "#,
+        )
+        .unwrap();
+        assert!(cfg.has_explicit("scroll.natural"));
+        assert!(cfg.has_explicit("scroll.enable"));
+        assert!(cfg.has_explicit("scroll.horizontal"));
+        assert!(cfg.has_explicit("gestures.tap_to_click"));
+        assert!(cfg.has_explicit("macos.sync_system_settings"));
+        assert!(cfg.has_explicit("macos.haptic_feedback"));
+        assert!(!cfg.has_explicit("scroll.sensitivity"));
     }
 }

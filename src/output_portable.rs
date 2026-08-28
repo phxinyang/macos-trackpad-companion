@@ -11,6 +11,10 @@ use crate::time::Timestamp;
 pub struct Config {
     pub scroll_accel: f64,
     pub natural_scroll: bool,
+    pub horizontal_scroll: bool,
+    pub momentum_scroll: bool,
+    pub modifier_zoom_mask: u64,
+    pub haptic_feedback: bool,
     pub pinch: GesturePolicy,
     pub rotate: GesturePolicy,
     pub horizontal_swipe: SwipeConfig,
@@ -58,6 +62,13 @@ pub enum Phase {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HapticKind {
+    Click,
+    DragEngaged,
+    GestureCommitted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SwipeAxis {
     Horizontal,
     Vertical,
@@ -71,6 +82,7 @@ pub enum MouseButton {
 
 pub trait Output {
     fn set_event_time(&self, _ts: Timestamp) {}
+    fn haptic(&self, _kind: HapticKind) {}
     fn pinch_admissible_now(&self) -> bool {
         true
     }

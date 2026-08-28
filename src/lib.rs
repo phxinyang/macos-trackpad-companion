@@ -13,6 +13,7 @@ pub mod gesture;
 pub mod hid;
 pub mod instance_lock;
 pub mod net;
+pub mod macos_preferences;
 #[cfg(target_os = "macos")]
 pub mod output;
 #[cfg(not(target_os = "macos"))]
@@ -22,4 +23,5 @@ pub mod output;
 pub mod overlay;
 pub mod report;
 pub mod scan_clock;
+pub(crate) mod scroll_policy;
 pub mod time;
