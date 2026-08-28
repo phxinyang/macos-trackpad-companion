@@ -2441,10 +2441,45 @@ impl<O: Output> State<O> {
                 }
                 base.prev_scale = scale;
                 base.prev_angle = ang;
+
+                // Dynamic transition to PinchAndRotate if user distinctly pinches or rotates mid-scroll
+                let scale_rel = (dist / base.initial_distance - 1.0).abs();
+                let rot_rel = angle_delta(ang, base.initial_angle).abs();
+                if (base.pinch_admitted && scale_rel >= 0.18)
+                    || (base.rotate_admitted && rot_rel >= 12.0_f64.to_radians())
+                {
+                    log::info!(
+                        "2F dynamic transition from Pan -> PinchAndRotate (scale_rel={:.2} rot_rel={:.2}rad)",
+                        scale_rel,
+                        rot_rel
+                    );
+                    self.out.scroll(0.0, 0.0, Phase::Ended);
+                    self.kind = GestureKind::TwoFingerPinchAndRotate;
+                    if base.pinch_admitted {
+                        self.out.pinch(0.0, Phase::Began);
+                    }
+                    if base.rotate_admitted {
+                        self.out.rotate(0.0, Phase::Began);
+                    }
+                    base.prev_scale = scale;
+                    base.prev_angle = ang;
+                    self.two_baseline = Some(base);
+                    return;
+                }
             }
             GestureKind::TwoFingerPinchAndRotate => {
+                let prev_dist = if base.prev_scale > 1e-4 {
+                    base.prev_scale * base.initial_distance
+                } else {
+                    base.initial_distance
+                };
                 let scale = dist / base.initial_distance;
-                let scale_delta = (scale - base.prev_scale).clamp(-0.25, 0.25);
+                // Mathematical differential magnification delta: (dist_t - dist_{t-1}) / dist_{t-1}
+                let scale_delta = if prev_dist > 1e-4 {
+                    ((dist - prev_dist) / prev_dist).clamp(-0.5, 0.5)
+                } else {
+                    0.0
+                };
                 let raw_angle_d = angle_delta(ang, base.prev_angle);
                 // Suppress anomalous angle flips caused by contact swap or collinear crossing (>30 deg in a single frame).
                 let angle_d = if raw_angle_d.abs() > 30.0_f64.to_radians() {
@@ -2453,54 +2488,19 @@ impl<O: Output> State<O> {
                     raw_angle_d
                 };
 
-                // One stream owns each frame. Normalize both signals
-                // against their lock thresholds, then only hand the frame
-                // to the other stream when it beats the incumbent by
-                // [`PINCH_ROTATE_HYSTERESIS`]. This keeps rotational noise
-                // out of a pinch and vice versa while still allowing a
-                // deliberate change of gesture within the same touch.
-                if scale_delta.abs() > 1e-4 && base.pinch_admitted {
-                    let pinch_mag = scale_delta.abs() / PINCH_LOCK_RATIO;
-                    let rot_mag = angle_d.abs() / ROTATE_LOCK_RAD;
-                    base.pinch_rotate_dominant = match base.pinch_rotate_dominant {
-                        PinchRotateDominant::Pinch
-                            if base.rotate_admitted
-                                && rot_mag > pinch_mag * PINCH_ROTATE_HYSTERESIS =>
-                        {
-                            log::debug!(
-                                "pinch+rotate: dominance -> rotate (rot={rot_mag:.2} pinch={pinch_mag:.2})"
-                            );
-                            PinchRotateDominant::Rotate
-                        }
-                        PinchRotateDominant::Rotate
-                            if base.pinch_admitted
-                                && pinch_mag > rot_mag * PINCH_ROTATE_HYSTERESIS =>
-                        {
-                            log::debug!(
-                                "pinch+rotate: dominance -> pinch (pinch={pinch_mag:.2} rot={rot_mag:.2})"
-                            );
-                            PinchRotateDominant::Pinch
-                        }
-                        current => current,
-                    };
-                    if matches!(base.pinch_rotate_dominant, PinchRotateDominant::Pinch) {
-                        log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
-                        self.out.pinch(scale_delta, Phase::Changed);
-                    }
+                // Native concurrent dispatch: both pinch and rotate emit their respective
+                // continuous delta streams independently, matching native macOS AppKit / Multitouch.
+                if scale_delta.abs() > 1e-5 && base.pinch_admitted {
+                    log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
+                    self.out.pinch(scale_delta, Phase::Changed);
                 }
-                if angle_d.to_degrees().abs() >= 0.18 && base.rotate_admitted {
-                    let pinch_mag = scale_delta.abs() / PINCH_LOCK_RATIO;
-                    let rot_mag = angle_d.abs() / ROTATE_LOCK_RAD;
-                    if matches!(base.pinch_rotate_dominant, PinchRotateDominant::Rotate)
-                        || rot_mag > pinch_mag * PINCH_ROTATE_HYSTERESIS
-                    {
-                        // Apple AppKit NSEvent.rotation specifies: positive = counter-clockwise,
-                        // negative = clockwise. Screen-coordinate atan2(+Y down) yields positive for
-                        // clockwise, so invert sign for native parity!
-                        let appkit_angle_deg = -angle_d.to_degrees();
-                        log::debug!("rotate: delta={:+.2}deg", appkit_angle_deg);
-                        self.out.rotate(appkit_angle_deg, Phase::Changed);
-                    }
+                if angle_d.to_degrees().abs() >= 0.10 && base.rotate_admitted {
+                    // Apple AppKit NSEvent.rotation specifies: positive = counter-clockwise,
+                    // negative = clockwise. Screen-coordinate atan2(+Y down) yields positive for
+                    // clockwise, so invert sign for native parity!
+                    let appkit_angle_deg = -angle_d.to_degrees();
+                    log::debug!("rotate: delta={:+.2}deg", appkit_angle_deg);
+                    self.out.rotate(appkit_angle_deg, Phase::Changed);
                 }
                 base.prev_scale = scale;
                 base.prev_angle = ang;
@@ -3641,6 +3641,37 @@ mod tests {
             !log.iter()
                 .any(|l| l.starts_with("scroll") && l.contains("Began")),
             "must not lock pan: {log:?}"
+        );
+    }
+
+    #[test]
+    fn two_finger_pan_transitions_to_pinch_when_pinching_mid_scroll() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        // Start as regular 2-finger scroll
+        s.on_frame(frame(&[(1, 0.45, 0.40), (2, 0.55, 0.40)]));
+        s.on_frame(frame(&[(1, 0.45, 0.45), (2, 0.55, 0.45)]));
+        s.on_frame(frame(&[(1, 0.45, 0.50), (2, 0.55, 0.50)]));
+        // User starts spreading fingers apart mid-scroll (scale relative >= 0.18)
+        s.on_frame(frame(&[(1, 0.35, 0.50), (2, 0.65, 0.50)]));
+        s.on_frame(frame(&[(1, 0.25, 0.50), (2, 0.75, 0.50)]));
+        s.on_frame(frame(&[]));
+        let log = r.pop();
+        assert!(
+            log.iter().any(|l| l.starts_with("scroll") && l.contains("Began")),
+            "expected initial scroll Began, got: {log:?}"
+        );
+        assert!(
+            log.iter().any(|l| l.starts_with("scroll") && l.contains("Ended")),
+            "expected scroll Ended on dynamic transition, got: {log:?}"
+        );
+        assert!(
+            log.iter().any(|l| l.starts_with("pinch") && l.contains("Began")),
+            "expected pinch Began on dynamic transition, got: {log:?}"
+        );
+        assert!(
+            log.iter().any(|l| l.starts_with("pinch") && l.contains("Changed")),
+            "expected pinch Changed, got: {log:?}"
         );
     }
 
