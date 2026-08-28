@@ -72,7 +72,7 @@
 文件：`src/descriptor.rs`、`src/report.rs`、`src/hid.rs`、`docs/wire-protocol.md`。
 
 - [ ] C1. 保留字段 bit offset/width，不再用固定 byte layout 解码。
-- [ ] C2. 按 descriptor 发现 Input Mode Feature Report ID，不把 `0x08` 当成 universal ID。
+- [x] C2. 按 descriptor 发现 Input Mode Feature Report ID，不把固定值当成 universal ID；缺少该 feature 时 fail-closed。
 - [ ] C3. 增加 Microsoft parallel、single-finger hybrid、two-finger hybrid fixtures。
 - [ ] C4. 明确 Contact Count=0 但仍携带 contact 数据时的聚合规则。
 - [x] C5. 在完成 C1-C4 前，把 README 的范围写成“项目 6-byte profile”。
@@ -179,7 +179,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 ### 3.5 当前代码的高风险或不合理点
 
 1. `src/descriptor.rs:65-71` 强制 `bytes_per_contact == 6`，而 `src/report.rs:45-55` 固定按 flags/id/u16 X/u16 Y 解码；这与 descriptor-defined bit-packed、5-byte contact 和 hybrid PTP 不兼容。阶段 C 前 README 已明确收窄为项目 6-byte profile。
-2. `src/hid.rs:43-58` 仍把 Input Mode Feature Report `0x08` 写成 universal；应改为从 descriptor 发现 report ID，并把 vendor `0x10` 作为设备特例。
+2. **已处理（待真实设备 fixture 扩展）：** `src/hid.rs` 现在使用 descriptor 发现的 Digitizer/Input Mode (`0x52`) report ID，并把 vendor `0x10` 作为设备特例；descriptor 缺少标准 feature 时拒绝硬编码写入。
 3. `src/output.rs:702-718` 构造 parent digitizer 且 `child_event_mask=0`，没有真实 child contacts；它可能被部分 AppKit 应用接受，但不能等同 CalfTrail 的 raw child touch stream，需阶段 D 逐字段真机比对。
 4. `src/gesture.rs:2521-2610` 当前实现已改为两个已准入 transform stream 各自保持完整 phase 生命周期，并对相对增量限速；Pan→pinch/rotate 动态转场仍是兼容策略，必须在 Preview/Photos/Figma 矩阵中验证。
 5. `src/output.rs:2104-2117` 的 DockSwipe 依赖私有 SkyLight ABI；虽然 macOS 27+ 缺失 attach 时会 fail-closed，但 ownership、timestamp、phase、velocity 仍无本机证据。
@@ -246,11 +246,12 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] F3. 增加滚动/点击/智能缩放/查词/三指拖移/四指 swipe 的高确定性开关映射。
 - [x] F4. 采用 `NSHapticFeedbackManager.defaultPerformer()` 提供设备感知触觉确认，并修复 Android `ACTION_CANCEL` 误震动。
 - [x] R1-R3. 完成旋转/缩放相对增量过滤、phase 生命周期统一和 1:1 旋转默认值；新增纯逻辑回归测试。
+- [x] C2. 从 descriptor 发现 Input Mode feature report ID，新增非 `0x08` report ID 回归 fixture。
 - [ ] F5. 在目标 macOS 版本用真实 MacBook/Magic Trackpad 验证 performer 是否可用、触发时机和系统“触控反馈”开关；未完成前不宣称硬件 click parity。
 
 ### 4.1 本轮验证记录
 
-- `~/.cargo/bin/cargo test --workspace`：通过，123 个主工程测试 + 9 个协议测试（包含 R1 transform filter 回归）。
+- `~/.cargo/bin/cargo test --workspace`：通过，124 个主工程测试 + 9 个协议测试（包含 R1 transform filter 与 C2 descriptor report-ID 回归）。
 - `~/.cargo/bin/cargo check --all-targets`：通过。
 - `~/.cargo/bin/cargo check --target aarch64-apple-darwin --all-targets`：通过（交叉检查 macOS binary/module wiring；仅有既有 dead-code 警告）。
 - `android/./gradlew test`（工作目录 `android/`）：通过，Gradle `BUILD SUCCESSFUL`。

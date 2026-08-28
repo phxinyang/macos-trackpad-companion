@@ -23,12 +23,16 @@ const USAGE_DIG_CONFIDENCE: u16 = 0x47;
 const USAGE_DIG_CONTACT_ID: u16 = 0x51;
 const USAGE_DIG_CONTACT_COUNT: u16 = 0x54;
 const USAGE_DIG_SCAN_TIME: u16 = 0x56;
+const USAGE_DIG_INPUT_MODE: u16 = 0x52;
 
 const FINGER_USAGE: u32 = ((PAGE_DIGITIZER as u32) << 16) | (USAGE_DIG_FINGER as u32);
 
 #[derive(Debug, Clone)]
 pub struct Layout {
     pub report_id: u8,
+    /// Standard Digitizer/Input Mode feature report ID, if present in the
+    /// descriptor. Vendor-specific devices may omit this feature entirely.
+    pub input_mode_report_id: Option<u8>,
     pub contact_slots: usize,
     pub bytes_per_contact: usize,
     pub fingers_offset: usize,
@@ -117,6 +121,7 @@ struct Walker<'a> {
     current_finger_block: Option<FingerBlockBuilder>,
     scan_time: Option<FieldRef>,
     contact_count: Option<FieldRef>,
+    input_mode_report_id: Option<u8>,
     /// Button 0x01 fields keyed by the report id they belong to. PTP
     /// descriptors commonly include a sibling Mouse TLC (e.g. Microsoft's
     /// reference, RMK's firmware) which also declares Button 0x01 in its
@@ -184,6 +189,7 @@ impl<'a> Walker<'a> {
             current_finger_block: None,
             scan_time: None,
             contact_count: None,
+            input_mode_report_id: None,
             buttons: HashMap::new(),
             logical_x_max: None,
             logical_y_max: None,
@@ -225,8 +231,8 @@ impl<'a> Walker<'a> {
             let udata = read_uint(raw);
             let sdata = read_sint(raw);
 
-            match kind {
-                0 => self.handle_main(tag, udata)?,
+        match kind {
+            0 => self.handle_main(tag, udata)?,
                 1 => self.handle_global(tag, udata, sdata),
                 2 => self.handle_local(tag, udata),
                 _ => {}
@@ -240,6 +246,7 @@ impl<'a> Walker<'a> {
             0b1000 => self.handle_input(udata),
             0b1010 => self.open_collection(udata),
             0b1100 => self.close_collection(),
+            0b1011 => self.handle_feature(udata),
             // Output / Feature / others — we don't decode features at the
             // input-layout level, so ignore.
             _ => {}
@@ -370,6 +377,17 @@ impl<'a> Walker<'a> {
         }
     }
 
+    fn handle_feature(&mut self, _flags: u32) {
+        let usages = self.expanded_usages(self.report_count as usize);
+        if usages.iter().any(|usage32| {
+            let page = (usage32 >> 16) as u16;
+            let usage = (usage32 & 0xFFFF) as u16;
+            page == PAGE_DIGITIZER && usage == USAGE_DIG_INPUT_MODE
+        }) {
+            self.input_mode_report_id = Some(self.report_id);
+        }
+    }
+
     fn handle_global(&mut self, tag: u8, udata: u32, sdata: i32) {
         match tag {
             0 => self.usage_page = udata as u16,
@@ -475,6 +493,7 @@ impl<'a> Walker<'a> {
             .ok_or_else(|| anyhow!("descriptor missing Physical Max + Unit (cm/in length) for Y"))?;
         let layout = Layout {
             report_id,
+            input_mode_report_id: self.input_mode_report_id,
             contact_slots: self.finger_blocks.len(),
             bytes_per_contact,
             fingers_offset,
@@ -586,6 +605,22 @@ mod tests {
         assert!((layout.physical_x_max_mm - 65.0).abs() < 1e-6);
         assert!((layout.physical_y_max_mm - 40.0).abs() < 1e-6);
         assert_eq!(layout.total_payload_bytes, 35);
+        assert_eq!(layout.input_mode_report_id, None);
+    }
+
+    #[test]
+    fn discovers_descriptor_defined_input_mode_report_id() {
+        let mut desc = wpt_descriptor_5_contacts();
+        // Configuration TLC: Input Mode (Digitizer usage 0x52) is a
+        // feature field in report 0x07. The ID is intentionally not 0x08
+        // to prove the parser does not bake in a universal report number.
+        desc.extend_from_slice(&[
+            0x05, 0x0D, 0x09, 0x0E, 0xA1, 0x01, 0x85, 0x07, 0x09, 0x22, 0xA1, 0x02,
+            0x09, 0x52, 0x15, 0x00, 0x25, 0x0A, 0x75, 0x08, 0x95, 0x01, 0xB1, 0x02,
+            0xC0, 0xC0,
+        ]);
+        let layout = parse(&desc).expect("parse");
+        assert_eq!(layout.input_mode_report_id, Some(0x07));
     }
 
     /// RMK's PTP firmware emits a sibling Mouse TLC (Report ID 0x01)

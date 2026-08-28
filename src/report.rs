@@ -84,6 +84,7 @@ mod tests {
     fn fake_layout() -> Layout {
         Layout {
             report_id: 0x01,
+            input_mode_report_id: None,
             contact_slots: 5,
             bytes_per_contact: 6,
             fingers_offset: 1,
