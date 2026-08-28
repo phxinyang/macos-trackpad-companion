@@ -2504,16 +2504,16 @@ impl<O: Output> State<O> {
                         .clamp(0.001, 0.1);
                     base.last_scroll_time = Some(now);
                     let ang_speed = angle_d.to_degrees().abs() / dt;
-                    // Native macOS trackpad rotation curve:
-                    // - Slow precision rotation (< 15°/s): 1.0x (perfect 1:1 for Apple Maps / CAD / Figma)
-                    // - Natural intentional twist (15°..45°/s): smoothly accelerates 1.0x -> 1.85x
-                    // - Fast flip (> 45°/s): 1.85x (allows natural finger twist to easily cross Preview/Photos 45° snap threshold)
+                    // Native macOS trackpad rotation dynamic curve:
+                    // - Slow precision rotation (< 15°/s): 1.0x (perfect 1:1 for Apple Maps 3D / CAD / Figma)
+                    // - Natural intentional twist (15°..45°/s): smoothly accelerates 1.0x -> 2.0x
+                    // - Fast flip (> 45°/s): 2.0x (effortless 90-degree magnetic commit for Preview/Photos)
                     let rot_gain = if ang_speed < 15.0 {
                         1.0
                     } else if ang_speed < 45.0 {
-                        1.0 + (ang_speed - 15.0) / 30.0 * 0.85
+                        1.0 + (ang_speed - 15.0) / 30.0 * 1.0
                     } else {
-                        1.85
+                        2.0
                     };
                     // Apple AppKit NSEvent.rotation specifies: positive = counter-clockwise,
                     // negative = clockwise. Screen-coordinate atan2(+Y down) yields positive for
