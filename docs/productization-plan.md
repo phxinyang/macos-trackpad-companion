@@ -1,6 +1,6 @@
 # Trackpad Companion 产品化重构规划书
 
-状态：执行中，P1 已实现（待 macOS 真机验收）
+状态：执行中，P1 已实现，P2/P3/P4/P5 部分完成（待 macOS 真机与发布环境验收）
 版本：2026-08-29
 基线提交：`8ed90d6 feat: productize trackpad settings and native macOS client`
 
@@ -189,6 +189,8 @@
 - `companion-config doctor` 输出 JSON：配置解析、端口、权限提示、Bonjour、服务状态和建议动作。
 - TUI 增加 `Overview`/`Diagnostics` 只读信息，但不牺牲 SSH 可用性。
 - 验收：GUI/TUI 修改同一字段后重启 daemon 行为一致；坏配置有恢复建议；导出诊断不含 token 明文。
+
+**执行状态：部分完成。** SwiftUI 已整合 Overview、服务控制、权限状态、配对链接、脱敏 `doctor` 诊断和日志目录入口；TUI Overview/Diagnostics、当前 peer/延迟统计和诊断包导出待后续迭代。
 
 ### P5：`.app`、DMG、签名、公证和 GitHub Release
 
