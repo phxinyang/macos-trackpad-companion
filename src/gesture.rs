@@ -2497,12 +2497,29 @@ impl<O: Output> State<O> {
                 }
                 let rot_noise_floor = if scale_delta.abs() > 0.02 { 0.12_f64.to_radians() } else { 1e-4 };
                 if angle_d.abs() >= rot_noise_floor && base.rotate_admitted {
+                    let dt = base
+                        .last_scroll_time
+                        .map(|t| (now - t).as_secs_f64())
+                        .unwrap_or(1.0 / 60.0)
+                        .clamp(0.001, 0.1);
+                    base.last_scroll_time = Some(now);
+                    let ang_speed = angle_d.to_degrees().abs() / dt;
+                    // Native macOS trackpad rotation curve:
+                    // - Slow precision rotation (< 15°/s): 1.0x (perfect 1:1 for Apple Maps / CAD / Figma)
+                    // - Natural intentional twist (15°..45°/s): smoothly accelerates 1.0x -> 1.85x
+                    // - Fast flip (> 45°/s): 1.85x (allows natural finger twist to easily cross Preview/Photos 45° snap threshold)
+                    let rot_gain = if ang_speed < 15.0 {
+                        1.0
+                    } else if ang_speed < 45.0 {
+                        1.0 + (ang_speed - 15.0) / 30.0 * 0.85
+                    } else {
+                        1.85
+                    };
                     // Apple AppKit NSEvent.rotation specifies: positive = counter-clockwise,
                     // negative = clockwise. Screen-coordinate atan2(+Y down) yields positive for
                     // clockwise, so invert sign for native parity!
-                    // Apply 1.35x natural rotation multiplier for responsive feel in Preview/Photos/Maps.
-                    let appkit_angle_deg = -angle_d.to_degrees() * 1.35;
-                    log::debug!("rotate: delta={:+.2}deg", appkit_angle_deg);
+                    let appkit_angle_deg = -angle_d.to_degrees() * rot_gain;
+                    log::debug!("rotate: delta={:+.2}deg gain={:.2}x", appkit_angle_deg, rot_gain);
                     self.out.rotate(appkit_angle_deg, Phase::Changed);
                 }
                 base.prev_scale = scale;
