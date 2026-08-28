@@ -73,9 +73,9 @@
 
 - [x] C1. 保留字段 bit offset/width，并让 decoder 按 descriptor 位域读取 contact、scan time、count 和 button。
 - [x] C2. 按 descriptor 发现 Input Mode Feature Report ID，不把固定值当成 universal ID；缺少该 feature 时 fail-closed。
-- [ ] C3. 增加 Microsoft parallel、single-finger hybrid、two-finger hybrid fixtures。
-- [ ] C4. 明确 Contact Count=0 但仍携带 contact 数据时的聚合规则。
-- [x] C5. 保留 6-byte reference profile，同时说明 decoder 已支持 descriptor-defined bit-packed fields；hybrid/parallel 仍不宣称支持。
+- [x] C3. 增加按 Microsoft 规则构造的 parallel、single-finger hybrid、two-finger hybrid 合成 fixtures，覆盖 descriptor slot 数和 HID 聚合器行为；真实设备样本仍待采集。
+- [x] C4. 明确并实现 Contact Count=0 但仍携带 contact 数据时的聚合规则：同一 Scan Time 的 hybrid 分片在 HID 层聚合，Scan Time 变化则丢弃不完整分片。
+- [x] C5. 保留 6-byte reference profile，同时说明 decoder 已支持 descriptor-defined bit-packed fields；parallel/hybrid 需以专用 fixtures 继续验收。
 
 验收：每个 fixture 都有 decode 正例、截断、bit-packed 和 hybrid 负例；真实 HID 设备至少记录 VID/PID、descriptor、macOS 版本和报告样本。
 
@@ -178,16 +178,17 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 
 ### 3.5 当前代码的高风险或不合理点
 
-1. **已处理（待 hybrid fixture 扩展）：** `src/descriptor.rs` 保留每个字段的 bit offset/width，`src/report.rs` 按 descriptor 位域解码 contact、scan time、count 和 button；6-byte reference profile 继续作为已验证基线。
-2. **已处理（待真实设备 fixture 扩展）：** `src/hid.rs` 现在使用 descriptor 发现的 Digitizer/Input Mode (`0x52`) report ID，并把 vendor `0x10` 作为设备特例；descriptor 缺少标准 feature 时拒绝硬编码写入。
-3. `src/output.rs:702-718` 构造 parent digitizer 且 `child_event_mask=0`，没有真实 child contacts；它可能被部分 AppKit 应用接受，但不能等同 CalfTrail 的 raw child touch stream，需阶段 D 逐字段真机比对。
-4. `src/gesture.rs:2521-2610` 当前实现已改为两个已准入 transform stream 各自保持完整 phase 生命周期，并对相对增量限速；Pan→pinch/rotate 动态转场仍是兼容策略，必须在 Preview/Photos/Figma 矩阵中验证。
-5. `src/output.rs:2104-2117` 的 DockSwipe 依赖私有 SkyLight ABI；虽然 macOS 27+ 缺失 attach 时会 fail-closed，但 ownership、timestamp、phase、velocity 仍无本机证据。
-6. `src/output.rs:2622-2643` Smart Zoom 同时投递两种事件形状、两个 tap，疑似重复触发；阶段 D3 必须用单一 recorder/应用结果决定保留哪条路径。
-7. `src/config.rs:72-80` 默认网络监听地址为空，`src/net.rs:190-198` 解析为 `0.0.0.0`；无 token 时局域网任意主机可注入事件。README 已保留警告，生产部署应显式绑定回环/LAN 和 token。
-8. `src/gesture.rs:2640-2664` 的 Launchpad/Show Desktop 是离散 Dock notification/hotkey，不是连续原生四指输入流；矩阵已改成“离散命令 + 待真机”。
-9. `src/output.rs:44-110` 与 `src/gesture.rs:2576-2582` 的加速曲线参数来自经验调参，不是 Apple 官方参数；文档不得写成“原生曲线”。
-10. `android/app/src/main/java/com/mtc/touchpad/TouchPadView.kt:209-220` 将 `ACTION_CANCEL` 也纳入短按震动判定；取消路径应优先发送 lift/清理，不应产生点击反馈，属于 Android 后续修复项。
+1. **已处理（待真实 descriptor 采样扩展）：** `src/descriptor.rs` 保留每个字段的 bit offset/width，`src/report.rs` 按 descriptor 位域解码 contact、scan time、count 和 button；6-byte reference profile 继续作为已验证基线。
+2. **已处理（待真实设备确认）：** HID 层使用 `HybridAssembler` 聚合同一 Scan Time 的 zero-count 分片，避免把 hybrid 后续报告误判为 lift；跨 Scan Time 的不完整分片会被丢弃。
+3. **已处理（待真实设备 fixture 扩展）：** `src/hid.rs` 现在使用 descriptor 发现的 Digitizer/Input Mode (`0x52`) report ID，并把 vendor `0x10` 作为设备特例；descriptor 缺少标准 feature 时拒绝硬编码写入。
+4. `src/output.rs:702-718` 构造 parent digitizer 且 `child_event_mask=0`，没有真实 child contacts；它可能被部分 AppKit 应用接受，但不能等同 CalfTrail 的 raw child touch stream，需阶段 D 逐字段真机比对。
+5. `src/gesture.rs:2521-2610` 当前实现已改为两个已准入 transform stream 各自保持完整 phase 生命周期，并对相对增量限速；Pan→pinch/rotate 动态转场仍是兼容策略，必须在 Preview/Photos/Figma 矩阵中验证。
+6. `src/output.rs:2104-2117` 的 DockSwipe 依赖私有 SkyLight ABI；虽然 macOS 27+ 缺失 attach 时会 fail-closed，但 ownership、timestamp、phase、velocity 仍无本机证据。
+7. `src/output.rs:2622-2643` Smart Zoom 同时投递两种事件形状、两个 tap，疑似重复触发；阶段 D3 必须用单一 recorder/应用结果决定保留哪条路径。
+8. `src/config.rs:72-80` 默认网络监听地址为空，`src/net.rs:190-198` 解析为 `0.0.0.0`；无 token 时局域网任意主机可注入事件。README 已保留警告，生产部署应显式绑定回环/LAN 和 token。
+9. `src/gesture.rs:2640-2664` 的 Launchpad/Show Desktop 是离散 Dock notification/hotkey，不是连续原生四指输入流；矩阵已改成“离散命令 + 待真机”。
+10. `src/output.rs` 和 `src/gesture.rs` 的其他速度/阈值参数仍需真机校准，不应写成 Apple 官方参数。
+11. `android/app/src/main/java/com/mtc/touchpad/TouchPadView.kt:209-220` 的 `ACTION_CANCEL` 误震动已修复，需保留 Android 设备回归。
 
 ### 3.6 旋转/缩放专项复盘（2026-08-28）
 
@@ -248,11 +249,13 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] R1-R3. 完成旋转/缩放相对增量过滤、phase 生命周期统一和 1:1 旋转默认值；新增纯逻辑回归测试。
 - [x] C2. 从 descriptor 发现 Input Mode feature report ID，新增非 `0x08` report ID 回归 fixture，并处理无编号 report 的 payload 规则。
 - [x] C1. 按 descriptor 位域解码非字节对齐 contact/trailing fields，新增 bit-packed report 回归 fixture。
+- [x] C4. 新增同 Scan Time hybrid 聚合、跨 Scan Time 丢弃和 button 合并回归测试。
+- [x] C3. 新增 parallel、single-finger hybrid、two-finger hybrid fixture 回归测试。
 - [ ] F5. 在目标 macOS 版本用真实 MacBook/Magic Trackpad 验证 performer 是否可用、触发时机和系统“触控反馈”开关；未完成前不宣称硬件 click parity。
 
 ### 4.1 本轮验证记录
 
-- `~/.cargo/bin/cargo test --workspace`：通过，125 个主工程测试 + 9 个协议测试（包含 R1 transform filter、C1 bit-packed decode 与 C2 descriptor report-ID 回归）。
+- `~/.cargo/bin/cargo test --workspace`：通过，129 个主工程测试 + 9 个协议测试（包含 R1 transform filter、C1 bit-packed decode、C2 descriptor report-ID、C3 fixture 与 C4 hybrid 聚合回归）。
 - `~/.cargo/bin/cargo check --all-targets`：通过。
 - `~/.cargo/bin/cargo check --target aarch64-apple-darwin --all-targets`：通过（交叉检查 macOS binary/module wiring；仅有既有 dead-code 警告）。
 - `android/./gradlew test`（工作目录 `android/`）：通过，Gradle `BUILD SUCCESSFUL`。
@@ -280,6 +283,6 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 
 - 阶段 A：已完成
 - 阶段 B：已完成
-- 阶段 C：部分完成（C1/C2/C5 已完成；C3/C4 的 parallel/hybrid fixture 与聚合规则待执行）
+- 阶段 C：部分完成（C1-C5 的代码与合成 fixture 已完成；真实 HID descriptor/report 采样与 macOS 设备验收仍待执行）
 - 阶段 D：待真机
 - 阶段 E：部分完成（已收集 raw MultitouchSupport 资料；虚拟 HID 成本评估与架构决策待后续）
