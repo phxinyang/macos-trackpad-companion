@@ -246,7 +246,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] F3. 增加滚动/点击/智能缩放/查词/三指拖移/四指 swipe 的高确定性开关映射。
 - [x] F4. 采用 `NSHapticFeedbackManager.defaultPerformer()` 提供设备感知触觉确认，并修复 Android `ACTION_CANCEL` 误震动。
 - [x] R1-R3. 完成旋转/缩放相对增量过滤、phase 生命周期统一和 1:1 旋转默认值；新增纯逻辑回归测试。
-- [x] C2. 从 descriptor 发现 Input Mode feature report ID，新增非 `0x08` report ID 回归 fixture。
+- [x] C2. 从 descriptor 发现 Input Mode feature report ID，新增非 `0x08` report ID 回归 fixture，并处理无编号 report 的 payload 规则。
 - [ ] F5. 在目标 macOS 版本用真实 MacBook/Magic Trackpad 验证 performer 是否可用、触发时机和系统“触控反馈”开关；未完成前不宣称硬件 click parity。
 
 ### 4.1 本轮验证记录
