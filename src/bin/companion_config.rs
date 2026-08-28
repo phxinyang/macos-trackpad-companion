@@ -34,6 +34,8 @@ enum Command {
         #[arg(long)]
         value: String,
     },
+    /// Report machine-readable configuration and environment diagnostics.
+    Doctor,
 }
 
 fn main() -> Result<()> {
@@ -41,7 +43,53 @@ fn main() -> Result<()> {
     match args.command {
         Command::Dump => dump(args.config.as_deref()),
         Command::Set { path, value } => set(args.config.as_deref(), &path, &value),
+        Command::Doctor => doctor(args.config.as_deref()),
     }
+}
+
+fn doctor(path: Option<&Path>) -> Result<()> {
+    let resolved = path.map(PathBuf::from).unwrap_or_else(config::default_path);
+    let exists = resolved.exists();
+    let parsed = config::load(path);
+    let (config_ok, details) = match parsed {
+        Ok((cfg, _)) => (
+            true,
+            json!({
+                "listen_ip": cfg.net.listen_ip,
+                "port": cfg.net.port,
+                "token_configured": cfg.net.token.as_ref().is_some_and(|token| !token.is_empty()),
+                "sync_system_settings": cfg.macos.sync_system_settings,
+                "haptic_feedback": format!("{:?}", cfg.macos.haptic_feedback),
+            }),
+        ),
+        Err(error) => (
+            false,
+            json!({ "error": error.to_string() }),
+        ),
+    };
+    let mut report = json!({
+        "config_path": resolved,
+        "config_exists": exists,
+        "config_ok": config_ok,
+        "platform": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "network": details,
+    });
+    #[cfg(target_os = "macos")]
+    {
+        let prefs = macos_trackpad_companion::macos_preferences::read_raw();
+        report["macos_preferences"] = json!({
+            "trackpad_domain_available": prefs.trackpad_domain_available(),
+            "global_domain_available": prefs.global_domain_available(),
+            "raw_values": prefs.value_count(),
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        report["macos_preferences"] = json!({ "available": false });
+    }
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
 }
 
 fn dump(path: Option<&Path>) -> Result<()> {

@@ -422,7 +422,11 @@ class MainActivity : Activity() {
             if (palette.usesLiquidGlass) {
                 val padGlass = LiquidGlassView(this@MainActivity).apply {
                     cornerRadius = dp(24).toFloat()
-                    material = GlassMaterial.REGULAR
+                    material = if (ThemeMode.from(prefs.getString(KEY_THEME, ThemeMode.LIGHT_GLASS.key)) == ThemeMode.LIGHT_GLASS) {
+                        GlassMaterial.CLEAR
+                    } else {
+                        GlassMaterial.REGULAR
+                    }
                     useShaderPipeline = true
                     enableDynamicBackground = true
                     enableBackdropBlur = true
@@ -432,9 +436,11 @@ class MainActivity : Activity() {
                     enableSensorHighlight = true
                     enableAdaptiveTint = true
                     bevelWidth = dp(18).toFloat()
-                    refractionHeight = dp(42).toFloat()
+                    refractionHeight = dp(52).toFloat()
                     dispersionStrength = 0.18f
-                    blurAmount = 0.10f
+                    blurAmount = 0.075f
+                    saturation = 150f
+                    edgeHighlightOpacity = 86f
                     enablePressEffect = false
                     addView(padFrame, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
                 }
@@ -468,7 +474,11 @@ class MainActivity : Activity() {
             }
             val glass = LiquidGlassView(this).apply {
                 cornerRadius = dp(radius).toFloat()
-                material = GlassMaterial.REGULAR
+                material = if (ThemeMode.from(prefs.getString(KEY_THEME, ThemeMode.LIGHT_GLASS.key)) == ThemeMode.LIGHT_GLASS) {
+                    GlassMaterial.CLEAR
+                } else {
+                    GlassMaterial.REGULAR
+                }
                 useShaderPipeline = true
                 enableDynamicBackground = true
                 enableBackdropBlur = true
@@ -478,9 +488,11 @@ class MainActivity : Activity() {
                 enableSensorHighlight = true
                 enableAdaptiveTint = true
                 bevelWidth = dp(if (top) 14 else 12).toFloat()
-                refractionHeight = dp(if (top) 28 else 22).toFloat()
+                refractionHeight = dp(if (top) 34 else 28).toFloat()
                 dispersionStrength = 0.14f
-                blurAmount = 0.08f
+                blurAmount = 0.06f
+                saturation = 145f
+                edgeHighlightOpacity = 78f
                 enablePressEffect = false
                 if (Build.VERSION.SDK_INT < 33) background = surface(palette.chrome, radius, palette.chromeStroke)
                 addView(content, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))

@@ -1,5 +1,8 @@
 import Foundation
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct TrackpadCompanionSettingsApp: App {
@@ -33,11 +36,12 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case pointAndClick, scrollAndZoom, moreGestures, companion
+    case overview, pointAndClick, scrollAndZoom, moreGestures, companion
     var id: String { rawValue }
 
     func title(_ language: AppLanguage) -> String {
         switch self {
+        case .overview: return language.text("Overview", "总览")
         case .pointAndClick: return language.text("Point & Click", "点按与点击")
         case .scrollAndZoom: return language.text("Scroll & Zoom", "滚动与缩放")
         case .moreGestures: return language.text("More Gestures", "更多手势")
@@ -47,11 +51,101 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     func subtitle(_ language: AppLanguage) -> String {
         switch self {
+        case .overview: return language.text("Service status, pairing, and permissions", "服务状态、配对与权限")
         case .pointAndClick: return language.text("Pointer tracking, clicking, lookup, and haptic feedback", "指针跟踪、点击、查词与触觉反馈")
         case .scrollAndZoom: return language.text("Natural scrolling, zooming, rotation, and momentum", "自然滚动、缩放、旋转与惯性")
         case .moreGestures: return language.text("Pages, Spaces, Mission Control, and Notification Center", "页面、Space、调度中心与通知中心")
         case .companion: return language.text("Virtual-input controls not present in macOS Trackpad settings", "虚拟输入专属控制，不冒充 macOS 原生选项")
         }
+    }
+}
+
+enum ServiceState: String {
+    case stopped, starting, running, failed
+
+    var symbol: String {
+        switch self { case .stopped: return "circle", .starting: return "arrow.triangle.2.circlepath", .running: return "checkmark.circle.fill", .failed: return "exclamationmark.triangle.fill" }
+    }
+}
+
+@MainActor
+final class ServiceSupervisor: ObservableObject {
+    @Published private(set) var state: ServiceState = .stopped
+    @Published private(set) var message = ""
+    @Published private(set) var endpoint = "http://localhost:4242/"
+    private var process: Process?
+    private var outputPipe: Pipe?
+
+    deinit {
+        outputPipe?.fileHandleForReading.readabilityHandler = nil
+        process?.terminate()
+    }
+
+    func start() {
+        guard process?.isRunning != true else { return }
+        guard let executable = locate("COMPANION_NET_BIN", bundledName: "companion-net") else {
+            state = .failed
+            message = "companion-net was not found. Build the Rust daemon or set COMPANION_NET_BIN."
+            return
+        }
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: executable)
+        let pipe = Pipe()
+        child.standardOutput = pipe
+        child.standardError = pipe
+        outputPipe = pipe
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            let text = String(data: data, encoding: .utf8) ?? ""
+            Task { @MainActor in
+                self?.message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if text.contains("listening on") { self?.state = .running }
+            }
+        }
+        child.terminationHandler = { [weak self] process in
+            Task { @MainActor in
+                guard let self else { return }
+                self.process = nil
+                if process.terminationStatus == 0 || self.state == .stopped { self.state = .stopped }
+                else { self.state = .failed; self.message = "companion-net exited with status \(process.terminationStatus)." }
+            }
+        }
+        do {
+            try child.run()
+            process = child
+            state = .starting
+            message = "Starting companion-net…"
+        } catch {
+            state = .failed
+            message = error.localizedDescription
+        }
+    }
+
+    func stop() {
+        guard let process, process.isRunning else { state = .stopped; return }
+        state = .stopped
+        message = "Service stopped"
+        process.terminate()
+        self.process = nil
+    }
+
+    func restart() { stop(); start() }
+
+    func openAccessibilitySettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        NSWorkspace.shared.open(url)
+    }
+
+    private func locate(_ environmentKey: String, bundledName: String) -> String? {
+        let candidates = [
+            ProcessInfo.processInfo.environment[environmentKey],
+            Bundle.main.url(forResource: bundledName, withExtension: nil)?.path,
+            "/opt/homebrew/bin/\(bundledName)",
+            "/usr/local/bin/\(bundledName)",
+            NSHomeDirectory() + "/.cargo/bin/\(bundledName)",
+        ].compactMap { $0 }
+        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
     }
 }
 
@@ -170,6 +264,7 @@ final class SettingsModel: ObservableObject {
 
 struct SettingsView: View {
     @StateObject private var model = SettingsModel()
+    @StateObject private var supervisor = ServiceSupervisor()
 
     var body: some View {
         NavigationSplitView {
@@ -197,7 +292,7 @@ struct SettingsView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-                sectionForm(model.selectedSection)
+                if model.selectedSection == .overview { overview } else { sectionForm(model.selectedSection) }
                 if let error = model.error {
                     Section { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
                 }
@@ -219,15 +314,50 @@ struct SettingsView: View {
                 }
             }
         }
+        .onAppear { supervisor.start() }
     }
 
     @ViewBuilder
     private func sectionForm(_ section: SettingsSection) -> some View {
         switch section {
+        case .overview: overview
         case .pointAndClick: pointAndClick
         case .scrollAndZoom: scrollAndZoom
         case .moreGestures: moreGestures
         case .companion: companion
+        }
+    }
+
+    private var overview: some View {
+        Group {
+            Section {
+                LabeledContent(model.language.text("Service", "服务")) {
+                    Label(model.language.text(supervisor.state == .running ? "Running" : supervisor.state.rawValue.capitalized, supervisor.state == .running ? "运行中" : supervisor.state.rawValue), systemImage: supervisor.state.symbol)
+                        .foregroundStyle(supervisor.state == .failed ? .red : supervisor.state == .running ? .green : .secondary)
+                }
+                LabeledContent(model.language.text("Endpoint", "连接地址")) {
+                    Text(supervisor.endpoint).font(.caption.monospaced()).textSelection(.enabled)
+                }
+            }
+            Section {
+                HStack {
+                    Button(model.language.text("Start", "启动"), systemImage: "play.fill") { supervisor.start() }
+                        .disabled(supervisor.state == .running || supervisor.state == .starting)
+                    Button(model.language.text("Stop", "停止"), systemImage: "stop.fill") { supervisor.stop() }
+                        .disabled(supervisor.state == .stopped)
+                    Button(model.language.text("Restart", "重启"), systemImage: "arrow.clockwise") { supervisor.restart() }
+                }
+            }
+            Section(model.language.text("Permissions", "权限")) {
+                Label(model.language.text("Accessibility is required for synthetic cursor, click, scroll, and gesture events.", "合成光标、点击、滚动和手势事件需要辅助功能权限。"), systemImage: "hand.raised")
+                    .font(.callout)
+                Button(model.language.text("Open Accessibility Settings", "打开辅助功能设置"), systemImage: "arrow.up.forward.app") { supervisor.openAccessibilitySettings() }
+            }
+            if !supervisor.message.isEmpty {
+                Section(model.language.text("Latest status", "最新状态")) {
+                    Text(supervisor.message).font(.caption.monospaced()).textSelection(.enabled)
+                }
+            }
         }
     }
 
@@ -279,7 +409,13 @@ struct SettingsView: View {
     }
 
     private func icon(for section: SettingsSection) -> String {
-        switch section { case .pointAndClick: return "cursorarrow", .scrollAndZoom: return "arrow.up.and.down", .moreGestures: return "hand.tap", .companion: return "slider.horizontal.3" }
+        switch section {
+        case .overview: return "rectangle.3.group"
+        case .pointAndClick: return "cursorarrow"
+        case .scrollAndZoom: return "arrow.up.and.down"
+        case .moreGestures: return "hand.tap"
+        case .companion: return "slider.horizontal.3"
+        }
     }
 }
 
