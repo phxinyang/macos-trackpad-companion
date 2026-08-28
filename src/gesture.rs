@@ -49,9 +49,8 @@ const PINCH_LOCK_RATIO: f64 = 0.04;
 /// rotation present. Pinch and rotate fire as concurrent streams once
 /// locked, so this no longer races against pinch — but it still
 /// determines how soon the locked-2F mode fires on a primarily-rotate
-/// gesture (a 3° rotate would otherwise wait for pinch to cross before
-/// the lock triggered). 4° matches Apple's PTP engine.
-const ROTATE_LOCK_RAD: f64 = 4.0_f64 * std::f64::consts::PI / 180.0;
+/// gesture. 3.0° provides fast, natural rotation onset without false locks.
+const ROTATE_LOCK_RAD: f64 = 3.0_f64 * std::f64::consts::PI / 180.0;
 /// Per-finger displacement (mm) below which a contact is considered
 /// essentially anchored. Sits between two real hardware observations:
 /// genuine anchored-pinch traces show the "still" finger at
@@ -2088,13 +2087,17 @@ impl<O: Output> State<O> {
             base.frames_observed = base.frames_observed.saturating_add(1);
             let max_move = self.max_move_sq.sqrt();
             let dur = now - self.started_at;
-            let could_still_tap = max_move < TAP_MAX_MOVE_MM && dur < TAP_MAX_DURATION;
+            let ang_delta_from_init = angle_delta(ang, base.initial_angle).abs();
+            let pinch_ratio_from_init = (dist / base.initial_distance - 1.0).abs();
+            let is_active_pinch_or_rot = (base.rotate_admitted && ang_delta_from_init >= ROTATE_LOCK_RAD)
+                || (base.pinch_admitted && pinch_ratio_from_init >= PINCH_LOCK_RATIO);
+            let could_still_tap = !is_active_pinch_or_rot && max_move < TAP_MAX_MOVE_MM && dur < TAP_MAX_DURATION;
             // The landing frame (and, with the default of 2, only the
             // landing frame) is observation-only: one contact is fresh
             // and the other is mid-glide, so any decomposition of their
             // motion describes the landing, not the user's intent.
             let within_grace = base.frames_observed < TWO_FINGER_MIN_FRAMES;
-            if could_still_tap || within_grace {
+            if (could_still_tap || within_grace) && !is_active_pinch_or_rot {
                 base.last_centroid = centroid;
                 // Track scale and angle pre-lock so the first Changed
                 // emit after lock is a one-frame delta, not a cumulative
@@ -2351,6 +2354,10 @@ impl<O: Output> State<O> {
                         if base.rotate_admitted {
                             self.out.rotate(0.0, Phase::Began);
                         }
+                        // Re-anchor prev_scale and prev_angle to initial baseline so that all motion
+                        // accumulated from touch-down to lock is fully delivered in the first Changed event.
+                        base.prev_scale = 1.0;
+                        base.prev_angle = base.initial_angle;
                         base.pinch_rotate_dominant =
                             match (base.pinch_admitted, base.rotate_admitted) {
                                 (false, true) => PinchRotateDominant::Rotate,
@@ -2477,12 +2484,13 @@ impl<O: Output> State<O> {
                     log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
                     self.out.pinch(scale_delta, Phase::Changed);
                 }
-                if angle_d.to_degrees().abs() >= 0.10 && base.rotate_admitted {
+                let rot_noise_floor = if scale_delta.abs() > 0.03 { 0.20 } else { 0.10 };
+                if angle_d.to_degrees().abs() >= rot_noise_floor && base.rotate_admitted {
                     // Apple AppKit NSEvent.rotation specifies: positive = counter-clockwise,
                     // negative = clockwise. Screen-coordinate atan2(+Y down) yields positive for
                     // clockwise, so invert sign for native parity!
-                    // Apply 1.25x natural rotation multiplier for responsive feel in Preview/Photos/Maps.
-                    let appkit_angle_deg = -angle_d.to_degrees() * 1.25;
+                    // Apply 1.35x natural rotation multiplier for responsive feel in Preview/Photos/Maps.
+                    let appkit_angle_deg = -angle_d.to_degrees() * 1.35;
                     log::debug!("rotate: delta={:+.2}deg", appkit_angle_deg);
                     self.out.rotate(appkit_angle_deg, Phase::Changed);
                 }
