@@ -15,6 +15,7 @@ const FALLBACK_DOMAIN: &str = "com.apple.driver.AppleBluetoothMultitouch.trackpa
 #[cfg(target_os = "macos")]
 const GLOBAL_DOMAIN: &str = ".GlobalPreferences";
 const GLOBAL_NATURAL_SCROLL_KEY: &str = "com.apple.swipescrolldirection";
+const KNOWN_QUARTZ_MODIFIER_MASK: u64 = 0x00FF_0000;
 
 /// Keys collected for diagnostics. A key can be reported even when the
 /// current companion build cannot faithfully reproduce its hardware/system
@@ -201,10 +202,27 @@ pub fn normalize(raw: &RawTrackpadPreferences) -> NormalizedTrackpadPolicy {
         .and_then(PreferenceValue::as_i64)
         .map(|v| v != 0)
         .or_else(|| bool01(raw, "TrackpadScrollNatural", &mut policy.unsupported));
-    policy.modifier_zoom_mask = raw
-        .value("HIDScrollZoomModifierMask")
-        .and_then(PreferenceValue::as_i64)
-        .and_then(|v| u64::try_from(v).ok());
+    if let Some(value) = raw.value("HIDScrollZoomModifierMask").and_then(PreferenceValue::as_i64) {
+        if value < 0 {
+            policy.unsupported.push(format!("HIDScrollZoomModifierMask={value} (negative)"));
+        } else {
+            let raw_mask = value as u64;
+            let unknown = raw_mask & !KNOWN_QUARTZ_MODIFIER_MASK;
+            if unknown != 0 {
+                policy.unsupported.push(format!(
+                    "HIDScrollZoomModifierMask unknown bits=0x{unknown:x}"
+                ));
+            }
+            let known = raw_mask & KNOWN_QUARTZ_MODIFIER_MASK;
+            if known != 0 {
+                policy.modifier_zoom_mask = Some(known);
+            } else {
+                policy.unsupported.push(format!(
+                    "HIDScrollZoomModifierMask={value} (no known Quartz modifiers)"
+                ));
+            }
+        }
+    }
 
     for key in [
         "FirstClickThreshold",
@@ -591,5 +609,27 @@ mod tests {
                 .explicit_overrides
                 .contains(&"gestures.pinch.enable".to_string())
         );
+    }
+
+    #[test]
+    fn modifier_mask_keeps_known_bits_and_reports_unknown_bits() {
+        let raw = RawTrackpadPreferences::from_pairs(&[(
+            "HIDScrollZoomModifierMask",
+            PreferenceValue::Integer(0x0104_0000),
+        )]);
+        let policy = normalize(&raw);
+        assert_eq!(policy.modifier_zoom_mask, Some(0x0004_0000));
+        assert!(policy
+            .unsupported
+            .iter()
+            .any(|entry| entry.contains("unknown bits=0x1000000")));
+
+        let negative = RawTrackpadPreferences::from_pairs(&[(
+            "HIDScrollZoomModifierMask",
+            PreferenceValue::Integer(-1),
+        )]);
+        let policy = normalize(&negative);
+        assert_eq!(policy.modifier_zoom_mask, None);
+        assert!(policy.unsupported.iter().any(|entry| entry.contains("negative")));
     }
 }
