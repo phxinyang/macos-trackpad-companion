@@ -96,7 +96,10 @@ fn main() -> Result<()> {
     }
     log_builder.init();
 
-    let sync_report = companion::macos_preferences::apply(&mut cfg);
+    // The network client is a virtual touch surface. Physical-trackpad-only
+    // settings such as `Clicking=0` must not disable phone tap-to-click;
+    // explicit TOML remains authoritative.
+    let sync_report = companion::macos_preferences::apply_for_virtual_input(&mut cfg);
     log::debug!(
         "macOS settings sync enabled={} raw={} applied={} overrides={} unsupported={}",
         sync_report.enabled,

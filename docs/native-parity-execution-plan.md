@@ -112,7 +112,7 @@
 - 非布尔或只影响 Apple 驱动/硬件的字段仍被探测并报告为 `unsupported`，包括压力阈值、palm/resting、Force Touch、五指捏合和 USB 鼠标联动；不把它们伪装成已应用。`ActuateDetents` 作为唯一高确定性触觉开关映射到 `macos.haptic_feedback`。
 - `HIDScrollZoomModifierMask` 解析为 Quartz modifier mask；值为未知位时保留已知位并记录告警，值缺失时继续使用 Cmd/Ctrl 兼容默认。
 - `.GlobalPreferences` 的 `com.apple.trackpad.scaling` / `com.apple.scrollwheel.scaling` 只做有界兼容性归一化：分别填充 `cursor.sensitivity` / `scroll.sensitivity`；`trackpad.scaling = -1` 仅映射为线性光标曲线。Apple 没有公开稳定的 px/mm 传递公式，不能把这些内部数值宣称成物理校准。
-- `Clicking = 0` 会按原生语义关闭手机 tap-to-click；日志会明确提示，可用 TOML `gestures.tap_to_click = "on"` 显式覆盖。`DragLock` 不再写入三指 `release_delay_ms`，避免错误地取消三指换把悬停。
+- `Clicking = 0` 只对本地 HID/实体触控板入口按原生语义关闭 tap-to-click；`companion-net` 是虚拟输入入口，Mac mini 上残留的物理触控板偏好不会关闭手机轻点。两条入口都仍允许 TOML `gestures.tap_to_click = "off"` 显式关闭。`DragLock` 不再写入三指 `release_delay_ms`，避免错误地取消三指换把悬停。
 - macOS 输出实现使用 `NSHapticFeedbackManager.defaultPerformer()`：点击使用 Generic，拖拽接合使用 Alignment，系统手势确认使用 LevelChange。反馈是设备感知的确认提示，不构造 Force Touch 压力或私有触点事件。
 
 #### Not building
@@ -127,7 +127,7 @@
 
 | macOS key | companion 行为 | 映射规则 |
 |---|---|---|
-| `Clicking` | `GestureOptions.tap_to_click` | 仅 `0/1` 有效；关闭时不产生手指 tap 左键 |
+| `Clicking` | `GestureOptions.tap_to_click`（本地 HID） | 仅 `0/1` 有效；本地实体触控板入口关闭时不产生手指 tap 左键；`companion-net` 忽略该物理开关 |
 | `TrackpadRightClick` | `GestureOptions.secondary_click` | 仅 `0/1` 有效；关闭时两指 tap 不产生右键 |
 | `TrackpadScroll` | `GestureOptions.scroll_enabled` | 关闭时 2F 平移不发滚动事件 |
 | `TrackpadHorizScroll` | `output::Config.horizontal_scroll` | 关闭时丢弃横向滚动分量，保留纵向滚动 |
@@ -154,6 +154,73 @@
 - Linux 上运行 `cargo test --workspace`、`cargo check --all-targets`；macOS 上额外验证 Preview、Photos、Safari、Maps、Mission Control、Spaces 的 tap/scroll/inertia/pinch/rotate/swipe。
 
 最脆弱假设：`CFPreferences` 返回的触控板域仍代表当前活跃设备。若新版本 macOS 改用未覆盖的 domain 或枚举，读取层会保留默认/显式配置并在日志标记 `unsupported`，不会把错误值传播到手势引擎。
+
+### 阶段 H：Mac mini 设置入口与原生面板可用性（本轮执行）
+
+目标：确认没有实体触控板时能否让 macOS 自带 Trackpad 面板出现；如果系统不允许，提供不依赖该面板的完整 companion 配置入口。
+
+#### 调研结论
+
+- [x] H1. Apple 官方文档明确要求“内置触控板或已连接的无线触控板”才能查看/修改 Trackpad 设置；Mac mini 没有设备时缺少该面板是系统设计，不是单个 plist key 漏写。
+- [x] H2. `open "x-apple.systempreferences:com.apple.Trackpad-Settings.extension"`（Ventura 及更新）和 `open /System/Library/PreferencePanes/Trackpad.prefPane`（旧式入口）只是深链/打开已存在的 pane；它们不会绕过硬件检测。
+- [x] H3. `defaults write`、`CFPreferences`、`activateSettings -u`、重启 `cfprefsd` 或同时写主/蓝牙 domain 可以更新持久化值，但没有公开接口把 Mac mini 注册成 Apple trackpad。写入残留 `AppleMultitouchTrackpad` domain 不能使 System Settings 生成可用 UI。
+- [x] H4. Apple 的 `SystemPreferences` 配置描述中的 `EnabledPreferencePanes` / `DisabledPreferencePanes` 只控制 pane 可见性，不能创建输入设备能力；不采用 MDM/profile 伪造方案。
+- [x] H5. 开源 defaults/TUI 项目也都停留在读写历史 defaults。真正让原生驱动接管需要连接 Magic Trackpad，或进入 DriverKit/虚拟 HID digitizer 的签名、entitlement、权限和分发评估，超出本项目的无驱动用户态边界。
+
+#### 已执行方案
+
+- [x] H6. 新增 `companion-tui`，在 Mac mini 上直接编辑 companion 的点击、右键、智能缩放、捏合、旋转、滚动、惯性、缩放修饰键、三指拖移、四指 swipe、光标/滚动灵敏度、系统同步和触觉策略。
+- [x] H7. TUI 只原子写入 `config.toml`，不修改 macOS defaults，不需要 `sudo`；Mac 系统偏好可用性以只读摘要呈现，无法模拟的硬件项继续写入 companion 启动诊断。
+- [x] H8. `companion-net` 使用虚拟输入合并路径，忽略无实体触控板时残留的 `Clicking=0`；仍尊重 TOML 对 `gestures.tap_to_click = "off"` 的显式关闭。
+
+#### 验收与限制
+
+- `cargo run --release --bin companion-tui` 或发布包中的 `./companion-tui` 是 Mac mini 的推荐入口；保存后重启 `companion-net` 以加载配置。
+- 若用户确实需要 Apple 原生 Trackpad pane，唯一受支持的验证路径是连接 Magic Trackpad（蓝牙/USB）后重新打开 System Settings；不把深链成功或 plist 写入误报为“强行开启”。
+- H 阶段已完成“可行性核查 + 无面板配置入口”；原生 pane 的硬件检测和真正 Apple multitouch stream 仍属于 macOS/驱动边界，标记为已知限制，不再投入无证据的 defaults 猜测。
+
+### 阶段 J：键盘修饰键与触控板组合（本轮执行）
+
+目标：让 Shift、Command、Control、Option 在点击、拖拽、滚动、捏合、旋转和系统手势中遵循 macOS 的分层语义；只对有证据的“修饰键改变手势类型”做转换。
+
+#### 规则与实现
+
+- [x] J1. 统一使用 Quartz 的四个 modifier flag（Shift `0x00020000`、Control `0x00040000`、Option `0x00080000`、Command `0x00100000`），鼠标/滚动/私有 gesture 事件均以当前键盘状态覆盖这四个位，避免 stale flags。
+- [x] J2. Control-click 保持为带 Control flag 的左键事件，让 AppKit 按 Apple 语义解释为 secondary click；Command/Option/Shift-click 和拖拽不做应用层猜测，交给前台 App。
+- [x] J3. Accessibility Zoom 的滚动修饰键支持 Control、Option、Command；`HIDScrollZoomModifierMask` 可从系统偏好或 TOML 选择，且在 `Phase::Began` 锁定到整个 scroll session。
+- [x] J4. Shift + 双指滚动默认保持原始轴向（严格原生）；新增 `[scroll].shift_scroll_horizontal` 兼容开关，只有显式 `true` 才把纯纵向输入转成横向。
+- [x] J5. `companion-tui` 增加 Zoom mask 的 Control/Option/Command 循环和 Shift 兼容开关；补充纯逻辑 modifier/轴向回归测试。
+
+#### 不做的推断
+
+- 不把 Command/Option/Shift 点击硬编码成“打开标签/复制/多选”等动作；这些是 Finder、Safari、编辑器等应用语义，Quartz flags 已足够。
+- 不把 Shift 说成 Apple Trackpad 的内建横向滚动手势；Apple 官方 Accessibility Zoom 只列 Control、Option、Command，Shift 兼容路径必须由用户主动打开。
+- 不在没有目标 App/系统录制证据时改变 pinch/rotate 的几何增量或 DockSwipe 的私有 payload；修饰键只随事件传递。
+
+#### 验收
+
+- 自动化：modifier mask 选择、session latch、Option Zoom、Shift 默认原生轴向与显式兼容转换。
+- macOS 真机：Safari/Preview/Photos/Numbers/Finder 分别验证 Control-click、Command/Option/Shift-click/drag、Control/Option/Command + scroll（Accessibility Zoom 开关开/关）、Shift scroll 两种模式；记录键盘布局和系统版本。
+
+### 阶段 K：三指拖拽与四指切 Space 联合（本轮执行）
+
+目标：三指拖拽已经按住窗口时，加入第四指可以切换 Space；切换期间左键保持按下，进入目标 Space 后继续拖动，最终抬指才释放。该体验以“可靠完成跨桌面拖拽”为目标，不声称能复刻 Apple 私有 multitouch identity。
+
+#### 调研结论
+
+- Apple 官方分别记录三指拖拽和四指左右切换全屏 App/桌面，但没有公开“两个手势并行”的事件合同；原生 Trackpad 面板只提供独立开关。
+- Apple 社区有用户报告用触控板把文件拖到另一 Space 失败，说明系统版本、Finder 路径和拖拽目标会影响结果；该类案例不能作为普遍支持证据。
+- Mac Mouse Fix Issue #1735 把“按住窗口、执行切 Space、保持抓取、目标 Space 释放”列为明确需求。其 PR #1875 记录 macOS 26 会丢弃第三方 DockSwipe，改用 SymbolicHotKey（SpaceLeft/Right、Mission Control/App Exposé），并以约 220px/150px 阈值、350ms 冷却和快速释放检测保证不会连续跳过多个 Space；后续 PR #1936 记录 macOS 27 可通过 SkyLight `SLEventSetIOHIDEvent` 附加 HIDEvent 恢复连续 DockSwipe，否则仍应降级到 SymbolicHotKey。
+- BetterTouchTool 社区指出四指拖动并非原生能力，鼠标按钮切 Space 过快还可能被系统解释为双击最小化；因此本项目保留“按键生命周期”和“切换节流”两个独立状态，不把四指输入直接伪装成鼠标双击。
+
+#### 实现与验收状态
+
+- [x] K1. 保留既有 `ThreeFingerDrag -> FourFingerLive` 状态转换；加入第四指时不释放 `drag_button_held`，最终 `Idle`/断链/Drop 统一释放。
+- [x] K2. macOS 25 及更早版本继续使用已存在的动画 DockSwipe payload。
+- [x] K3. macOS 26 对 `synthetic` swipe 自动使用 CGS SymbolicHotKey；macOS 27+ 优先通过 SkyLight `SLEventSetIOHIDEvent` 保留连续 DockSwipe，运行时不可用时降级到同一 SymbolicHotKey 状态机。Symbolic 路径横向 Space 阈值 10mm、纵向 Mission Control/App Exposé 阈值 7mm，单次触发后冷却 350ms，不在冷却期累积位移。
+- [x] K4. 增加快速抬指路径（速度阈值 180mm/s，且最后运动距抬指不超过 80ms），避免停住后释放仍误切 Space。
+- [x] K5. 取消/断链/进程退出不会发送错误的 DockSwipe 取消包，也不会留下按键粘连。
+- [ ] K6. macOS 真机矩阵：MacBook/Magic Trackpad + Finder、Preview、Safari、Numbers；分别验证 3F→4F 加指、左右多 Space、切换中反向、目标 Space 抬指、Mission Control/App Exposé，以及 macOS 25/26/27 的事件日志和窗口结果。
 
 ## 3. 调研与审查结论
 
@@ -188,12 +255,27 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 3. **已处理（待真实设备 fixture 扩展）：** `src/hid.rs` 现在使用 descriptor 发现的 Digitizer/Input Mode (`0x52`) report ID，并把 vendor `0x10` 作为设备特例；descriptor 缺少标准 feature 时拒绝硬编码写入。
 4. `src/output.rs:702-718` 构造 parent digitizer 且 `child_event_mask=0`，没有真实 child contacts；它可能被部分 AppKit 应用接受，但不能等同 CalfTrail 的 raw child touch stream，需阶段 D 逐字段真机比对。
 5. `src/gesture.rs:2521-2610` 当前实现已改为两个已准入 transform stream 各自保持完整 phase 生命周期，并对相对增量限速；Pan→pinch/rotate 动态转场仍是兼容策略，必须在 Preview/Photos/Figma 矩阵中验证。
-6. `src/output.rs:2104-2117` 的 DockSwipe 依赖私有 SkyLight ABI；虽然 macOS 27+ 缺失 attach 时会 fail-closed，但 ownership、timestamp、phase、velocity 仍无本机证据。
+6. `src/output.rs` 的 DockSwipe 依赖私有 SkyLight ABI；macOS 27+ 优先使用 `SLEventSetIOHIDEvent`，缺失或失败时只降级到 SymbolicHotKey，不写入未经验证的 legacy 字段；ownership、timestamp、phase、velocity 仍无本机证据。
 7. `src/output.rs:2622-2643` Smart Zoom 同时投递两种事件形状、两个 tap，疑似重复触发；阶段 D3 必须用单一 recorder/应用结果决定保留哪条路径。
 8. `src/config.rs:72-80` 默认网络监听地址为空，`src/net.rs:190-198` 解析为 `0.0.0.0`；无 token 时局域网任意主机可注入事件。README 已保留警告，生产部署应显式绑定回环/LAN 和 token。
 9. `src/gesture.rs:2640-2664` 的 Launchpad/Show Desktop 是离散 Dock notification/hotkey，不是连续原生四指输入流；矩阵已改成“离散命令 + 待真机”。
 10. `src/output.rs` 和 `src/gesture.rs` 的其他速度/阈值参数仍需真机校准，不应写成 Apple 官方参数。
 11. `android/app/src/main/java/com/mtc/touchpad/TouchPadView.kt:209-220` 的 `ACTION_CANCEL` 误震动已修复，需保留 Android 设备回归。
+
+### 3.6a Android 深按触觉专项复盘（2026-08-29）
+
+本轮针对“深按条震动太弱”做了 AnySearch Node CLI + Ketch Exa/Firecrawl/grep.app 的交叉检索，并在 Redmi 23078RKD5C（Android 16 / SDK 36，`goodix_ts`）上复测。关键证据：
+
+- [Apple Support: Force Click and haptic feedback](https://support.apple.com/en-us/102309) 把体验定义为普通点击后继续用力，感到第二个更深的 click；它同时说明 Force Touch 轨迹板依赖压力传感器与专用触觉硬件。
+- [Apple HIG: Playing haptics](https://developer.apple.com/design/human-interface-guidelines/playing-haptics) 将 macOS 触觉分为 Generic、Alignment、Level change，并要求离散事件优先使用短促反馈。
+- [Android: Analyze vibration waveforms](https://developer.android.com/develop/ui/views/haptics/actuators) 说明手机常用 LRA，清晰 click 通常为 10–20ms；偏离执行器共振频率会显著降低输出。
+- [Android: Create custom haptic effects](https://developer.android.com/develop/ui/views/haptics/custom-haptic-effects) 要求按设备能力在 primitives、幅度控制和仅开关三类路径间降级。
+- [AOSP VibrationAttributes](https://android.googlesource.com/platform/frameworks/base.git/+/refs/heads/main/core/java/android/os/VibrationAttributes.java) 将 `USAGE_PHYSICAL_EMULATION` 定义为模拟实体反应（如 edge squeeze），比普通 `USAGE_TOUCH` 更符合深按条语义。
+- 开源实现 [MusicRecognizer VibrationManagerImpl](https://github.com/aleksey-saenko/MusicRecognizer/blob/2e96802e03bcc1e91c795ea791f3dcbfdebbddb0/feature/recognition/src/main/java/com/mrsep/musicrecognizer/feature/recognition/platform/VibrationManagerImpl.kt) 与 [react-native-nitro-haptics HybridHaptics.kt](https://github.com/oblador/react-native-nitro-haptics/blob/ccda845fa012fa1e8da2b3152d03003a7fc304ec/android/src/main/java/com/haptics/HybridHaptics.kt) 都采用显式 timings/amplitudes，并按 `hasAmplitudeControl()` 降级。
+
+设备实测：该机支持 `AMPLITUDE_CONTROL`，但 `supportedPrimitives=[]`；预置 `HEAVY_CLICK` 记录为 `TOUCH / MEDIUM / 约75ms`，主观反馈偏软。系统桌面实际使用厂商预置 `163`（`HARDWARE_FEEDBACK`，约80ms），因此 Xiaomi/Redmi 且 HAL 明确支持 163 时深按优先复用该校准效果；其他设备在 `ACTION_DOWN` 先发普通短 click（8ms 起始冲击 + 5ms 阻尼尾），跨过保持阈值后再发 `createWaveform([0,11,4,8], [0,peak,0,0.34*peak])` 的更深冲击，以 `USAGE_PHYSICAL_EMULATION` 播放，默认 `peak=255`，并保留无幅度控制时的预置/one-shot fallback。
+
+已知边界：Android 应用不能突破系统触觉总开关、系统强度档位或手机 LRA 的物理输出；没有可公开控制的“苹果 Taptic Engine 波形”。因此强度滑杆是 APK 内波形峰值（40–255）的适配参数，不是物理加力，也不把效果宣称为 Mac Force Touch。
 
 ### 3.6 旋转/缩放专项复盘（2026-08-28）
 
@@ -238,6 +320,27 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [ ] R5. 在 R1-R4 有结果前，不继续微调 1.25x/1.85x/2.0x 等倍率，也不把测试 recorder 的“调用成功”升级成“原生体验完成”。
 - [ ] R6. 把 Pan→pinch 转场作为独立“兼容模式”开关评估；native 模式默认保持 scroll lock，避免用一个非原生补救策略掩盖识别器问题。
 
+### 3.7 Mac mini 无触控板时能否强行显示设置面板
+
+这条路径已按“官方约束 → 深链 → defaults/配置描述 → 开源实现”顺序核对：
+
+- Apple [Change Trackpad settings on Mac](https://support.apple.com/guide/mac-help/change-trackpad-settings-mchlp1226/mac) 直接写明，修改 Trackpad 设置必须使用带内置触控板的 Mac，或连接无线触控板；[View and customize mouse or trackpad gestures](https://support.apple.com/en-gw/guide/mac-help/mh35869/mac) 对查看手势也有同样前置条件。
+- Ventura+ 的 `com.apple.Trackpad-Settings.extension` 和旧式 `Trackpad.prefPane` 入口来自公开的 [macOS settings URL 列表](https://github.com/paralevel/macos-settings-urls)。它们适合把用户带到已有页面，但页面仍由 System Settings 按硬件能力决定是否渲染；深链不是注册设备的 API。
+- Apple [SystemPreferences 配置](https://developer.apple.com/documentation/devicemanagement/systempreferences) 的 `EnabledPreferencePanes` / `DisabledPreferencePanes` 只改变可见性。社区中常见的 `defaults write ... AppleMultitouchTrackpad`、`-currentHost`、`killall cfprefsd`、`activateSettings -u` 解决的是缓存/持久化同步，不能让无触控板的 Mac 产生 HID digitizer。
+- [yannbertrand/macos-defaults](https://github.com/yannbertrand/macos-defaults) 等开源项目能批量设置 `Clicking`、`Dragging`、`TrackpadThreeFingerDrag` 等历史 key，但没有任何设备注册或 Trackpad pane 强制显示实现。能让原生 pane 真正出现的可靠方式仍是连接 Magic Trackpad/内置硬件；虚拟 HID 需要 DriverKit entitlement 和签名，且不保证被 Apple pane 当作 Trackpad 接受。
+
+因此本项目不加入“伪造 pane”或高风险系统 plist 注入。Mac mini 的配置体验由 `companion-tui` 承担，系统 pane 仅作为连接真实 Apple trackpad 后的可选校准入口。
+
+### 3.8 Shift / Command / Control / Option 组合调研
+
+- Apple 的 [Right-click on Mac](https://support.apple.com/en-my/guide/mac-help/mh35853/mac) 明确把 Control-click 定义为 secondary click；这要求我们传递 Control flag，而不是在手势层擅自把所有单指点击改成右键。
+- Apple 的 [Change Zoom settings for accessibility](https://support.apple.com/guide/mac-help/mh40579/mac) 明确说明“Use scroll gesture with modifier keys to zoom”可选择 Control、Option 或 Command，并以所选 modifier 配合触控板滚动；Shift 不在该列表中。
+- Apple 的 [Use Multi-Touch gestures](https://support.apple.com/en-us/102482) 列出触控板的点击、两指滚动、捏合、旋转和四指手势，但没有 Shift + 滚动的系统手势。社区对 Magic Trackpad 的实测也记录了 Shift + 垂直双指滚动仍保持垂直，因此现有无条件轴向转换只能被视为兼容层。
+- Apple 的 [Mac keyboard shortcuts](https://support.apple.com/en-us/102650) 将 Command、Control、Option、Shift 定义为通用 modifier；Command/Option/Shift 的点击、拖拽结果取决于 Finder、Safari、编辑器等当前 App。Quartz 事件携带 flags 即可保留这些语义。
+- 现有实现审查发现：`Event::post` 原本只把当前 flags OR 到事件上，且 click 的 down/up 分别采样，可能造成修饰键快释放时一对 click flags 不一致；`scroll` 已有 Cmd/Ctrl mask latch 和 Shift 轴向转换，但没有 Option 的 TUI 选择，也没有严格原生的 Shift 开关。
+
+本轮采用“事件 flags 统一传递 + 少量有证据的类型转换”方案：Control/Option/Command 只在所选 Zoom mask 命中时把整个 scroll session 转为 magnification；四种 modifier 对 click/drag/gesture 的其他含义全部交给 macOS/AppKit/App；Shift 轴向转换改为显式兼容开关，默认关闭。
+
 ## 4. 本轮实际执行清单
 
 - [x] 更新规划书并冻结基线。
@@ -260,16 +363,57 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] C1. 按 descriptor 位域解码非字节对齐 contact/trailing fields，新增 bit-packed report 回归 fixture。
 - [x] C4. 新增同 Scan Time hybrid 聚合、跨 Scan Time 丢弃和 button 合并回归测试。
 - [x] C3. 新增 parallel、single-finger hybrid、two-finger hybrid fixture 回归测试。
+- [x] H1-H5. 核查 Mac mini 无实体触控板时的 Apple pane 硬件门槛、深链、defaults/MDM 边界和开源实现；确认没有受支持的“强行显示”接口。
+- [x] H6-H8. 新增 `companion-tui` 作为无 Trackpad pane 的配置入口，并让 `companion-net` 忽略虚拟输入不适用的残留 `Clicking=0`。
+- [x] J1-J5. 完成 Shift/Command/Control/Option 的 Quartz flags 传递、Zoom modifier session latch、Shift 兼容开关和 TUI 配置入口；系统合成热键改走保留 flags 的派发路径。
+- [x] J6. 修正横向滚动总开关优先级：`horizontal = false` 现在同时抑制原生横向分量和 Shift 兼容映射。
+- [x] K1-K5. 实现三指拖拽进入四指切 Space 时的按键保持、macOS 26 SymbolicHotKey 与 macOS 27+ HIDEvent 优先/fallback、阈值/冷却/flick 防误触，以及取消/断链安全收尾。
+- [ ] K6. 在 macOS 25/26/27 的真实 MacBook/Magic Trackpad 与 Finder/Preview/Safari/Numbers 上完成联合拖拽验收。
 - [ ] F5. 在目标 macOS 版本用真实 MacBook/Magic Trackpad 验证 performer 是否可用、触发时机和系统“触控反馈”开关；未完成前不宣称硬件 click parity。
+- [x] G1. 通过 AnySearch + Ketch 完成 Android/Apple/开源触觉检索，确认本机 primitives 能力与系统强度约束。
+- [x] G2. 深按条改为“落指普通 click + 阈值后的更深冲击”两阶段反馈，使用幅度可控的短 waveform 与 `USAGE_PHYSICAL_EMULATION`，保留能力降级路径。
+- [x] G3. APK 增加“按下震动强度”参数（40–255），完成 Gradle 单测/构建、ADB 安装与 `dumpsys vibrator_manager` 实机日志验收。
+- [x] G4. 根据首次体感反馈修正深按条时序：`ACTION_DOWN` 立即发普通 click，阈值后只发一次带阻尼尾的更深冲击，避免“延迟的一次震动”错觉。
+- [x] G5. 对 Xiaomi/Redmi + 支持 163 的 HAL 优先使用系统桌面同款 `HARDWARE_FEEDBACK` 预置效果，其他设备继续走可移植波形。
+- [x] F5c. 为 `companion-net` 增加虚拟输入偏好合并路径：忽略 Mac mini 残留的 `Clicking=0`，默认保留手机 tap-to-click，同时保留显式 TOML 关闭能力。
 
 ### 4.1 本轮验证记录
 
-- `~/.cargo/bin/cargo test --workspace`：通过，136 个主工程测试 + 9 个协议测试（包含 R1 transform filter、R7 两指误触回归、C1 bit-packed decode、C2 descriptor report-ID、C3 fixture、C4 hybrid 聚合与无编号 report 回归）。
+- `~/.cargo/bin/cargo test --workspace`：通过，144 个库测试 + 2 个 `companion-tui` 测试 + 9 个协议测试（包含 R1 transform filter、R7 两指误触回归、C1 bit-packed decode、C2 descriptor report-ID、C3 fixture、C4 hybrid 聚合、无编号 report、虚拟输入 `Clicking=0` 隔离回归，以及 J3 Option Zoom mask、J4 Shift 轴向、J1 配置映射和 J6 横向总开关回归）。
 - `~/.cargo/bin/cargo check --all-targets`：通过。
 - `~/.cargo/bin/cargo check --target aarch64-apple-darwin --all-targets`：通过（交叉检查 macOS binary/module wiring；仅有既有 dead-code 警告）。
+- `~/.cargo/bin/cargo run --bin companion-tui -- --help`：通过，TUI binary 可构建并暴露 `--config` 覆盖入口。
+- 修饰键事件回归审查：点击 down/up 使用同一 modifier 快照；pinch/rotate/swipe/scroll 保留当前四键 flags；Cmd+Ctrl+D 与 Control+Arrow 等合成系统热键使用 raw post，避免被实时 modifier 覆盖逻辑清除。
+- Shift 兼容边界回归审查：映射在横向总开关之后生效，`[scroll].horizontal = false` 不会被兼容模式绕过。
+- 联合拖拽回归审查：现有 `three_finger_drag_to_four_finger_swipe` 和 `link_timeout_releases_drag_button_carried_into_four_finger_swipe` 通过；输出层新增 SymbolicHotKey 阈值、350ms 冷却、80ms flick 保护和 Drop 时 fallback 状态隔离，macOS 行为仍待真机。
+- 2026-08-29 修订：根据 Mac Mouse Fix PR #1936，将 macOS 27+ 的连续 HIDEvent 路径恢复为优先级最高；仅在 `SLEventSetIOHIDEvent`/`HIDEvent` 不可用时切换 SymbolicHotKey，避免在可用系统上退化为离散跳桌面。
+- red-green：临时移除 `policy_for_mode(..., virtual_input=true)` 的隔离时，`virtual_input_keeps_tap_to_click_default` 按预期失败（`Off` vs `On`）；恢复后虚拟输入两项回归均通过。
 - `android/./gradlew test`（工作目录 `android/`）：通过，Gradle `BUILD SUCCESSFUL`。
 - `android/./gradlew assembleDebug`：通过；`adb install -r android/app/build/outputs/apk/debug/app-debug.apk` 返回 `Success`，已在设备 `192.168.3.131:34743` 启动 `com.mtc.touchpad/.MainActivity`。
+- G3 追加验收：深按条触发后 `dumpsys vibrator_manager` 显示 `usage: PHYSICAL_EMULATION`、`adaptive=1.00`，实际播放 `[0ms@0, 10ms@0.68, 6ms@0, 18ms@1.00]`；设置页显示 `按下震动强度 255 / 255`。
+- G4 代码验收：`DeepPressBarView.ACTION_DOWN` 立即调用 `Haptics.click()`；阈值回调调用一次 `Haptics.deepPress()`，新深按波形为 `[0ms@0, 11ms@1.00, 4ms@0, 8ms@0.34]`。
+- G5 实机验收：Redmi/HyperOS 触发后日志显示 `usage: HARDWARE_FEEDBACK`、`Prebaked=163(MEDIUM, with fallback)`，确认厂商校准路径已被选中。
 - `git diff --check`：通过。
+
+### 4.3 设置界面产品化（2026-08-29）
+
+- [x] L1. TUI 重构为 Apple 原生三段导航：`Point & Click`、`Scroll & Zoom`、`More Gestures`；虚拟输入独有的三指拖移、换手延迟、加速度曲线、后端选择和系统同步集中在 `Companion` 扩展区。`Click` 与 `Quiet Click` 保留为明确的硬件专属只读行。
+- [x] L2. TUI 增加中文/英文切换（`l`），侧栏/详情双焦点、`Tab` 分组切换、原子保存、重载和未保存退出确认；原生文案和解释取自 Apple Support 的公开页面。
+- [x] L3. 新增 `companion-config dump/set` JSON/TOML helper。helper 复用 `config::Config` 的 serde 模型，保留未编辑字段，并通过临时文件 + rename 原子写入；`scroll.modifier_zoom_mask=0` 恢复默认并删除该键。
+- [x] L4. 新增 `macos/TrackpadCompanionSettings` SwiftUI package（macOS 13+）：`NavigationSplitView + Form`、系统字体/语义颜色、深色模式、中文/英文切换、原生三段设置和 Companion 扩展；通过 helper 读写，不复制 TOML 解析逻辑。
+- [ ] L5. macOS 真机编译与窗口验收：Mac mini/有无触控板、13/14/15/26 系统、深色模式、VoiceOver/键盘导航、窗口恢复和 helper 签名/打包。
+
+#### L 阶段设计依据
+
+Apple 官方 Trackpad 设置页面固定使用三组结构，并明确“内置或已连接无线触控板”是显示 Trackpad 面板的前提：
+
+- <https://support.apple.com/guide/mac-help/change-trackpad-settings-mchlp1226/mac>
+- <https://support.apple.com/en-us/102482>
+
+LinearMouse 的开源配置文档也建议常规修改优先使用 GUI、把 JSON 配置作为高级/自动化接口：
+<https://github.com/linearmouse/linearmouse/blob/main/Documentation/Configuration.md>。
+本项目沿用这一边界，但 helper 的真实格式仍是现有 TOML，以保证 companion-net、TUI、GUI 共享同一契约。
+Ketch 的开源代码检索还核对了 `NavigationSplitView` 在 macOS 设置类应用中的实际用法，以及多个 dotfiles 对 `TrackpadThreeFingerDrag` 的写入方式；这些项目支持“原生分组 GUI + 可审计配置桥接”的架构，但不证明 `defaults` 能在无硬件 Mac mini 上注册 Trackpad 面板。
 - `git diff --check origin/main...HEAD`：失败，仅命中既有 `android/gradlew.bat` CRLF 和 `diagnostics/mac-settings.txt` EOF 空行；本轮未修改这两个无关文件。
 - `~/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings`：失败，仓库现有 11 个 lint（6 个 `collapsible_if`/冗余匹配，1 个近似常量，4 个旧文档 quote continuation）；本轮未为清理这些无关质量债务扩大修改面。
 - `~/.cargo/bin/cargo fmt --all -- --check`：失败，仓库基线已有多个未格式化文件（协议 crate、descriptor、overlay、gesture_tap 等）；本轮新增代码可编译且 `git diff --check` 通过，未执行全仓格式化以免改写无关历史代码。
@@ -295,4 +439,26 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - 阶段 C：部分完成（C1-C5 的代码与合成 fixture 已完成；真实 HID descriptor/report 采样与 macOS 设备验收仍待执行）
 - 阶段 D：待真机
 - 阶段 E：部分完成（已收集 raw MultitouchSupport 资料；虚拟 HID 成本评估与架构决策待后续）
-- 阶段 F：部分完成（F1-F4、F5a/F5b 已完成；haptic performer、私有事件 payload 和真实 Mac 应用矩阵仍待真机）
+- 阶段 F：部分完成（F1-F4、F5a/F5b/F5c 已完成；haptic performer、私有事件 payload 和真实 Mac 应用矩阵仍待真机）
+- 阶段 H：已完成（已核实无受支持的强行显示方案；`companion-tui` 已作为 Mac mini 的配置入口，原生 pane 仍需真实触控板硬件）
+- 阶段 G：已完成（Android 深按触觉研究、可调短波形与 ADB 日志验收；不同手机的主观强度仍需设备矩阵 A/B）
+
+- 阶段 I：已完成（Apple 风格产品级 Android/Web 壳、连接/设置分层、玻璃 chrome、触控区高对比、响应式与无障碍降级；真实 companion-net WebSocket 与 macOS 应用矩阵仍待目标主机）
+- 阶段 J：部分完成（J1-J6 代码、自动化测试和配置入口已完成；Control/Option/Command Zoom、四种 modifier click/drag 及 Shift 两种模式仍待 macOS 应用矩阵真机验收）
+- 阶段 K：部分完成（K1-K5 代码和自动化状态机回归已完成；K6 的 macOS 25/26/27、Finder/Preview/Safari/Numbers 联合拖拽验收待真机）
+- 阶段 L：部分完成（TUI 中英/原生分组重制、共享 JSON/TOML helper、SwiftUI GUI 工程骨架已完成；macOS 真机编译、打包与无障碍验收待执行）
+
+### 阶段 I：Apple 风格成品化 UI 重制（2026-08-29）
+
+设计规范：`docs/apple-product-design-spec.md`
+
+- I1：已完成。审计 Android `MainActivity` 与 Web `touchpad.html`，确认现有功能完整但连接字段与工具按钮挤在主屏，触控区层级不够突出。
+- I2：已完成。检索 Apple Materials/HIG、Liquid Glass、Material 3、Mousedroid 及开源 Apple HIG skills，锁定“内容层高对比 + 功能层少量玻璃”的跨平台方案。
+- I3：已完成。安装并直接调用 `implement-apple-web-ui`、`review-hig-compliance`、`design-macos-interfaces`、`apple-design-foundations`、`apple-design-materials`、`apple-design-interaction`、`apple-design-web`、`apple-design-motion`、`material-3` skills。
+- I4：已完成。Android 保持原生 View/Activity 与触控链路，完成 app bar、操作栏、连接面板、深按设置面板和主题资源重制。
+- I5：已完成。Web 保持二进制协议与 pointer capture，完成工具栏、底部操作 dock、产品标识、状态层级、fullscreen 同步和可访问性降级。
+- I6：部分完成。ADB 与 Playwright 截图验收覆盖 Android 横屏、Web 375px/1280px、诊断页两种尺寸；静态 server 无 `/ws`，实时 WebSocket 仍需 macOS companion-net 实例验收。
+- I7：已完成。README、Apple 产品设计规范和本规划书已回写；GitHub 发布前仍需真实 macOS 应用矩阵与网络安全复核。
+- I8：已完成。调研并核对 `QmDeve/AndroidLiquidGlassView`（MIT、Maven Central）与 `PallavAg/liquid-glass-web-react`（MIT、SVG 位移图）后，Android 触控面接入 `LiquidGlassView` 的 API 33+ 实时 AGSL 折射/色散管线，Web 触控面接入同类几何位移滤镜并保留 `backdrop-filter` 降级。
+- I9：已完成。主题矩阵统一为 `light-glass`（默认）、`dark-glass`、`classic-light`、`classic-dark`、`high-contrast`；Android 使用 SharedPreferences，Web/诊断页使用同一 `localStorage` key。
+- I10：部分完成。API 36 Redmi 实机已启动并截图确认触控面玻璃层、动态后景和底部操作层；Safari/Firefox 的 SVG `backdrop-filter` 仍按公开 WebKit 限制走 blur fallback，需目标浏览器和 macOS 主机做最终矩阵。

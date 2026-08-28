@@ -12,10 +12,17 @@ because macOS has no built-in PTP consumer. macOS does have similar
 support for Apple's own Magic Trackpads, but their driver will only
 talk to USB devices using Apple's USB VID.
 
-**Prototype-quality**, vibe-coded. The code is gross. But it works decently
-well for me and has served as a base for refining gesture recognition. It has
-tests inspired by real usage logs. Eventually I hope to distill what I've
-learned into a nice spec and develop a high-quality codebase from it.
+The project is a beta userspace bridge. It is designed to be useful on a real
+LAN today, while keeping the boundary honest: CGEvent and synthetic gesture
+payloads can be native-like in compatible apps, but they are not the private
+MultitouchSupport stream or the pressure sensor in an Apple Force Touch
+trackpad.
+
+The Android and browser clients share a product-oriented presentation model:
+a high-contrast touch surface, compact connection status, a small glass
+control layer, and focused settings/diagnostic panels. The visual and
+interaction decisions are documented in
+[`docs/apple-product-design-spec.md`](docs/apple-product-design-spec.md).
 
 ## Build & run
 
@@ -51,12 +58,31 @@ When `[net].token` is configured, append `?token=<token>` to the browser URL,
 enter the same value in the Android Token field, or pass
 `--token <token>` to `tools/synthetic_sender.py`.
 
+The web client exposes the main touch surface at `/` and the instrumented
+gesture diagnostics at `/test`. Both pages use the system font stack, semantic
+status colors, safe-area insets, keyboard focus rings, and reduced-motion or
+reduced-transparency fallbacks. The Android APK keeps the native View stack so
+the high-rate touch stream does not depend on a second UI runtime.
+
 Android and browser clients encode coordinates in millimeters using one
 isotropic pixel scale. This keeps equal finger motion equally sensitive in X
 and Y; use the `A−` / `A＋` controls for overall calibration. The Android
 client prefers the panel's reported physical DPI and falls back to
 `densityDpi`; browsers use the CSS reference pixel because mobile browsers do
 not expose reliable physical DPI.
+
+The Android client also includes a configurable `深按条` overlay. Holding it
+for the configured duration sends a standard left-button-down edge to the Mac;
+releasing sends the matching button-up edge, so it can drag a window or select
+text. Its center position, width, height, hold time, visibility, haptic toggle,
+and deep-press haptic strength are stored locally in the APK. On Xiaomi/Redmi
+devices that expose the same calibrated hardware-feedback effect as the system
+launcher it uses that vendor click; other devices use an immediate short click
+followed, after the hold threshold, by a sharper physical-emulation impact. The
+system's haptic setting and master switch still cap the resulting output.
+This is a software button-hold affordance, not a pressure-level Force Click
+event: CGEvent cannot synthesize the private pressure transition used by a real
+Force Touch trackpad.
 
 The network listener needs Accessibility permission to post CGEvents, but it
 does not need Input Monitoring because it never reads a local HID device.
@@ -108,7 +134,8 @@ natural     = true          # finger-down → content-down (macOS default since 
 enable      = true          # two-finger translation emits scroll events
 horizontal  = true          # keep horizontal component of a scroll
 momentum    = true          # seed momentum-phase coast after a fast lift
-# modifier_zoom_mask = 262144  # optional HIDScrollZoomModifierMask override
+# modifier_zoom_mask = 262144  # Control/Option/Command mask override
+shift_scroll_horizontal = false # compatibility only; native trackpads keep axis
 
 [macos]
 sync_system_settings = true # read System Settings at startup; TOML fields win
@@ -137,7 +164,9 @@ haptic_feedback = "auto"    # auto | on | off; auto follows ActuateDetents
 
 # These switches mirror the corresponding macOS System Settings when
 # `[macos].sync_system_settings = true` (the default). A value written here
-# is an explicit override and wins over System Settings:
+# is an explicit override and wins over System Settings. `companion-net` is a
+# virtual input surface, so the physical-only `Clicking` preference is ignored
+# there and phone tap-to-click remains enabled by default:
 [gestures]
 tap_to_click = "on"       # Point & Click -> Tap to click
 secondary_click = "on"    # two-finger secondary click
@@ -172,6 +201,17 @@ enable = "on"
 enable = "off"                # stationary 1F hold; off matches stock default
 ```
 
+When a three-finger drag is already holding a window and a fourth finger joins,
+the gesture engine keeps the left mouse button held while entering the four-finger
+Space-swipe state. macOS 26 rejects third-party DockSwipe events, so the
+`synthetic` backend uses the system SymbolicHotKey registry (Space Left/Right,
+Mission Control or App Exposé) with a short threshold and animation cooldown.
+macOS 27 and later first use SkyLight's `SLEventSetIOHIDEvent` HID payload to
+retain the continuous DockSwipe animation; if that private setter is unavailable,
+the current gesture falls back to the same SymbolicHotKey path. macOS 25 and
+earlier keep the animated legacy payload. Cancelled or broken sessions always
+release the held button.
+
 On macOS, the process reads `com.apple.AppleMultitouchTrackpad` at startup,
 falls back to `com.apple.driver.AppleBluetoothMultitouch.trackpad` for missing
 keys, and reads natural scrolling from `.GlobalPreferences`. This uses the
@@ -186,6 +226,21 @@ confirmation, not a synthetic Force Touch or pressure event. Devices without
 a Taptic Engine silently ignore the cue.
 The sync is startup-only; restart the process after changing System Settings.
 
+Keyboard modifiers are preserved on every emitted mouse, scroll, and gesture
+event. This lets macOS and the active app apply their normal meanings:
+
+| Combination | Behavior |
+| --- | --- |
+| Control-click | Secondary click / contextual menu (the macOS definition of right-click) |
+| Command-click, Option-click, Shift-click | App-level selection, alternate action, tab, and drag semantics; no custom remapping |
+| Control/Option/Command + two-finger scroll | Magnification route when the selected `HIDScrollZoomModifierMask` is active; the mask is latched for the whole scroll session |
+| Shift + two-finger scroll | Native mode preserves the original scroll axis. Set `shift_scroll_horizontal = true` only for the compatibility remap to horizontal scrolling |
+
+Apple Accessibility Zoom exposes Control, Option, or Command as the selectable
+scroll modifier; Shift is not one of its choices. The companion therefore does
+not treat Shift as Zoom and does not convert it to horizontal scrolling unless
+the explicit compatibility switch is enabled.
+
 The legacy global `com.apple.trackpad.scaling` and
 `com.apple.scrollwheel.scaling` values are converted to bounded compatibility
 scalars for `cursor.sensitivity` and `scroll.sensitivity`; Apple does not
@@ -194,13 +249,15 @@ be a physical calibration. `com.apple.trackpad.scaling = -1` is represented as
 the linear cursor curve (`cursor.accel_exponent = 1.0`). Explicit TOML values
 still win.
 
-If macOS reports `Clicking = 0`, the companion follows that setting and a
-phone tap does not become a left click. Enable **Tap to click** in System
-Settings or add an explicit override:
+For the local HID companion, `Clicking = 0` follows the native physical
+trackpad behavior. For `companion-net` on a Mac mini or any Mac without an
+attached trackpad, stale `Clicking = 0` preferences are ignored because they
+do not describe the phone/browser surface. No System Settings change is
+needed. To disable virtual tap-to-click explicitly:
 
 ```toml
 [gestures]
-tap_to_click = "on"
+tap_to_click = "off"
 ```
 
 Missing Trackpad settings are normal on Macs without an internal pad or when
@@ -209,6 +266,64 @@ continues with TOML/default values. `DragLock` is reported for diagnostics but
 does not change the companion's three-finger re-grip timeout; configure
 `[gestures.three_finger_drag].release_delay_ms` directly (the default is
 500 ms).
+
+### Mac mini without a Trackpad pane
+
+macOS only exposes the Trackpad section when an internal trackpad or a wireless
+trackpad is present. These deep links can open the section when it exists, but
+they do not bypass that hardware check:
+
+```sh
+# macOS Ventura and later
+open "x-apple.systempreferences:com.apple.Trackpad-Settings.extension"
+
+# legacy System Preferences path
+open /System/Library/PreferencePanes/Trackpad.prefPane
+```
+
+Writing `com.apple.AppleMultitouchTrackpad` with `defaults`, refreshing
+`cfprefsd`, or running `activateSettings -u` only changes stored values. It
+cannot register a Mac mini as an Apple trackpad, so the native pane is not a
+supported configuration surface in that setup. Connect a Magic Trackpad if
+the Apple pane itself is required.
+
+For the phone/browser surface, use the bundled TUI instead. It edits every
+companion setting that has a defensible application-level equivalent (including
+the scroll-to-zoom modifier mask) and shows
+Mac preference-domain availability as a read-only diagnostic. Hardware-only
+keys remain unsupported and are reported in the companion startup log; the TUI
+never writes macOS defaults:
+
+```sh
+cargo run --release --bin companion-tui
+# or, from a release bundle:
+./target/release/companion-tui
+```
+
+The repository also includes a native macOS SwiftUI settings app. It follows
+the same three Apple sections (`Point & Click`, `Scroll & Zoom`, and `More
+Gestures`) and keeps virtual-input-only controls under `Companion`. Changes are
+written immediately through the shared `companion-config` helper, so the GUI
+and TUI cannot silently diverge from `companion-net`'s TOML parser:
+
+```sh
+# Build the helper first, then build the GUI on macOS 13+
+cargo build --release --bin companion-config
+repo="$PWD"
+cd macos/TrackpadCompanionSettings
+COMPANION_CONFIG_BIN="$repo/target/release/companion-config" swift build -c release
+```
+
+For a bundled app, place `companion-config` beside the executable or set
+`COMPANION_CONFIG_BIN` to its absolute path. SwiftUI is intentionally kept in a
+macOS-only package; Linux CI validates the Rust helper and configuration
+contract, while final window, dark-mode, and accessibility checks belong on a
+Mac host.
+
+The TUI writes the same `config.toml` used by `companion-net`. Save the changes
+and restart `companion-net`; explicit TOML values take precedence over any
+Mac preference snapshot. On a Mac mini, stale `Clicking=0` values from the
+physical-trackpad domain are ignored for virtual phone taps by design.
 
 Three-finger drag is on by default. Three fingers must move past a small
 jitter guard before the engine posts `LeftMouseDown`; movement is then
@@ -345,6 +460,9 @@ on separate interfaces.
 | `net.rs` | UDP + WebSocket ingestion, strict frame decoding, sequence/loss filtering, and idle-lift recovery. |
 | `crates/touchpad-proto` | Shared ATP1 wire-format encoder/decoder used by network clients. |
 | `main.rs` | CLI parsing, logging, wiring. |
+| `src/bin/companion_tui.rs` | Native-shaped terminal configuration editor for Mac mini/virtual-input deployments; writes only `config.toml`. |
+| `src/bin/companion_config.rs` | JSON/TOML bridge used by the macOS SwiftUI settings app; preserves unrelated TOML fields and writes atomically. |
+| `macos/TrackpadCompanionSettings` | macOS 13+ SwiftUI settings app with native three-section navigation, Chinese/English switching, and Companion extensions. |
 
 ## Caveats
 

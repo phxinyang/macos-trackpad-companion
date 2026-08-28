@@ -8,7 +8,7 @@ both transports equally.
 
 | Feature | Behavior to replicate | Status |
 |---|---|---|
-| 三指拖移 (3-finger drag) | Resting 3 fingers then moving drags windows / selects text — left-button-held + motion; survives async lifts (3→2→1), releases immediately when the pad empties | **Implemented, on by default** (`GestureKind::ThreeFingerDrag`, `[gestures.three_finger_drag] enable`, set `"off"` for stock-macOS three-finger swipes). `release_delay_ms` defaults to **500 ms** in this project; set it to `0` for immediate release. This is synthesized mouse behavior, not Apple's raw drag-lock stream |
+| 三指拖移 (3-finger drag) | Resting 3 fingers then moving drags windows / selects text — left-button-held + motion; survives async lifts (3→2→1), releases immediately when the pad empties | **Implemented, on by default** (`GestureKind::ThreeFingerDrag`, `[gestures.three_finger_drag] enable`). A fourth finger transitions to the four-finger swipe state without releasing the held button, allowing cross-Space window dragging. `release_delay_ms` defaults to **500 ms** in this project; set it to `0` for immediate release. This is synthesized mouse behavior, not Apple's raw drag-lock stream |
 | Tap-drag (轻点两下拖动) | Double-tap-and-hold then move selects text continuously until finger lifts | **Implemented, on by default** (`[gestures.one_finger_tap_drag]`). The second contact does not press on its landing frame: lifting within `TAP_DRAG_CONFIRM` (200 ms) without moving dispatches the pair as a double-click, and only motion past `DRAG_ENGAGE_MM` or outlasting that window commits to a drag |
 | 启动台 (Launchpad) | 4-finger radial pinch-in ($R/R_0 \le 0.72$) | **Code path implemented; private/discrete command, macOS behavior pending** — triggers `CoreDockSendNotification("com.apple.launchpad.toggle")` + SkyLight HotKey 160 |
 | 显示桌面 (Show Desktop) | 4-finger radial spread-out ($R/R_0 \ge 1.28$) | **Code path implemented; private/discrete command, macOS behavior pending** — triggers `CoreDockSendNotification("com.apple.showdesktop.awake")` + SkyLight HotKey 36 |
@@ -20,6 +20,8 @@ both transports equally.
 | Settings sync | Read macOS `com.apple.AppleMultitouchTrackpad` prefs with Core Foundation, normalize supported keys, and merge them below explicit TOML overrides | **Implemented startup snapshot** (`src/macos_preferences.rs`); unsupported hardware/WindowServer keys are logged, and changing System Settings requires restart |
 | Palm-edge suppression | Contact density near sensor edge ignored | N/A over network — phone clients own rejection (web/app trust-flag only) |
 | Browser history swipe | Two-finger swipe navigating back/forward inside Safari or Chrome | **Not achievable via CGEvent.** Chromium's `HistorySwiper` requires real `NSTouch` data and Safari behaves the same; synthetic phased scrolls are rejected by both regardless of phase/`ScrollCount`/`mayBegin` shaping. Probe write-up: <https://github.com/aislopware/slop-desk/blob/dc64b6fa/docs/05-input-window-control.md>. Anything beyond plain scroll has to be translated to a key equivalent (⌘[ / ⌘]) instead |
+
+| 三指拖拽 + 四指切 Space | Hold a window with three fingers, add a fourth finger, switch Space, then release | **Implemented state transition; macOS 26 uses SymbolicHotKey, macOS 27+ prefers HIDEvent and falls back to SymbolicHotKey** — left button remains held through the switch, horizontal threshold 10mm, vertical threshold 7mm, 350ms cooldown; macOS <26 keeps DockSwipe. Requires macOS application/WindowServer verification |
 
 ## Verification foundation (2026-08)
 

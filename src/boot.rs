@@ -11,15 +11,18 @@ use crate::gesture;
 use crate::output;
 
 pub fn emitter_config(cfg: &config::Config) -> output::Config {
+    let modifier_zoom_mask = cfg
+        .scroll
+        .modifier_zoom_mask
+        .map(|mask| mask & crate::scroll_policy::SUPPORTED_ZOOM_MODIFIER_MASK)
+        .unwrap_or(crate::scroll_policy::DEFAULT_MODIFIER_ZOOM_MASK);
     output::Config {
         scroll_accel: cfg.scroll.sensitivity,
         natural_scroll: cfg.scroll.natural,
         horizontal_scroll: cfg.scroll.horizontal,
         momentum_scroll: cfg.scroll.momentum,
-        modifier_zoom_mask: cfg
-            .scroll
-            .modifier_zoom_mask
-            .unwrap_or(crate::scroll_policy::DEFAULT_MODIFIER_ZOOM_MASK),
+        modifier_zoom_mask,
+        shift_scroll_horizontal: cfg.scroll.shift_scroll_horizontal,
         haptic_feedback: !matches!(cfg.macos.haptic_feedback, HapticSetting::Off),
         pinch: enable_to_policy(&cfg.gestures.pinch.enable),
         rotate: enable_to_policy(&cfg.gestures.rotate.enable),
@@ -95,5 +98,40 @@ mod tests {
         .unwrap();
         assert!(gesture_options(&cfg).press_and_hold_drag);
         assert!(!gesture_options(&config::Config::default()).press_and_hold_drag);
+    }
+
+    #[test]
+    fn modifier_scroll_settings_reach_emitter_config() {
+        let cfg: config::Config = toml::from_str(
+            r#"
+            [scroll]
+            modifier_zoom_mask = 524288
+            shift_scroll_horizontal = true
+        "#,
+        )
+        .unwrap();
+        let output = emitter_config(&cfg);
+        assert_eq!(output.modifier_zoom_mask, 524_288);
+        assert!(output.shift_scroll_horizontal);
+
+        let defaults = emitter_config(&config::Config::default());
+        assert_eq!(
+            defaults.modifier_zoom_mask,
+            crate::scroll_policy::DEFAULT_MODIFIER_ZOOM_MASK
+        );
+        assert!(!defaults.shift_scroll_horizontal);
+    }
+
+    #[test]
+    fn shift_is_not_an_accessibility_zoom_modifier() {
+        let cfg: config::Config = toml::from_str(
+            r#"
+            [scroll]
+            modifier_zoom_mask = 655360
+        "#,
+        )
+        .unwrap();
+        // Shift (0x20000) | Option (0x80000): only Option reaches Zoom.
+        assert_eq!(emitter_config(&cfg).modifier_zoom_mask, 0x0008_0000);
     }
 }

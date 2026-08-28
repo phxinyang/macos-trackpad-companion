@@ -14,6 +14,7 @@ pub struct Config {
     pub horizontal_scroll: bool,
     pub momentum_scroll: bool,
     pub modifier_zoom_mask: u64,
+    pub shift_scroll_horizontal: bool,
     pub haptic_feedback: bool,
     pub pinch: GesturePolicy,
     pub rotate: GesturePolicy,

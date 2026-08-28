@@ -24,4 +24,8 @@ android {
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // MIT: QWEA0/Liquid-Glass-Android View library. The API 33+ path is a
+    // real SDF/AGSL lens with backdrop capture, refraction and dispersion;
+    // older devices use the library's blur/scrim fallback.
+    implementation("com.github.QWEA0:liquidglass:v2.0.2")
 }

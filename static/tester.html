@@ -60,6 +60,25 @@
       }
     }
 
+    html[data-theme="light-glass"] {
+      color-scheme: light;
+      --bg: #f4f5f7; --surface: rgba(255,255,255,.72); --well: rgba(255,255,255,.55);
+      --hairline: rgba(60,60,67,.15); --separator: rgba(60,60,67,.25);
+      --label: #1d1d1f; --label-2: #6e6e73; --label-3: #86868b; --label-4: #aeaeb2;
+      --fill: rgba(118,118,128,.12); --fill-2: rgba(118,118,128,.18); --accent: #007aff;
+      --accent-wash: rgba(0,122,255,.12); --trace: #007aff;
+    }
+    html[data-theme="dark-glass"], html[data-theme="classic-dark"] {
+      color-scheme: dark;
+      --bg: #0b0d12; --surface: #151923; --well: #1b1f2a;
+      --hairline: rgba(255,255,255,.10); --separator: rgba(255,255,255,.16);
+      --label: #f5f7fb; --label-2: #aeb6c5; --label-3: #7f8999; --label-4: #636b79;
+      --fill: rgba(118,118,128,.24); --fill-2: rgba(118,118,128,.32); --accent: #0a84ff;
+      --accent-wash: rgba(10,132,255,.18); --trace: #0a84ff;
+    }
+    html[data-theme="classic-light"] { color-scheme: light; --bg:#f2f2f7; --surface:#fff; --well:#f2f2f7; --accent:#0071e3; --trace:#0071e3; }
+    html[data-theme="high-contrast"] { color-scheme: light; --bg:#fff; --surface:#fff; --well:#fff; --hairline:#000; --separator:#000; --label:#000; --label-2:#000; --label-3:#000; --label-4:#000; --fill:#fff; --fill-2:#fff; --accent:#000; --accent-wash:#fff; --trace:#000; --sh-card:none; --sh-lift:none; }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     html { -webkit-text-size-adjust: 100%; font-optical-sizing: auto; }
@@ -91,14 +110,27 @@
       justify-content: space-between;
       gap: 20px;
       flex-wrap: wrap;
-      background: var(--bg);
+      background: color-mix(in srgb, var(--bg) 64%, transparent);
+      backdrop-filter: blur(24px) saturate(1.18); -webkit-backdrop-filter: blur(24px) saturate(1.18);
       border-bottom: 1px solid var(--hairline);
     }
+    html[data-theme^="classic-"] .chrome, html[data-theme="high-contrast"] .chrome { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+    @media (prefers-reduced-transparency: reduce) { .chrome { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; } }
 
     .wordmark h1 { font-size: 19px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; }
     .wordmark p { margin-top: 2px; color: var(--label-2); font-size: 12px; line-height: 1.35; }
 
+    .back-link { min-height: 44px; display: inline-flex; align-items: center; gap: 7px; padding: 0 13px; border-radius: var(--r-pill); background: var(--fill); color: var(--label); text-decoration: none; font-size: 12px; font-weight: 600; transition-property: background-color, scale; transition-duration: 140ms; transition-timing-function: var(--ease-out-quart); }
+    .back-link::before { content: "‹"; font-size: 19px; line-height: 1; }
+    @media (hover: hover) { .back-link:hover { background: var(--fill-2); } }
+    .back-link:active { scale: .96; }
+
     .gauges { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+    .theme-menu { position: relative; }
+    .theme-menu > button { min-height: 44px; }
+    .theme-options { position: absolute; right: 0; top: 48px; z-index: 40; min-width: 150px; display: grid; gap: 3px; padding: 7px; border: 1px solid var(--separator); border-radius: 13px; background: var(--surface); box-shadow: var(--sh-lift); }
+    .theme-options[hidden] { display: none; }
+    .theme-options button { min-height: 38px; border-radius: 8px; text-align: left; }
     .gauge dt { color: var(--label-3); font-size: 10.5px; line-height: 1.2; }
     .gauge dd { margin-top: 2px; font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
 
@@ -286,6 +318,8 @@
       <p>逐项验证 companion-net 派发的原生事件</p>
     </div>
     <div class="gauges">
+      <a class="back-link" href="/">返回触控板</a>
+      <div class="theme-menu"><button id="themeButton" type="button" aria-expanded="false">主题</button><div class="theme-options" id="themeOptions" hidden role="menu"><button type="button" data-theme-choice="light-glass">浅色玻璃</button><button type="button" data-theme-choice="dark-glass">深色玻璃</button><button type="button" data-theme-choice="classic-light">经典浅色</button><button type="button" data-theme-choice="classic-dark">经典深色</button><button type="button" data-theme-choice="high-contrast">高对比</button></div></div>
       <span class="mode" id="modeChip" data-mode="idle"><i></i><span id="modeText">等待输入</span></span>
       <dl class="gauge"><dt>事件速率</dt><dd id="hzVal">0 Hz</dd></dl>
       <dl class="gauge"><dt>光标</dt><dd id="cursorPos">0, 0</dd></dl>
@@ -665,6 +699,27 @@
 
   <script>
     'use strict';
+
+    const storedTheme = localStorage.getItem('atp_theme') || 'light-glass';
+    document.documentElement.dataset.theme = storedTheme;
+    const themeButton = document.getElementById('themeButton');
+    const themeOptions = document.getElementById('themeOptions');
+    themeButton.onclick = () => {
+      themeOptions.hidden = !themeOptions.hidden;
+      themeButton.setAttribute('aria-expanded', String(!themeOptions.hidden));
+    };
+    themeOptions.querySelectorAll('[data-theme-choice]').forEach((choice) => choice.onclick = () => {
+      document.documentElement.dataset.theme = choice.dataset.themeChoice;
+      localStorage.setItem('atp_theme', choice.dataset.themeChoice);
+      themeOptions.hidden = true;
+      themeButton.setAttribute('aria-expanded', 'false');
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (!themeOptions.hidden && !themeOptions.contains(event.target) && event.target !== themeButton) {
+        themeOptions.hidden = true;
+        themeButton.setAttribute('aria-expanded', 'false');
+      }
+    });
 
     /* ---------------------------------------------------------------
        Log
