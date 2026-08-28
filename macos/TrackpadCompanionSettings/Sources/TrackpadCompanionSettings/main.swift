@@ -6,6 +6,7 @@ import ApplicationServices
 #endif
 
 @main
+@MainActor
 struct TrackpadCompanionSettingsApp: App {
     @StateObject private var supervisor = ServiceSupervisor()
 
@@ -120,6 +121,7 @@ final class ServiceSupervisor: ObservableObject {
     @Published private(set) var pairingURI = ""
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var tokenConfigured = false
+    @Published private(set) var diagnostics = ""
     private var process: Process?
     private var outputPipe: Pipe?
     private let bonjour = BonjourAdvertiser()
@@ -239,6 +241,23 @@ final class ServiceSupervisor: ObservableObject {
         guard !pairingURI.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(pairingURI, forType: .string)
+    }
+
+    func refreshDiagnostics() {
+        guard let executable = locate("COMPANION_CONFIG_BIN", bundledName: "companion-config") else {
+            diagnostics = "companion-config was not found."
+            return
+        }
+        do {
+            diagnostics = String(data: try run(executable: executable, arguments: ["doctor"]), encoding: .utf8) ?? "No diagnostics returned."
+        } catch {
+            diagnostics = error.localizedDescription
+        }
+    }
+
+    func openLogs() {
+        let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/macos-trackpad-companion", isDirectory: true)
+        NSWorkspace.shared.open(url)
     }
 
     private func publishBonjour(port: Int) {
@@ -575,6 +594,17 @@ struct SettingsView: View {
                 Section(model.language.text("Pairing", "配对")) {
                     Button(model.language.text("Copy pairing link", "复制配对链接"), systemImage: "doc.on.doc") { supervisor.copyPairingURI() }
                         .help(model.language.text("Paste this link into the Android app or a QR generator on the same LAN.", "可将此链接粘贴到 Android 应用或局域网内的二维码工具。"))
+                }
+            }
+            Section(model.language.text("Diagnostics", "诊断")) {
+                HStack {
+                    Button(model.language.text("Refresh", "刷新"), systemImage: "arrow.clockwise") { supervisor.refreshDiagnostics() }
+                    Button(model.language.text("Open logs", "打开日志"), systemImage: "folder") { supervisor.openLogs() }
+                }
+                if !supervisor.diagnostics.isEmpty {
+                    Text(supervisor.diagnostics)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
                 }
             }
             if !supervisor.message.isEmpty {
