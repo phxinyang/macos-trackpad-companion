@@ -2066,8 +2066,15 @@ impl<O: Output> State<O> {
         let Some(mut base) = self.two_baseline else {
             return;
         };
-        let a = active[0];
-        let b = active[1];
+        let (a, b) = if active[0].id == base.initial_a.0 {
+            (active[0], active[1])
+        } else if active[1].id == base.initial_a.0 {
+            (active[1], active[0])
+        } else if active[0].id <= active[1].id {
+            (active[0], active[1])
+        } else {
+            (active[1], active[0])
+        };
         let centroid = ((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
         let dx = b.x - a.x;
         let dy = b.y - a.y;

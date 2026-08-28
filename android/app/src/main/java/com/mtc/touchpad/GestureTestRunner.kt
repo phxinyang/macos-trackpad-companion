@@ -212,7 +212,7 @@ object GestureTestRunner {
             val c1 = 1; val c2 = 2
             val midX = 50f; val midY = 50f
             val radius = 15f
-            val steps = 12
+            val steps = 24
             val totalRad = Math.toRadians(90.0).toFloat()
 
             for (i in 0..steps) {
@@ -224,8 +224,10 @@ object GestureTestRunner {
                     FrameEncoder.Contact(c2, midX + dx, midY + dy)
                 )
                 sendContacts(sender, contacts)
-                sleep(18)
+                sleep(20)
             }
+            // Dwell for 100ms at 90° so Preview.app CoreAnimation layer smoothly commits rotation
+            sleep(100)
             sendLift(sender)
             onDone?.invoke()
         }
