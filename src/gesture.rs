@@ -233,9 +233,8 @@ enum GestureKind {
     TwoFingerUnclassified,
     TwoFingerPan,
     /// Locked 2F gesture family. Pan/scroll is mutually exclusive with
-    /// this family; each frame is assigned to the dominant pinch or
-    /// rotate stream using hysteresis, while an allowed stream keeps a
-    /// coherent Began/Changed/Ended sequence.
+    /// this family; each admitted transform stream receives a complete
+    /// Began/Changed/Ended sequence.
     TwoFingerPinchAndRotate,
     ThreeFingerLive,
     /// 拖移样式 = 三指拖移 mode. While active, three-finger motion drags
@@ -249,19 +248,15 @@ enum GestureKind {
     SwipeLatched,
 }
 
-/// Within the locked TwoFingerPinchAndRotate mode, which stream is
-/// currently emitting Changed events. Sticky: switches only when the
-/// other stream's normalized signal dominates the current one by 1.5×.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PinchRotateDominant {
-    Pinch,
-    Rotate,
-}
-
-/// Other-stream-must-beat-current-by ratio for switching the dominant
-/// stream within the locked 2F mode. A little hysteresis prevents sensor
-/// noise from making a steady pinch emit alternating rotate events.
-const PINCH_ROTATE_HYSTERESIS: f64 = 1.5;
+/// Transform deltas are relative AppKit values. These limits protect the
+/// event stream from a dropped/reordered frame becoming a huge jump while
+/// retaining the sign and allowing normal motion at common scan rates.
+const PINCH_MAX_RATE: f64 = 3.0;
+const PINCH_MAX_FRAME_DELTA: f64 = 0.08;
+const ROTATE_MAX_RATE_RAD: f64 = 12.0;
+const ROTATE_MAX_FRAME_RAD: f64 = 15.0_f64.to_radians();
+const TRANSFORM_MIN_DELTA: f64 = 1e-3;
+const ROTATE_EMIT_DEADZONE_RAD: f64 = 0.1_f64.to_radians();
 
 #[derive(Clone, Copy, Debug)]
 struct TwoFingerBaseline {
@@ -289,17 +284,11 @@ struct TwoFingerBaseline {
     peak_velocity: (f64, f64),
     peak_velocity_at: Option<Timestamp>,
     /// Previous-frame scale and angle, refreshed every frame so per-frame
-    /// pinch and rotate deltas are always one-frame. Cross-stream
-    /// accumulation (when one stream is suppressed) felt jerky — the
-    /// suppressed stream's motion is intentionally dropped instead.
+    /// pinch and rotate deltas are always one-frame. Each admitted stream
+    /// is emitted independently; a stream's deadzone only suppresses its
+    /// own noise without affecting the other stream.
     prev_scale: f64,
     prev_angle: f64,
-    /// Sticky pinch-vs-rotate selection within the locked 2F mode.
-    /// At any instant the locked mode emits one stream's Changed event,
-    /// and we only switch when the other stream's normalized signal
-    /// dominates by 1.5×. Set when the lock fires, based on which
-    /// score crossed harder.
-    pinch_rotate_dominant: PinchRotateDominant,
     /// EMA-smoothed centroid velocity in mm/sec, sampled while in
     /// `TwoFingerPan`. Seeds inertia at lift via `Output::scroll_inertia`
     /// — modeled on rmk's `TrackpadProcessor` velocity track.
@@ -308,6 +297,10 @@ struct TwoFingerBaseline {
     /// new event's timestamp to compute the per-frame dt that turns a
     /// per-frame mm delta into a mm/sec velocity sample.
     last_scroll_time: Option<Timestamp>,
+    /// Timestamp used to rate-limit relative pinch/rotate deltas. Kept
+    /// separate from scroll timing so a Pan -> transform transition cannot
+    /// inherit an old scroll interval.
+    prev_transform_at: Option<Timestamp>,
     /// Set when a frame's pinch or rotate score crossed lock threshold
     /// but a lenient pan signal (basic `common > differential * 1.2`,
     /// ignoring the per-finger gate) was stronger — likely a slow scroll
@@ -1633,11 +1626,9 @@ impl<O: Output> State<O> {
                     peak_velocity_at: None,
                     prev_scale: 1.0,
                     prev_angle: ang,
-                    // Default; overwritten at lock based on which signal
-                    // crossed harder.
-                    pinch_rotate_dominant: PinchRotateDominant::Pinch,
                     scroll_velocity: (0.0, 0.0),
                     last_scroll_time: None,
+                    prev_transform_at: None,
                     pinch_rot_lock_pending: false,
                     pinch_admitted,
                     rotate_admitted,
@@ -2174,6 +2165,7 @@ impl<O: Output> State<O> {
                 // pre-lock chunk.
                 base.prev_scale = dist / base.initial_distance;
                 base.prev_angle = ang;
+                base.prev_transform_at = Some(now);
                 self.two_baseline = Some(base);
                 return;
             }
@@ -2432,13 +2424,7 @@ impl<O: Output> State<O> {
                         if pinch >= 1.0 {
                             base.prev_scale = 1.0;
                         }
-                        base.pinch_rotate_dominant =
-                            match (base.pinch_admitted, base.rotate_admitted) {
-                                (false, true) => PinchRotateDominant::Rotate,
-                                (true, false) => PinchRotateDominant::Pinch,
-                                _ if rot > pinch => PinchRotateDominant::Rotate,
-                                _ => PinchRotateDominant::Pinch,
-                            };
+                        base.prev_transform_at = Some(now);
                     }
                     _ => {}
                 }
@@ -2559,6 +2545,7 @@ impl<O: Output> State<O> {
                     }
                     base.prev_scale = scale;
                     base.prev_angle = ang;
+                    base.prev_transform_at = Some(now);
                     self.two_baseline = Some(base);
                     return;
                 }
@@ -2573,90 +2560,54 @@ impl<O: Output> State<O> {
                 };
                 let scale = dist / base.initial_distance;
                 // Mathematical differential magnification delta: (dist_t - dist_{t-1}) / dist_{t-1}
-                let scale_delta = if prev_dist > 1e-4 {
-                    ((dist - prev_dist) / prev_dist).clamp(-0.5, 0.5)
+                let raw_scale_delta = if prev_dist > 1e-4 {
+                    (dist - prev_dist) / prev_dist
                 } else {
                     0.0
                 };
+                let transform_dt = base
+                    .prev_transform_at
+                    .map(|t| now.saturating_duration_since(t))
+                    .unwrap_or_else(|| Duration::from_millis(16));
+                let scale_delta = limit_transform_delta(
+                    raw_scale_delta,
+                    transform_dt,
+                    PINCH_MAX_RATE,
+                    PINCH_MAX_FRAME_DELTA,
+                );
                 let raw_angle_d = angle_delta(ang, base.prev_angle);
                 // Suppress anomalous angle flips caused by contact swap or collinear crossing (>30 deg in a single frame).
                 let angle_d = if raw_angle_d.abs() > 30.0_f64.to_radians() {
                     0.0
                 } else {
-                    raw_angle_d
+                    limit_transform_delta(
+                        raw_angle_d,
+                        transform_dt,
+                        ROTATE_MAX_RATE_RAD,
+                        ROTATE_MAX_FRAME_RAD,
+                    )
                 };
 
-                // One stream owns each frame. Normalize both signals against their lock thresholds,
-                // then only hand the frame to the other stream when it beats the incumbent by
-                // PINCH_ROTATE_HYSTERESIS. This prevents minor distance jitter during rotation
-                // from emitting conflicting pinch events that break Preview/Photos rotate recognizers!
-                let pinch_mag = scale_delta.abs() / PINCH_LOCK_RATIO;
-                let rot_mag = angle_d.abs() / ROTATE_LOCK_RAD;
-                base.pinch_rotate_dominant = match base.pinch_rotate_dominant {
-                    PinchRotateDominant::Pinch
-                        if base.rotate_admitted
-                            && rot_mag > pinch_mag * PINCH_ROTATE_HYSTERESIS =>
-                    {
-                        log::debug!(
-                            "pinch+rotate: dominance -> rotate (rot={rot_mag:.2} pinch={pinch_mag:.2})"
-                        );
-                        PinchRotateDominant::Rotate
-                    }
-                    PinchRotateDominant::Rotate
-                        if base.pinch_admitted
-                            && pinch_mag > rot_mag * PINCH_ROTATE_HYSTERESIS =>
-                    {
-                        log::debug!(
-                            "pinch+rotate: dominance -> pinch (pinch={pinch_mag:.2} rot={rot_mag:.2})"
-                        );
-                        PinchRotateDominant::Pinch
-                    }
-                    other => other,
-                };
-
-                let emit_pinch = if pinch_mag >= 1.0 {
-                    true
-                } else {
-                    matches!(base.pinch_rotate_dominant, PinchRotateDominant::Pinch)
-                };
-                if emit_pinch && scale_delta.abs() > 1e-4 && base.pinch_admitted {
+                // Both admitted streams remain alive for the whole locked
+                // transform session. This keeps each AppKit consumer's
+                // Began/Changed/Ended lifecycle coherent, while the small
+                // deadzones below suppress sensor noise.
+                if scale_delta.abs() >= TRANSFORM_MIN_DELTA && base.pinch_admitted {
                     log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
                     self.out.pinch(scale_delta, Phase::Changed);
                 }
 
-                let emit_rot = if rot_mag >= 1.0 {
-                    true
-                } else {
-                    matches!(base.pinch_rotate_dominant, PinchRotateDominant::Rotate)
-                };
-                if emit_rot && angle_d.abs() > 1e-4 && base.rotate_admitted {
-                    let dt = base
-                        .last_scroll_time
-                        .map(|t| (now - t).as_secs_f64())
-                        .unwrap_or(1.0 / 60.0)
-                        .clamp(0.001, 0.1);
-                    base.last_scroll_time = Some(now);
-                    let ang_speed = angle_d.to_degrees().abs() / dt;
-                    // Native macOS trackpad rotation dynamic curve:
-                    // - Slow precision rotation (< 15°/s): 1.0x (perfect 1:1 for Apple Maps 3D / CAD / Figma)
-                    // - Natural intentional twist (15°..45°/s): smoothly accelerates 1.0x -> 2.0x
-                    // - Fast flip (> 45°/s): 2.0x (effortless 90-degree magnetic commit for Preview/Photos)
-                    let rot_gain = if ang_speed < 15.0 {
-                        1.0
-                    } else if ang_speed < 45.0 {
-                        1.0 + (ang_speed - 15.0) / 30.0 * 1.0
-                    } else {
-                        2.0
-                    };
-                    // Apple AppKit NSEvent.rotation specifies: positive = counter-clockwise,
-                    // negative = clockwise. Screen-coordinate atan2(+Y down) yields positive for
-                    // clockwise, so invert sign for native parity!
-                    let appkit_angle_deg = -angle_d.to_degrees() * rot_gain;
-                    log::debug!("rotate: delta={:+.2}deg gain={:.2}x", appkit_angle_deg, rot_gain);
+                if angle_d.abs() >= ROTATE_EMIT_DEADZONE_RAD && base.rotate_admitted {
+                    // AppKit defines rotation as a signed relative angle;
+                    // keep the geometric 1:1 value until a real-device A/B
+                    // test proves an acceleration curve is desirable.
+                    let appkit_angle_deg = -angle_d.to_degrees();
+                    log::debug!("rotate: delta={:+.2}deg gain=1.00x", appkit_angle_deg);
                     self.out.rotate(appkit_angle_deg, Phase::Changed);
                 }
                 base.prev_scale = scale;
                 base.prev_angle = ang;
+                base.prev_transform_at = Some(now);
             }
             _ => {}
         }
@@ -2847,10 +2798,50 @@ fn angle_delta(a: f64, b: f64) -> f64 {
     d
 }
 
+/// Clamp a relative transform delta using both elapsed time and a hard
+/// per-frame ceiling. A paused sender or dropped frame may otherwise turn a
+/// single report into a visible zoom/rotation jump. The clamp is symmetric,
+/// finite-input only, and preserves the direction of valid motion.
+fn limit_transform_delta(raw: f64, elapsed: Duration, max_rate: f64, max_frame: f64) -> f64 {
+    if !raw.is_finite() || !max_rate.is_finite() || !max_frame.is_finite() {
+        return 0.0;
+    }
+    let dt = elapsed.as_secs_f64().clamp(0.008, 0.100);
+    let limit = (max_rate * dt).abs().min(max_frame.abs());
+    if limit <= 0.0 || !limit.is_finite() {
+        return 0.0;
+    }
+    raw.clamp(-limit, limit)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    #[test]
+    fn transform_delta_filter_is_time_and_frame_bounded() {
+        for millis in [8, 16, 100] {
+            let dt = Duration::from_millis(millis);
+            let expected = (PINCH_MAX_RATE * (millis as f64 / 1000.0))
+                .min(PINCH_MAX_FRAME_DELTA);
+            assert_eq!(
+                limit_transform_delta(1.0, dt, PINCH_MAX_RATE, PINCH_MAX_FRAME_DELTA),
+                expected,
+                "pinch limit at {millis}ms"
+            );
+        }
+        assert_eq!(
+            limit_transform_delta(-1.0, Duration::from_millis(16), PINCH_MAX_RATE, PINCH_MAX_FRAME_DELTA),
+            -0.048
+        );
+        assert_eq!(
+            limit_transform_delta(1.0, Duration::from_millis(16), ROTATE_MAX_RATE_RAD, ROTATE_MAX_FRAME_RAD),
+            0.192
+        );
+        assert!((limit_transform_delta(0.01, Duration::from_millis(16), PINCH_MAX_RATE, PINCH_MAX_FRAME_DELTA) - 0.01).abs() < 1e-9);
+        assert_eq!(limit_transform_delta(f64::NAN, Duration::from_millis(16), PINCH_MAX_RATE, PINCH_MAX_FRAME_DELTA), 0.0);
+    }
 
     struct Recorder {
         log: RefCell<Vec<String>>,
@@ -3324,15 +3315,9 @@ mod tests {
         );
     }
 
-    /// Once locked into pinch-dominant mode, small rotational noise
-    /// must not flip the dominant stream every frame — the user found
-    /// per-frame switching disorienting. The `PINCH_ROTATE_HYSTERESIS`
-    /// gate keeps the locked stream sticky until the other genuinely
-    /// dominates by 1.5×. This synthesizes a clean pinch (0.6% scale
-    /// shrink per frame, well above pinch's lock dead zone) with tiny
-    /// rotational drift that keeps rotate's per-frame strength small
-    /// but non-zero — pinch must stay dominant, no spurious rotate
-    /// Changed events.
+    /// A clean pinch with sub-deadzone rotational noise should not create
+    /// spurious rotate Changed events. The transform deadzone keeps the
+    /// second stream quiet while the admitted pinch stream remains active.
     #[test]
     fn pinch_dominant_stream_stays_sticky_under_rotational_noise() {
         let r = Recorder::default();
@@ -3357,7 +3342,7 @@ mod tests {
         assert!(
             !log.iter()
                 .any(|l| l.starts_with("rotate") && l.contains("Changed")),
-            "rotational noise must not flip dominance — no rotate Changed expected, got: {log:?}"
+            "rotational noise below the deadzone must not emit rotate Changed: {log:?}"
         );
     }
 
@@ -3747,11 +3732,8 @@ mod tests {
         );
     }
 
-    /// Mixed pinch+rotate gesture: pinch dominates the lock frame, but
-    /// rotation dominates subsequent frames — both streams must surface
-    /// in their dominant frames. Per-frame the locked 2F mode switches
-    /// between pinch and rotate based on which signal is stronger
-    /// (normalized by lock thresholds), matching macOS PTP. Reproduces
+    /// Mixed pinch+rotate gesture: both admitted streams must surface
+    /// Changed events throughout the locked session. Reproduces
     /// /tmp/rotate.txt:152-180 — pinch_score=1.52 at lock with a -6%
     /// scale delta, then rot deltas of -3.5°, -3.2°, -2.4° per frame
     /// while pinch deltas drop to -0.01 (rot crosses the dominance
