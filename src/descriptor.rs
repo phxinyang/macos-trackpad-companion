@@ -36,6 +36,7 @@ pub struct Layout {
     pub contact_slots: usize,
     pub bytes_per_contact: usize,
     pub fingers_offset: usize,
+    pub fingers_bit_offset: usize,
     pub scan_time_offset: usize,
     pub contact_count_offset: usize,
     pub button_offset: usize,
@@ -50,6 +51,28 @@ pub struct Layout {
     pub physical_x_max_mm: f64,
     pub physical_y_max_mm: f64,
     pub total_payload_bytes: usize,
+    /// Descriptor-defined bit fields for one contact. When present, the
+    /// report decoder uses these fields instead of assuming a 6-byte layout.
+    pub contact_fields: Option<ContactBitFields>,
+    pub scan_time_field: Option<BitField>,
+    pub contact_count_field: Option<BitField>,
+    pub button_field: Option<BitField>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BitField {
+    pub bit_offset: usize,
+    pub bit_width: u8,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ContactBitFields {
+    pub stride_bits: usize,
+    pub tip: BitField,
+    pub confidence: Option<BitField>,
+    pub id: BitField,
+    pub x: BitField,
+    pub y: BitField,
 }
 
 impl Layout {
@@ -67,11 +90,21 @@ impl Layout {
 
 impl Layout {
     pub fn validate(&self) -> Result<()> {
-        if self.bytes_per_contact != 6 {
+        if self.bytes_per_contact == 0 {
             bail!(
-                "non-standard contact layout: {} bytes/contact (expected 6)",
+                "invalid contact layout: zero bytes/contact ({})",
                 self.bytes_per_contact
             );
+        }
+        if let Some(fields) = self.contact_fields {
+            if fields.stride_bits == 0
+                || fields.tip.bit_width == 0
+                || fields.id.bit_width == 0
+                || fields.x.bit_width == 0
+                || fields.y.bit_width == 0
+            {
+                bail!("descriptor contains an empty contact bit field");
+            }
         }
         Ok(())
     }
@@ -145,17 +178,28 @@ struct FingerBlockBuilder {
     has_id: bool,
     has_x: bool,
     has_y: bool,
+    tip: Option<FieldRef>,
+    confidence: Option<FieldRef>,
+    id: Option<FieldRef>,
+    x: Option<FieldRef>,
+    y: Option<FieldRef>,
 }
 
 #[derive(Debug)]
 struct FingerBlock {
     start_bit: usize,
     end_bit: usize,
+    tip: FieldRef,
+    confidence: Option<FieldRef>,
+    id: FieldRef,
+    x: FieldRef,
+    y: FieldRef,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct FieldRef {
     bit_offset: usize,
+    bit_width: u8,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -276,6 +320,11 @@ impl<'a> Walker<'a> {
                 has_id: false,
                 has_x: false,
                 has_y: false,
+                tip: None,
+                confidence: None,
+                id: None,
+                x: None,
+                y: None,
             });
         }
     }
@@ -295,6 +344,11 @@ impl<'a> Walker<'a> {
             self.finger_blocks.push(FingerBlock {
                 start_bit: builder.start_bit,
                 end_bit,
+                tip: builder.tip.expect("tip flag set with field"),
+                confidence: builder.confidence,
+                id: builder.id.expect("contact id set with field"),
+                x: builder.x.expect("X set with field"),
+                y: builder.y.expect("Y set with field"),
             });
             self.touch_report_id.get_or_insert(self.report_id);
         }
@@ -322,12 +376,14 @@ impl<'a> Walker<'a> {
             let field_bit_offset = start_bit + (i * bit_size as usize);
             let field = FieldRef {
                 bit_offset: field_bit_offset,
+                bit_width: bit_size as u8,
             };
 
             match (page, usage) {
                 (PAGE_GENERIC_DESKTOP, USAGE_GD_X) => {
                     if let Some(b) = self.current_finger_block.as_mut() {
                         b.has_x = true;
+                        b.x = Some(field);
                         if self.logical_x_max.is_none() {
                             self.logical_x_max = Some(self.logical_max);
                             self.physical_x_max_mm =
@@ -338,6 +394,7 @@ impl<'a> Walker<'a> {
                 (PAGE_GENERIC_DESKTOP, USAGE_GD_Y) => {
                     if let Some(b) = self.current_finger_block.as_mut() {
                         b.has_y = true;
+                        b.y = Some(field);
                         if self.logical_y_max.is_none() {
                             self.logical_y_max = Some(self.logical_max);
                             self.physical_y_max_mm =
@@ -348,15 +405,18 @@ impl<'a> Walker<'a> {
                 (PAGE_DIGITIZER, USAGE_DIG_TIP_SWITCH) => {
                     if let Some(b) = self.current_finger_block.as_mut() {
                         b.has_tip = true;
+                        b.tip = Some(field);
                     }
                 }
                 (PAGE_DIGITIZER, USAGE_DIG_CONFIDENCE) => {
-                    // Useful but optional — track if we ever want to filter
-                    // low-confidence contacts.
+                    if let Some(b) = self.current_finger_block.as_mut() {
+                        b.confidence = Some(field);
+                    }
                 }
                 (PAGE_DIGITIZER, USAGE_DIG_CONTACT_ID) => {
                     if let Some(b) = self.current_finger_block.as_mut() {
                         b.has_id = true;
+                        b.id = Some(field);
                     }
                 }
                 (PAGE_DIGITIZER, USAGE_DIG_SCAN_TIME) => {
@@ -468,8 +528,43 @@ impl<'a> Walker<'a> {
             .finger_blocks
             .first()
             .ok_or_else(|| anyhow!("finger collection lacked tip/id/X/Y"))?;
-        let bytes_per_contact = (first.end_bit - first.start_bit) / 8;
+        let stride_bits = first.end_bit - first.start_bit;
+        let bytes_per_contact = stride_bits.div_ceil(8);
         let fingers_offset = first.start_bit / 8;
+
+        let first_fields = ContactBitFields {
+            stride_bits,
+            tip: BitField {
+                bit_offset: first.tip.bit_offset - first.start_bit,
+                bit_width: first.tip.bit_width,
+            },
+            confidence: first.confidence.map(|field| BitField {
+                bit_offset: field.bit_offset - first.start_bit,
+                bit_width: field.bit_width,
+            }),
+            id: BitField {
+                bit_offset: first.id.bit_offset - first.start_bit,
+                bit_width: first.id.bit_width,
+            },
+            x: BitField {
+                bit_offset: first.x.bit_offset - first.start_bit,
+                bit_width: first.x.bit_width,
+            },
+            y: BitField {
+                bit_offset: first.y.bit_offset - first.start_bit,
+                bit_width: first.y.bit_width,
+            },
+        };
+        for block in self.finger_blocks.iter().skip(1) {
+            if block.end_bit - block.start_bit != stride_bits
+                || block.tip.bit_offset - block.start_bit != first_fields.tip.bit_offset
+                || block.id.bit_offset - block.start_bit != first_fields.id.bit_offset
+                || block.x.bit_offset - block.start_bit != first_fields.x.bit_offset
+                || block.y.bit_offset - block.start_bit != first_fields.y.bit_offset
+            {
+                bail!("finger collections use incompatible field layouts");
+            }
+        }
 
         let scan_time = self
             .scan_time
@@ -497,6 +592,7 @@ impl<'a> Walker<'a> {
             contact_slots: self.finger_blocks.len(),
             bytes_per_contact,
             fingers_offset,
+            fingers_bit_offset: first.start_bit,
             scan_time_offset: scan_time.bit_offset / 8,
             contact_count_offset: contact_count.bit_offset / 8,
             button_offset: button.bit_offset / 8,
@@ -506,6 +602,19 @@ impl<'a> Walker<'a> {
             physical_x_max_mm,
             physical_y_max_mm,
             total_payload_bytes: total_bits.div_ceil(8),
+            contact_fields: Some(first_fields),
+            scan_time_field: Some(BitField {
+                bit_offset: scan_time.bit_offset,
+                bit_width: scan_time.bit_width,
+            }),
+            contact_count_field: Some(BitField {
+                bit_offset: contact_count.bit_offset,
+                bit_width: contact_count.bit_width,
+            }),
+            button_field: Some(BitField {
+                bit_offset: button.bit_offset,
+                bit_width: button.bit_width,
+            }),
         };
         layout.validate()?;
         Ok(layout)
