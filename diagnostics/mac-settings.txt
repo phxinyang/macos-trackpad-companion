@@ -67,13 +67,10 @@ Darwin Fmini.local 25.5.0 Darwin Kernel Version 25.5.0: Tue Jun  9 22:26:22 PDT 
 }
 
 === 全局手势设置 (Global Defaults) ===
-TrackpadTwoFingerDoubleTapGesture: 未设置
-TrackpadThreeFingerTapGesture: 未设置
-TrackpadThreeFingerDrag: 未设置
-TrackpadPinch: 未设置
-TrackpadRotate: 未设置
-TrackpadScaling: 未设置
-NaturalScroll: 1
+com.apple.swipescrolldirection: 1
+com.apple.trackpad.scaling: 未设置
+com.apple.scrollwheel.scaling: 0.75
+(The companion reads these global keys via CFPreferences and applies bounded compatibility mappings; missing keys are normal.)
 
 === Dock 手势与 Space 设置 (com.apple.dock) ===
 showMissionControlGestureEnabled: (默认)

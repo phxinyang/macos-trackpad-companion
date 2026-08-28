@@ -11,75 +11,205 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Mac 触控板</title>
+<svg id="liquid-glass-defs" aria-hidden="true" width="0" height="0" style="position:absolute">
+  <defs>
+    <filter id="liquid-glass-filter" x="-12%" y="-24%" width="124%" height="148%" color-interpolation-filters="sRGB">
+      <feImage id="liquid-map" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/5nH8WQAAAABJRU5ErkJggg==" result="liquid-map-source" />
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3.4" result="frosted" />
+      <feDisplacementMap id="liquid-displacement" in="frosted" in2="liquid-map-source" scale="13" xChannelSelector="R" yChannelSelector="G" result="refracted" />
+      <feColorMatrix in="refracted" type="matrix" values="1.08 0 0 0 0  0 1.08 0 0 0  0 0 1.08 0 0  0 0 0 1 0" />
+    </filter>
+  </defs>
+</svg>
 <style>
   :root {
-    --bg-dark: #090a0f;
-    --pad-border: rgba(255, 255, 255, 0.08);
-    --glass-bg: rgba(18, 20, 29, 0.72);
-    --glass-border: rgba(255, 255, 255, 0.12);
-    --accent-blue: #007aff;
-    --accent-green: #3ddc84;
-    --accent-red: #e5484d;
+    color-scheme: light;
+    --canvas: #f4f5f7;
+    --surface: #ffffff;
+    --surface-raised: #ffffff;
+    --chrome: rgba(255, 255, 255, 0.68);
+    --chrome-solid: #ffffff;
+    --separator: rgba(60, 60, 67, 0.18);
+    --label: #1d1d1f;
+    --label-secondary: #6e6e73;
+    --label-tertiary: #86868b;
+    --accent: #007aff;
+    --success: #1e9e5a;
+    --warning: #b86a00;
+    --danger: #c9342f;
+    --glass-edge: rgba(255,255,255,.86);
+    --glass-shadow: 0 14px 44px rgba(33, 37, 44, .16), 0 2px 8px rgba(33, 37, 44, .10);
+    --pad-glass: rgba(255,255,255,.24);
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --shadow-chrome: 0 14px 44px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.22);
+    --ease: cubic-bezier(0.2, 0, 0, 1);
   }
+  html[data-theme="dark-glass"], html[data-theme="classic-dark"] {
+    color-scheme: dark;
+    --canvas: #0b0d12;
+    --surface: #151923;
+    --surface-raised: #1b1f2a;
+    --chrome: rgba(27, 31, 42, .70);
+    --chrome-solid: #1b1f2a;
+    --separator: rgba(255, 255, 255, .14);
+    --label: #f5f7fb;
+    --label-secondary: #aeb6c5;
+    --label-tertiary: #7f8999;
+    --accent: #0a84ff;
+    --success: #30d158;
+    --warning: #ff9f0a;
+    --danger: #ff453a;
+    --glass-edge: rgba(255,255,255,.28);
+    --glass-shadow: 0 14px 44px rgba(0, 0, 0, .34), 0 2px 8px rgba(0, 0, 0, .24);
+    --pad-glass: rgba(18,28,38,.46);
+  }
+  html[data-theme="classic-light"] {
+    --canvas: #f2f2f7; --surface: #ffffff; --surface-raised: #ffffff;
+    --chrome: #ffffff; --chrome-solid: #ffffff; --separator: rgba(60,60,67,.25);
+    --label: #1d1d1f; --label-secondary: #6e6e73; --label-tertiary: #86868b;
+    --accent: #0071e3; --success: #1e9e5a; --warning: #9a5b00; --danger: #c9342f;
+    --glass-edge: rgba(60,60,67,.20); --glass-shadow: 0 5px 18px rgba(0,0,0,.08);
+    --pad-glass: #ffffff;
+  }
+  html[data-theme="high-contrast"] {
+    color-scheme: light;
+    --canvas: #ffffff; --surface: #ffffff; --surface-raised: #ffffff;
+    --chrome: #ffffff; --chrome-solid: #ffffff; --separator: #000000;
+    --label: #000000; --label-secondary: #000000; --label-tertiary: #000000;
+    --accent: #000000; --success: #000000; --warning: #000000; --danger: #000000;
+    --glass-edge: #000000; --glass-shadow: none;
+    --pad-glass: #ffffff;
+  }
+  html[data-theme^="classic-"] #pad-container, html[data-theme="high-contrast"] #pad-container { background-image: none; }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
-    background: var(--bg-dark); touch-action: none; overscroll-behavior: none;
+    background: var(--canvas); touch-action: none; overscroll-behavior: none;
     -webkit-user-select: none; user-select: none;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    color: var(--label);
+    -webkit-font-smoothing: antialiased;
   }
   #pad-container {
     position: fixed; inset: 0;
-    background: radial-gradient(circle at 50% 30%, #171926 0%, #090a0f 85%);
+    background-color: var(--canvas);
+    background-image: linear-gradient(115deg, rgba(255,255,255,.18), transparent 28%, transparent 72%, rgba(10,132,255,.05)), linear-gradient(155deg, rgba(72,150,255,.18) 0 18%, transparent 36% 68%, rgba(255,160,92,.16) 82% 100%), repeating-linear-gradient(0deg, rgba(127,127,127,.035) 0 1px, transparent 1px 18px);
     cursor: none;
   }
+  html[data-theme="dark-glass"] #pad-container { background-image: linear-gradient(115deg, rgba(255,255,255,.08), transparent 28%, transparent 72%, rgba(10,132,255,.12)), linear-gradient(155deg, rgba(39,145,216,.32) 0 18%, transparent 36% 68%, rgba(255,112,72,.22) 82% 100%), repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0 1px, transparent 1px 18px); }
   #pad-canvas {
     position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
   }
   #pad-frame {
-    position: absolute; left: 6%; right: 6%; top: 8%; bottom: 8%;
-    border-radius: 24px; border: 1.5px solid var(--pad-border);
-    box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.8), 0 8px 32px rgba(0, 0, 0, 0.4);
-    pointer-events: none;
+    position: absolute; left: 18px; right: 18px; top: 84px; bottom: 92px;
+    border-radius: var(--radius-lg); border: 1px solid rgba(255, 255, 255, 0.14);
+    background: var(--pad-glass);
+    backdrop-filter: blur(18px) saturate(1.18); -webkit-backdrop-filter: blur(18px) saturate(1.18);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.30), inset 0 -30px 64px rgba(0, 0, 0, 0.08), 0 14px 40px rgba(28,37,46,.10);
+    pointer-events: none; --lens-x: 50%; --lens-y: 50%;
   }
+  #pad-frame::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(118deg, transparent 12%, rgba(255,255,255,.25) 40%, transparent 58%); background-size: 220% 100%; animation: glass-sheen 9s var(--ease) infinite alternate; }
+  #pad-frame::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(circle at var(--lens-x) var(--lens-y), rgba(255,255,255,.32), transparent 26%); opacity: .55; mix-blend-mode: screen; }
+  @keyframes glass-sheen { from { background-position: 100% 0; } to { background-position: 0 0; } }
+  html[data-theme^="classic-"] #pad-frame, html[data-theme="high-contrast"] #pad-frame { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--separator); }
   #bar {
-    position: fixed; left: 16px; right: 16px; top: calc(env(safe-area-inset-top) + 12px);
+    position: fixed; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + 10px);
     display: flex; align-items: center; gap: 10px;
-    padding: 8px 16px; border-radius: 16px;
-    background: var(--glass-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    border: 1px solid var(--glass-border);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
-    color: #eee; font-size: 13px; z-index: 100; transition: opacity 0.25s, transform 0.25s;
+    min-height: 58px; padding: 8px 10px 8px 14px; border-radius: var(--radius-md);
+    background: var(--chrome); backdrop-filter: blur(22px) saturate(1.18); -webkit-backdrop-filter: blur(22px) saturate(1.18);
+    border: 1px solid var(--separator);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge);
+    color: var(--label); font-size: 13px; z-index: 100; transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+    --lens-x: 50%; --lens-y: 50%;
   }
+  #bar::after, #action-dock::after { content: ""; position: absolute; inset: 1px; pointer-events: none; border-radius: inherit; background: radial-gradient(circle at var(--lens-x, 50%) var(--lens-y, 50%), rgba(255,255,255,.30), transparent 38%); opacity: .55; mix-blend-mode: screen; }
+  #bar > *, #action-dock > * { position: relative; z-index: 1; }
   #bar.hidden { opacity: 0; transform: translateY(-30px); pointer-events: none; }
-  #dot { width: 8px; height: 8px; border-radius: 50%; background: #666; flex: none; transition: background 0.3s; }
-  #dot.on { background: var(--accent-green); box-shadow: 0 0 8px var(--accent-green); }
-  #dot.off { background: var(--accent-red); }
-  #st { font-weight: 500; letter-spacing: 0.2px; }
+  .brand-mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; color: var(--accent); background: rgba(10, 132, 255, 0.14); position: relative; }
+  .brand-mark::before { content: ""; width: 14px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; position: absolute; top: 8px; left: 7px; }
+  .brand-mark::after { content: ""; width: 8px; height: 1.5px; border-radius: 2px; background: currentColor; position: absolute; top: 20px; left: 10px; }
+  .status-stack { display: grid; gap: 1px; min-width: 0; }
+  .eyebrow { color: var(--label-tertiary); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+  #dot { width: 8px; height: 8px; border-radius: 50%; background: var(--label-tertiary); flex: none; transition: background 180ms var(--ease), box-shadow 180ms var(--ease); }
+  #dot.on { background: var(--success); box-shadow: 0 0 0 4px rgba(48, 209, 88, .14); }
+  #dot.off { background: var(--danger); box-shadow: 0 0 0 4px rgba(255, 69, 58, .14); }
+  #st { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sp { flex: 1; }
+  #host-hint { color: var(--label-tertiary); font-size: 11px; white-space: nowrap; }
   .btn {
-    border: 1px solid var(--glass-border); border-radius: 10px;
-    background: rgba(255, 255, 255, 0.08); color: #fff;
-    padding: 6px 12px; font-size: 13px; font-weight: 500;
+    min-height: 42px; border: 1px solid var(--separator); border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.07); color: var(--label);
+    padding: 0 13px; font-size: 13px; font-weight: 600;
     cursor: pointer; display: flex; align-items: center; gap: 4px;
-    transition: background 0.15s, transform 0.1s;
+    text-decoration: none; touch-action: manipulation; transition: background 140ms var(--ease), transform 120ms var(--ease), border-color 140ms var(--ease);
   }
-  .btn:active { background: rgba(255, 255, 255, 0.2); transform: scale(0.96); }
+  .btn:hover { background: rgba(255, 255, 255, 0.12); }
+  .btn:active { background: rgba(255, 255, 255, 0.18); transform: scale(0.96); }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(10, 132, 255, .35); }
+  .btn-label { white-space: nowrap; }
   #float-btn {
-    position: fixed; right: 16px; top: calc(env(safe-area-inset-top) + 12px);
-    border-radius: 20px; padding: 6px 14px; font-size: 12px;
-    background: var(--glass-bg); border: 1px solid var(--glass-border);
-    color: rgba(255, 255, 255, 0.7); backdrop-filter: blur(12px);
+    position: fixed; right: 16px; top: calc(env(safe-area-inset-top) + 14px);
+    min-height: 42px; border-radius: var(--radius-md); padding: 0 15px; font-size: 12px;
+    background: var(--chrome); border: 1px solid var(--separator);
+    color: var(--label); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
     z-index: 99; opacity: 0.6; transition: opacity 0.2s;
   }
   #float-btn:active { opacity: 1; }
   #edge-hint {
-    position: absolute; right: 0; top: 15%; bottom: 15%; width: 18px;
-    border-radius: 9px 0 0 9px;
-    background: linear-gradient(to left, rgba(0, 122, 255, 0.15), transparent);
-    border-right: 2px solid rgba(0, 122, 255, 0.35);
+    position: absolute; right: 0; top: 28%; bottom: 28%; width: 4px;
+    border-radius: 4px 0 0 4px;
+    background: rgba(10, 132, 255, .7);
     pointer-events: none;
-    display: flex; align-items: center; justify-content: center;
+    opacity: .55;
+  }
+  #action-dock {
+    position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 12px);
+    min-height: 58px; padding: 8px; display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--chrome); backdrop-filter: blur(22px) saturate(1.18); -webkit-backdrop-filter: blur(22px) saturate(1.18);
+    border: 1px solid var(--separator); border-radius: var(--radius-md); box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge); z-index: 100; --lens-x: 50%; --lens-y: 50%;
+  }
+  html[data-theme^="classic-"] #bar, html[data-theme^="classic-"] #action-dock,
+  html[data-theme="high-contrast"] #bar, html[data-theme="high-contrast"] #action-dock {
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  html[data-theme^="classic-"] #bar, html[data-theme^="classic-"] #action-dock,
+  html[data-theme="high-contrast"] #bar, html[data-theme="high-contrast"] #action-dock { box-shadow: var(--glass-shadow); }
+  html.has-liquid-filter[data-theme$="glass"] #bar,
+  html.has-liquid-filter[data-theme$="glass"] #action-dock {
+    backdrop-filter: url("#liquid-glass-filter") blur(22px) saturate(1.18);
+    -webkit-backdrop-filter: blur(22px) saturate(1.18);
+  }
+  html.has-liquid-filter[data-theme$="glass"] #pad-frame {
+    backdrop-filter: url("#liquid-glass-filter") blur(18px) saturate(1.18);
+    -webkit-backdrop-filter: blur(18px) saturate(1.18);
+  }
+  .dock-group { display: flex; align-items: center; gap: 4px; }
+  .dock-divider { width: 1px; height: 26px; background: var(--separator); margin: 0 4px; }
+  .dock-btn { min-width: 42px; min-height: 42px; border: 0; border-radius: 10px; background: transparent; color: var(--label); font: inherit; font-weight: 650; cursor: pointer; touch-action: manipulation; transition: background 140ms var(--ease), transform 120ms var(--ease); }
+  .dock-btn:hover { background: rgba(255, 255, 255, .08); }
+  .dock-btn:active { background: rgba(255, 255, 255, .14); transform: scale(.94); }
+  .dock-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(10, 132, 255, .35); }
+  #scale-value { min-width: 62px; text-align: center; color: var(--label-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
+  #haptic-btn[data-on="false"] { color: var(--label-tertiary); }
+  .dock-caption { color: var(--label-tertiary); font-size: 11px; padding: 0 5px; white-space: nowrap; }
+  #theme-menu { position: fixed; top: calc(env(safe-area-inset-top) + 76px); right: 14px; z-index: 180; display: grid; gap: 3px; min-width: 178px; padding: 7px; border: 1px solid var(--separator); border-radius: 14px; background: var(--chrome); box-shadow: var(--glass-shadow); backdrop-filter: blur(22px) saturate(1.18); -webkit-backdrop-filter: blur(22px) saturate(1.18); }
+  #theme-menu[hidden] { display: none; }
+  #theme-menu button { min-height: 40px; padding: 0 11px; border-radius: 9px; border: 0; background: transparent; color: var(--label); text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
+  #theme-menu button:hover, #theme-menu button[aria-checked="true"] { background: rgba(127,127,127,.14); }
+  @media (max-width: 620px) {
+    #host-hint, #bar .diagnostic { display: none; }
+    #bar { left: 8px; right: 8px; }
+    #pad-frame { left: 10px; right: 10px; top: 78px; bottom: 86px; }
+    #action-dock { left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 8px); justify-content: flex-start; overflow-x: auto; }
+    .dock-caption { display: none; }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    #bar, #action-dock, #float-btn, #theme-menu, #pad-frame { background: var(--chrome-solid); backdrop-filter: none; -webkit-backdrop-filter: none; filter: none !important; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   }
 </style>
 </head>
@@ -91,35 +221,123 @@
 </div>
 
 <div id="bar">
+  <div class="brand-mark" aria-hidden="true"></div>
   <span id="dot"></span>
-  <span id="st">连接中…</span>
+  <div class="status-stack"><span class="eyebrow">Mac touchpad</span><span id="st">连接中…</span></div>
   <span class="sp"></span>
-  <a class="btn" href="/test" style="text-decoration:none; color:inherit;">🛠 诊断测试</a>
-  <button class="btn" id="haptic-btn">震动: 开</button>
-  <button class="btn" id="fs-btn">⛶ 全屏</button>
-  <button class="btn" id="smaller">A−</button>
-  <button class="btn" id="bigger">A＋</button>
+  <span id="host-hint"></span>
+  <a class="btn diagnostic" href="/test" aria-label="打开手势诊断测试"><span aria-hidden="true">⌘</span><span class="btn-label">测试</span></a>
+  <button class="btn" id="theme-btn" aria-label="切换主题" aria-expanded="false"><span aria-hidden="true">◐</span><span class="btn-label">主题</span></button>
+  <button class="btn" id="fs-btn" aria-label="进入全屏"><span aria-hidden="true">⛶</span><span class="btn-label">全屏</span></button>
 </div>
 
-<button id="float-btn" style="display:none;">⚙ 设置</button>
+<nav id="action-dock" aria-label="触控板控制">
+  <div class="dock-group" aria-label="灵敏度">
+    <span class="dock-caption">灵敏度</span>
+    <button class="dock-btn" id="smaller" aria-label="降低灵敏度">−</button>
+    <span id="scale-value">100%</span>
+    <button class="dock-btn" id="bigger" aria-label="提高灵敏度">＋</button>
+  </div>
+  <span class="dock-divider" aria-hidden="true"></span>
+  <button class="dock-btn" id="haptic-btn" data-on="true" aria-pressed="true">震动开</button>
+  <button class="dock-btn" id="pad-status-btn" aria-label="查看连接状态">连接状态</button>
+</nav>
+
+<button id="float-btn" style="display:none;" aria-label="退出全屏">设置</button>
+<div id="theme-menu" role="menu" hidden aria-label="外观主题">
+  <button type="button" role="menuitemradio" data-theme-choice="light-glass" aria-checked="true">浅色玻璃</button>
+  <button type="button" role="menuitemradio" data-theme-choice="dark-glass" aria-checked="false">深色玻璃</button>
+  <button type="button" role="menuitemradio" data-theme-choice="classic-light" aria-checked="false">经典浅色</button>
+  <button type="button" role="menuitemradio" data-theme-choice="classic-dark" aria-checked="false">经典深色</button>
+  <button type="button" role="menuitemradio" data-theme-choice="high-contrast" aria-checked="false">高对比</button>
+</div>
 
 <script>
 "use strict";
 (() => {
   const MM_PER_CSS_PX = 25.4 / 96;
   const $ = id => document.getElementById(id);
-  const dot = $("dot"), st = $("st"), bar = $("bar"), floatBtn = $("float-btn");
+  const dot = $("dot"), st = $("st"), bar = $("bar"), dock = $("action-dock"), floatBtn = $("float-btn");
+  const hostHint = $("host-hint"), padStatusBtn = $("pad-status-btn"), padFrame = $("pad-frame");
   const canvas = $("pad-canvas"), ctx = canvas.getContext("2d");
+  const themeBtn = $("theme-btn"), themeMenu = $("theme-menu");
+
+  const theme = localStorage.getItem("atp_theme") || "light-glass";
+  document.documentElement.dataset.theme = theme;
+  function syncThemeMenu() {
+    themeMenu.querySelectorAll("[data-theme-choice]").forEach(button => {
+      button.setAttribute("aria-checked", String(button.dataset.themeChoice === document.documentElement.dataset.theme));
+    });
+  }
+  syncThemeMenu();
+  themeBtn.onclick = () => {
+    const open = themeMenu.hidden;
+    themeMenu.hidden = !open;
+    themeBtn.setAttribute("aria-expanded", String(open));
+  };
+  themeMenu.querySelectorAll("[data-theme-choice]").forEach(button => button.onclick = () => {
+    const next = button.dataset.themeChoice;
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("atp_theme", next);
+    themeMenu.hidden = true;
+    themeBtn.setAttribute("aria-expanded", "false");
+    syncThemeMenu();
+  });
+  document.addEventListener("pointerdown", event => {
+    if (!themeMenu.hidden && !themeMenu.contains(event.target) && event.target !== themeBtn) {
+      themeMenu.hidden = true;
+      themeBtn.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  // Geometry-derived displacement map adapted from the MIT-licensed
+  // PallavAg/liquid-glass-web-react approach: a neutral center and a
+  // signed radial edge field, consumed by feDisplacementMap above.
+  function buildLiquidMap() {
+    const map = document.createElement("canvas");
+    const size = 128;
+    map.width = map.height = size;
+    const mapCtx = map.getContext("2d");
+    const image = mapCtx.createImageData(size, size);
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      const nx = (x + .5) / size * 2 - 1;
+      const ny = (y + .5) / size * 2 - 1;
+      const r = Math.min(1, Math.hypot(nx, ny));
+      const edge = Math.max(0, (r - .52) / .48);
+      const falloff = edge * edge * (3 - 2 * edge);
+      const i = (y * size + x) * 4;
+      image.data[i] = 128 + Math.round(nx * 34 * falloff);
+      image.data[i + 1] = 128 + Math.round(ny * 34 * falloff);
+      image.data[i + 2] = 196;
+      image.data[i + 3] = 255;
+    }
+    mapCtx.putImageData(image, 0, 0);
+    const imageNode = document.getElementById("liquid-map");
+    imageNode.setAttributeNS("http://www.w3.org/1999/xlink", "href", map.toDataURL("image/png"));
+    imageNode.setAttribute("href", map.toDataURL("image/png"));
+    document.documentElement.classList.add("has-liquid-filter");
+  }
+  // Generate once even when a browser does not expose SVG backdrop filters;
+  // Chromium can use the full lens path, while Safari/Firefox retain the
+  // readable blur fallback defined in CSS.
+  buildLiquidMap();
 
   let scale = parseFloat(localStorage.getItem("atp_scale") || "1") || 1;
   let hapticEnabled = localStorage.getItem("atp_haptic") !== "false";
 
   const clampScale = () => { scale = Math.min(1.6, Math.max(0.55, scale)); };
-  $("smaller").onclick = () => { scale /= 1.15; clampScale(); save(); };
-  $("bigger").onclick  = () => { scale *= 1.15; clampScale(); save(); };
+  const scaleValue = $("scale-value");
+  const updateScale = () => { scaleValue.textContent = `${Math.round(scale * 100)}%`; };
+  $("smaller").onclick = () => { scale /= 1.15; clampScale(); save(); updateScale(); };
+  $("bigger").onclick  = () => { scale *= 1.15; clampScale(); save(); updateScale(); };
+  updateScale();
 
   const hapticBtn = $("haptic-btn");
-  const updateHapticBtn = () => { hapticBtn.textContent = hapticEnabled ? "震动: 开" : "震动: 关"; };
+  const updateHapticBtn = () => {
+    hapticBtn.textContent = hapticEnabled ? "震动开" : "震动关";
+    hapticBtn.dataset.on = String(hapticEnabled);
+    hapticBtn.setAttribute("aria-pressed", String(hapticEnabled));
+  };
   updateHapticBtn();
   hapticBtn.onclick = () => {
     hapticEnabled = !hapticEnabled;
@@ -134,16 +352,25 @@
   function toggleFullscreen(fs) {
     if (fs) {
       bar.classList.add("hidden");
+      dock.style.display = "none";
       floatBtn.style.display = "block";
       try { document.documentElement.requestFullscreen(); } catch (_) {}
     } else {
       bar.classList.remove("hidden");
+      dock.style.display = "flex";
       floatBtn.style.display = "none";
       try { if (document.fullscreenElement) document.exitFullscreen(); } catch (_) {}
     }
   }
   $("fs-btn").onclick = () => toggleFullscreen(true);
   floatBtn.onclick = () => toggleFullscreen(false);
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement && !bar.classList.contains("hidden")) return;
+    const active = Boolean(document.fullscreenElement);
+    bar.classList.toggle("hidden", active);
+    dock.style.display = active ? "none" : "flex";
+    floatBtn.style.display = active ? "block" : "none";
+  });
 
   function vibrate(pattern) {
     if (hapticEnabled && navigator.vibrate) {
@@ -155,6 +382,7 @@
   function resizeCanvas() {
     canvas.width = window.innerWidth * window.devicePixelRatio;
     canvas.height = window.innerHeight * window.devicePixelRatio;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
   }
   window.addEventListener("resize", resizeCanvas);
@@ -168,10 +396,10 @@
     if (n === 0) return;
 
     const colors = {
-      1: { stroke: "#00E5FF", fill: "rgba(0, 229, 255, 0.15)" },
-      2: { stroke: "#A855F7", fill: "rgba(168, 85, 247, 0.15)" },
-      3: { stroke: "#10B981", fill: "rgba(16, 185, 129, 0.15)" },
-      4: { stroke: "#F59E0B", fill: "rgba(245, 158, 11, 0.15)" }
+      1: { stroke: "#0A84FF", fill: "rgba(10, 132, 255, 0.17)" },
+      2: { stroke: "#BF5AF2", fill: "rgba(191, 90, 242, 0.16)" },
+      3: { stroke: "#30D158", fill: "rgba(48, 209, 88, 0.16)" },
+      4: { stroke: "#FF9F0A", fill: "rgba(255, 159, 10, 0.16)" }
     };
     const curColor = colors[Math.min(n, 4)] || colors[4];
 
@@ -231,6 +459,9 @@
   function setStatus(state) {
     dot.className = state === "on" ? "on" : state === "off" ? "off" : "";
     st.textContent = state === "on" ? "已连接" : state === "off" ? "断开" : "连接中…";
+    padStatusBtn.textContent = state === "on" ? "已连接" : state === "off" ? "重试连接" : "连接中";
+    padStatusBtn.setAttribute("aria-label", state === "off" ? "重试连接" : "连接状态");
+    padStatusBtn.dataset.state = state;
   }
   function connect() {
     setStatus("wait");
@@ -251,6 +482,10 @@
   function sendRaw(data) { if (ws && ws.readyState === 1) { try { ws.send(data); } catch (_) {} } }
 
   connect();
+  hostHint.textContent = location.host;
+  padStatusBtn.onclick = () => {
+    if (padStatusBtn.dataset.state === "off") connect();
+  };
   setInterval(() => sendRaw("p"), 15000);            // keepalive text ping
 
   // ---- Touch Capture --------------------------------------------------
@@ -314,6 +549,7 @@
 
   pad.addEventListener("pointerdown", e => {
     e.preventDefault(); wake();
+    try { pad.setPointerCapture(e.pointerId); } catch (_) {}
     if (pointers.size === 0) {
       touchStartTime = performance.now();
       maxFingers = 1;
@@ -324,6 +560,11 @@
     pointers.set(e.pointerId, cid);
     pos.set(e.pointerId, toMm(e));
     visualTouches.set(e.pointerId, { x: e.clientX, y: e.clientY, cid });
+    const px = `${Math.round((e.clientX / window.innerWidth) * 100)}%`;
+    const py = `${Math.round((e.clientY / window.innerHeight) * 100)}%`;
+    bar.style.setProperty("--lens-x", px); bar.style.setProperty("--lens-y", py);
+    dock.style.setProperty("--lens-x", px); dock.style.setProperty("--lens-y", py);
+    padFrame.style.setProperty("--lens-x", px); padFrame.style.setProperty("--lens-y", py);
     if (pointers.size > maxFingers) maxFingers = pointers.size;
 
     sendRaw(encodeFrame(snapshot()));
@@ -335,12 +576,18 @@
     if (!pointers.has(e.pointerId)) return;
     pos.set(e.pointerId, toMm(e));
     visualTouches.set(e.pointerId, { x: e.clientX, y: e.clientY, cid: pointers.get(e.pointerId) });
+    const px = `${Math.round((e.clientX / window.innerWidth) * 100)}%`;
+    const py = `${Math.round((e.clientY / window.innerHeight) * 100)}%`;
+    bar.style.setProperty("--lens-x", px); bar.style.setProperty("--lens-y", py);
+    dock.style.setProperty("--lens-x", px); dock.style.setProperty("--lens-y", py);
+    padFrame.style.setProperty("--lens-x", px); padFrame.style.setProperty("--lens-y", py);
     if (pointers.size > maxFingers) maxFingers = pointers.size;
     kick();
   }, { passive: false });
 
   function releasePointer(e) {
     if (!pointers.has(e.pointerId)) return;
+    try { pad.releasePointerCapture(e.pointerId); } catch (_) {}
     releaseCid(pointers.get(e.pointerId));
     pointers.delete(e.pointerId);
     pos.delete(e.pointerId);

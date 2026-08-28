@@ -17,7 +17,7 @@ const GLOBAL_DOMAIN: &str = ".GlobalPreferences";
 const GLOBAL_NATURAL_SCROLL_KEY: &str = "com.apple.swipescrolldirection";
 const GLOBAL_TRACKPAD_SCALING_KEY: &str = "com.apple.trackpad.scaling";
 const GLOBAL_SCROLLWHEEL_SCALING_KEY: &str = "com.apple.scrollwheel.scaling";
-const KNOWN_QUARTZ_MODIFIER_MASK: u64 = 0x00FF_0000;
+const KNOWN_QUARTZ_MODIFIER_MASK: u64 = crate::scroll_policy::SUPPORTED_ZOOM_MODIFIER_MASK;
 
 /// Keys collected for diagnostics. A key can be reported even when the
 /// current companion build cannot faithfully reproduce its hardware/system
@@ -56,10 +56,7 @@ pub const KNOWN_KEYS: &[&str] = &[
 /// preference panes. Their numeric domains are not a stable public API, so
 /// normalization below deliberately applies bounded compatibility mappings.
 #[cfg(target_os = "macos")]
-const GLOBAL_SCALAR_KEYS: &[&str] = &[
-    GLOBAL_TRACKPAD_SCALING_KEY,
-    GLOBAL_SCROLLWHEEL_SCALING_KEY,
-];
+const GLOBAL_SCALAR_KEYS: &[&str] = &[GLOBAL_TRACKPAD_SCALING_KEY, GLOBAL_SCROLLWHEEL_SCALING_KEY];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PreferenceValue {
@@ -297,9 +294,14 @@ pub fn normalize(raw: &RawTrackpadPreferences) -> NormalizedTrackpadPolicy {
         .and_then(PreferenceValue::as_i64)
         .map(|v| v != 0)
         .or_else(|| bool01(raw, "TrackpadScrollNatural", &mut policy.unsupported));
-    if let Some(value) = raw.value("HIDScrollZoomModifierMask").and_then(PreferenceValue::as_i64) {
+    if let Some(value) = raw
+        .value("HIDScrollZoomModifierMask")
+        .and_then(PreferenceValue::as_i64)
+    {
         if value < 0 {
-            policy.unsupported.push(format!("HIDScrollZoomModifierMask={value} (negative)"));
+            policy
+                .unsupported
+                .push(format!("HIDScrollZoomModifierMask={value} (negative)"));
         } else {
             let raw_mask = value as u64;
             let unknown = raw_mask & !KNOWN_QUARTZ_MODIFIER_MASK;
@@ -549,6 +551,17 @@ fn merge_policy(cfg: &mut Config, policy: &NormalizedTrackpadPolicy, report: &mu
     }
 }
 
+fn policy_for_mode(raw: &RawTrackpadPreferences, virtual_input: bool) -> NormalizedTrackpadPolicy {
+    let mut policy = normalize(raw);
+    if virtual_input {
+        // The native `Clicking` preference is not meaningful for a phone or
+        // browser surface. `merge_policy` still sees explicit TOML, so users
+        // can opt out with `gestures.tap_to_click = "off"`.
+        policy.tap_to_click = None;
+    }
+    policy
+}
+
 #[cfg(target_os = "macos")]
 fn read_value(domain: &str, key: &str) -> Option<PreferenceValue> {
     use core_foundation::base::{CFType, TCFType};
@@ -605,7 +618,8 @@ pub fn read_raw() -> RawTrackpadPreferences {
             raw.insert(key, value, FALLBACK_DOMAIN);
         }
     }
-    for key in std::iter::once(GLOBAL_NATURAL_SCROLL_KEY).chain(GLOBAL_SCALAR_KEYS.iter().copied()) {
+    for key in std::iter::once(GLOBAL_NATURAL_SCROLL_KEY).chain(GLOBAL_SCALAR_KEYS.iter().copied())
+    {
         if let Some(value) = read_value(GLOBAL_DOMAIN, key) {
             raw.global_domain_available = true;
             raw.insert(key, value, GLOBAL_DOMAIN);
@@ -614,9 +628,25 @@ pub fn read_raw() -> RawTrackpadPreferences {
     raw
 }
 
-/// Read and merge preferences. This function is intentionally infallible:
-/// preferences are advisory defaults, never a reason to fail startup.
+/// Read and merge preferences for the local HID input path. This function is
+/// intentionally infallible: preferences are advisory defaults, never a
+/// reason to fail startup.
 pub fn apply(cfg: &mut Config) -> SyncReport {
+    apply_with_mode(cfg, false)
+}
+
+/// Read and merge preferences for a network/virtual input surface.
+///
+/// `Clicking` belongs to Apple's physical trackpad driver. A Mac mini can
+/// retain that preference domain even though no trackpad is attached, and a
+/// virtual phone surface has no physical click switch to mirror. Keep the
+/// companion default (`tap_to_click = on`) in that mode while still honoring
+/// an explicit TOML setting.
+pub fn apply_for_virtual_input(cfg: &mut Config) -> SyncReport {
+    apply_with_mode(cfg, true)
+}
+
+fn apply_with_mode(cfg: &mut Config, virtual_input: bool) -> SyncReport {
     let mut report = SyncReport {
         enabled: cfg.macos.sync_system_settings,
         ..SyncReport::default()
@@ -629,7 +659,7 @@ pub fn apply(cfg: &mut Config) -> SyncReport {
     let raw = read_raw();
     #[cfg(not(target_os = "macos"))]
     let raw = RawTrackpadPreferences::default();
-    let policy = normalize(&raw);
+    let policy = policy_for_mode(&raw, virtual_input);
     report.raw_values = raw.values.len();
     report.trackpad_domain_available = raw.trackpad_domain_available();
     report.global_domain_available = raw.global_domain_available();
@@ -640,9 +670,7 @@ pub fn apply(cfg: &mut Config) -> SyncReport {
     #[cfg(target_os = "macos")]
     {
         if !raw.trackpad_domain_available {
-            log::info!(
-                "macOS trackpad preference domain unavailable; using TOML/default values"
-            );
+            log::info!("macOS trackpad preference domain unavailable; using TOML/default values");
         }
         if raw.value(GLOBAL_TRACKPAD_SCALING_KEY).is_none() {
             log::debug!(
@@ -650,13 +678,15 @@ pub fn apply(cfg: &mut Config) -> SyncReport {
             );
         }
         if raw.value(GLOBAL_SCROLLWHEEL_SCALING_KEY).is_none() {
-            log::debug!(
-                "no macOS scroll speed preference; keeping scroll.sensitivity default"
-            );
+            log::debug!("no macOS scroll speed preference; keeping scroll.sensitivity default");
         }
-        if raw.value("Clicking") == Some(PreferenceValue::Integer(0))
-            || raw.value("Clicking") == Some(PreferenceValue::Boolean(false))
-        {
+        let clicking_disabled = raw.value("Clicking") == Some(PreferenceValue::Integer(0))
+            || raw.value("Clicking") == Some(PreferenceValue::Boolean(false));
+        if virtual_input && clicking_disabled {
+            log::info!(
+                "macOS Clicking=0 belongs to the physical trackpad driver; keeping virtual-input tap-to-click enabled unless TOML explicitly disables it"
+            );
+        } else if clicking_disabled {
             log::warn!(
                 "macOS Tap to click is disabled (Clicking=0); phone taps will not emit left clicks unless TOML explicitly enables gestures.tap_to_click"
             );
@@ -778,10 +808,12 @@ mod tests {
         )]);
         let policy = normalize(&raw);
         assert_eq!(policy.modifier_zoom_mask, Some(0x0004_0000));
-        assert!(policy
-            .unsupported
-            .iter()
-            .any(|entry| entry.contains("unknown bits=0x1000000")));
+        assert!(
+            policy
+                .unsupported
+                .iter()
+                .any(|entry| entry.contains("unknown bits=0x1000000"))
+        );
 
         let negative = RawTrackpadPreferences::from_pairs(&[(
             "HIDScrollZoomModifierMask",
@@ -789,14 +821,22 @@ mod tests {
         )]);
         let policy = normalize(&negative);
         assert_eq!(policy.modifier_zoom_mask, None);
-        assert!(policy.unsupported.iter().any(|entry| entry.contains("negative")));
+        assert!(
+            policy
+                .unsupported
+                .iter()
+                .any(|entry| entry.contains("negative"))
+        );
     }
 
     #[test]
     fn scaling_keys_use_bounded_compatibility_mapping() {
         let raw = RawTrackpadPreferences::from_pairs(&[
             (GLOBAL_TRACKPAD_SCALING_KEY, PreferenceValue::Float(1.0)),
-            (GLOBAL_SCROLLWHEEL_SCALING_KEY, PreferenceValue::Float(0.6875)),
+            (
+                GLOBAL_SCROLLWHEEL_SCALING_KEY,
+                PreferenceValue::Float(0.6875),
+            ),
         ]);
         let policy = normalize(&raw);
         assert_eq!(policy.cursor_sensitivity, Some(28.0));
@@ -822,16 +862,23 @@ mod tests {
                 GLOBAL_TRACKPAD_SCALING_KEY,
                 PreferenceValue::Float(f64::NAN),
             ),
-            (
-                GLOBAL_SCROLLWHEEL_SCALING_KEY,
-                PreferenceValue::Integer(-1),
-            ),
+            (GLOBAL_SCROLLWHEEL_SCALING_KEY, PreferenceValue::Integer(-1)),
         ]);
         let policy = normalize(&raw);
         assert_eq!(policy.cursor_sensitivity, None);
         assert_eq!(policy.scroll_sensitivity, None);
-        assert!(policy.unsupported.iter().any(|x| x.contains("trackpad.scaling")));
-        assert!(policy.unsupported.iter().any(|x| x.contains("scrollwheel.scaling")));
+        assert!(
+            policy
+                .unsupported
+                .iter()
+                .any(|x| x.contains("trackpad.scaling"))
+        );
+        assert!(
+            policy
+                .unsupported
+                .iter()
+                .any(|x| x.contains("scrollwheel.scaling"))
+        );
     }
 
     #[test]
@@ -847,7 +894,10 @@ mod tests {
         .unwrap();
         let raw = RawTrackpadPreferences::from_pairs(&[
             (GLOBAL_TRACKPAD_SCALING_KEY, PreferenceValue::Integer(3)),
-            (GLOBAL_SCROLLWHEEL_SCALING_KEY, PreferenceValue::Float(1.375)),
+            (
+                GLOBAL_SCROLLWHEEL_SCALING_KEY,
+                PreferenceValue::Float(1.375),
+            ),
         ]);
         let policy = normalize(&raw);
         let mut report = SyncReport {
@@ -857,8 +907,16 @@ mod tests {
         merge_policy(&mut cfg, &policy, &mut report);
         assert_eq!(cfg.cursor.sensitivity, 41.0);
         assert_eq!(cfg.scroll.sensitivity, 11.0);
-        assert!(report.explicit_overrides.contains(&"cursor.sensitivity".to_string()));
-        assert!(report.explicit_overrides.contains(&"scroll.sensitivity".to_string()));
+        assert!(
+            report
+                .explicit_overrides
+                .contains(&"cursor.sensitivity".to_string())
+        );
+        assert!(
+            report
+                .explicit_overrides
+                .contains(&"scroll.sensitivity".to_string())
+        );
     }
 
     #[test]
@@ -870,10 +928,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let raw = RawTrackpadPreferences::from_pairs(&[(
-            "Clicking",
-            PreferenceValue::Integer(0),
-        )]);
+        let raw = RawTrackpadPreferences::from_pairs(&[("Clicking", PreferenceValue::Integer(0))]);
         let policy = normalize(&raw);
         let mut report = SyncReport {
             enabled: true,
@@ -881,9 +936,11 @@ mod tests {
         };
         merge_policy(&mut cfg, &policy, &mut report);
         assert_eq!(cfg.gestures.tap_to_click, GestureEnable::On);
-        assert!(report
-            .explicit_overrides
-            .contains(&"gestures.tap_to_click".to_string()));
+        assert!(
+            report
+                .explicit_overrides
+                .contains(&"gestures.tap_to_click".to_string())
+        );
     }
 
     #[test]
@@ -899,5 +956,37 @@ mod tests {
         assert!(report.unsupported.is_empty());
         assert_eq!(cfg.cursor.sensitivity, 28.0);
         assert_eq!(cfg.scroll.sensitivity, 20.0);
+    }
+
+    #[test]
+    fn virtual_input_keeps_tap_to_click_default() {
+        let mut cfg = Config::default();
+        let raw = RawTrackpadPreferences::from_pairs(&[("Clicking", PreferenceValue::Integer(0))]);
+        let policy = policy_for_mode(&raw, true);
+        let mut report = SyncReport {
+            enabled: true,
+            ..SyncReport::default()
+        };
+        merge_policy(&mut cfg, &policy, &mut report);
+        assert_eq!(cfg.gestures.tap_to_click, GestureEnable::On);
+    }
+
+    #[test]
+    fn virtual_input_respects_explicit_tap_to_click_off() {
+        let mut cfg = Config::parse_str(
+            r#"
+            [gestures]
+            tap_to_click = "off"
+            "#,
+        )
+        .unwrap();
+        let raw = RawTrackpadPreferences::from_pairs(&[("Clicking", PreferenceValue::Integer(0))]);
+        let policy = policy_for_mode(&raw, true);
+        let mut report = SyncReport {
+            enabled: true,
+            ..SyncReport::default()
+        };
+        merge_policy(&mut cfg, &policy, &mut report);
+        assert_eq!(cfg.gestures.tap_to_click, GestureEnable::Off);
     }
 }

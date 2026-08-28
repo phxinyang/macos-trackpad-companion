@@ -37,7 +37,8 @@
 //! enable      = true
 //! horizontal  = true
 //! momentum    = true
-//! # modifier_zoom_mask = 262144  # optional Quartz modifier mask
+//! # modifier_zoom_mask = 262144  # Control/Option/Command Quartz mask
+//! shift_scroll_horizontal = false # compatibility remap; strict native=false
 //!
 //! [gestures.pinch]                 # enable = "on" | "off" |
 //! enable = "on"                    #   { only = ["bundle.id", ..] } |
@@ -58,11 +59,11 @@
 //! ```
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Config {
     pub device: Device,
@@ -79,7 +80,7 @@ pub struct Config {
     explicit: ExplicitConfig,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Macos {
     /// Read the user's macOS trackpad preferences at startup and use them as
@@ -90,7 +91,7 @@ pub struct Macos {
     pub haptic_feedback: HapticSetting,
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum HapticSetting {
     Auto,
@@ -148,7 +149,7 @@ fn collect_explicit_paths(value: &toml::Value, prefix: &str, paths: &mut BTreeSe
 
 /// `[net]` — companion-net's transport bindings. HID-device ingestion
 /// ([`Device`]) and network ingestion are exclusive by instance lock.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Net {
     /// Bind address for both the UDP frame port and the TCP listener
@@ -171,7 +172,7 @@ impl Default for Net {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Overlay {
     pub enable: bool,
@@ -187,14 +188,14 @@ impl Default for Overlay {
     }
 }
 
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Device {
     pub vid: Option<u16>,
     pub pid: Option<u16>,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Log {
     pub level: String,
@@ -213,7 +214,7 @@ impl Default for Log {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Cursor {
     pub sensitivity: f64,
@@ -231,7 +232,7 @@ impl Default for Cursor {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Scroll {
     pub sensitivity: f64,
@@ -242,9 +243,15 @@ pub struct Scroll {
     pub horizontal: bool,
     /// Whether a lift seeds a momentum-phase scroll coast.
     pub momentum: bool,
-    /// Optional Quartz modifier mask for scroll-to-zoom routing. `None`
-    /// keeps the built-in Command/Control compatibility mask.
+    /// Optional Quartz modifier mask for scroll-to-zoom routing. Only the
+    /// Accessibility Zoom modifiers (Control, Option, Command) are used;
+    /// unsupported bits are ignored at startup. `None` keeps the built-in
+    /// Command/Control compatibility mask.
     pub modifier_zoom_mask: Option<u64>,
+    /// Compatibility remap for Shift + vertical two-finger scrolling.
+    /// Apple trackpads normally preserve the scroll axis; leave this false
+    /// for strict native behavior.
+    pub shift_scroll_horizontal: bool,
 }
 
 impl Default for Scroll {
@@ -256,11 +263,12 @@ impl Default for Scroll {
             horizontal: true,
             momentum: true,
             modifier_zoom_mask: None,
+            shift_scroll_horizontal: false,
         }
     }
 }
 
-#[derive(Deserialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Gestures {
     /// Tap-to-click (the Point & Click "Tap to click" setting).
@@ -282,7 +290,7 @@ pub struct Gestures {
 }
 
 /// `[gestures.one_finger_tap_drag]` — companion-net's 拖移样式 = 单指双击拖移.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct OneFingerTapDrag {
     pub enable: GestureEnable,
@@ -299,7 +307,7 @@ impl Default for OneFingerTapDrag {
 /// `[gestures.press_and_hold_drag]` — optional accessibility-style drag.
 /// This is deliberately off by default: ordinary macOS trackpad settings do
 /// not turn a stationary single finger into a held mouse button.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct PressAndHoldDrag {
     pub enable: GestureEnable,
@@ -317,7 +325,7 @@ impl Default for PressAndHoldDrag {
 /// While on, three-finger motion drags (left-button held) instead of firing
 /// Dock swipes; four fingers keep the full swipe surface. Both HID and
 /// network binaries use the same resolved options via `boot::gesture_options`.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct ThreeFingerDrag {
     pub enable: GestureEnable,
@@ -335,7 +343,7 @@ impl Default for ThreeFingerDrag {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Pinch {
     pub enable: GestureEnable,
@@ -349,7 +357,7 @@ impl Default for Pinch {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Rotate {
     pub enable: GestureEnable,
@@ -363,7 +371,7 @@ impl Default for Rotate {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Swipe {
     pub horizontal: SwipeAxisCfg,
@@ -385,7 +393,7 @@ impl Default for Swipe {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct SwipeAxisCfg {
     pub enable: GestureEnable,
@@ -401,7 +409,7 @@ impl Default for SwipeAxisCfg {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SwipeBackend {
     Synthetic,
@@ -432,6 +440,27 @@ pub enum GestureEnable {
     Off,
     Only(Vec<String>),
     Except(Vec<String>),
+}
+
+impl serde::Serialize for GestureEnable {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::On => serializer.serialize_str("on"),
+            Self::Off => serializer.serialize_str("off"),
+            Self::Only(apps) => {
+                use serde::ser::SerializeMap;
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("only", apps)?;
+                map.end()
+            }
+            Self::Except(apps) => {
+                use serde::ser::SerializeMap;
+                let mut map = serializer.serialize_map(Some(1))?;
+                map.serialize_entry("except", apps)?;
+                map.end()
+            }
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for GestureEnable {
@@ -516,8 +545,8 @@ pub fn load(path: Option<&Path>) -> Result<(Config, PathBuf)> {
     }
     let s = std::fs::read_to_string(&resolved)
         .with_context(|| format!("read config {}", resolved.display()))?;
-    let cfg = Config::parse_str(&s)
-        .with_context(|| format!("parse config {}", resolved.display()))?;
+    let cfg =
+        Config::parse_str(&s).with_context(|| format!("parse config {}", resolved.display()))?;
     Ok((cfg, resolved))
 }
 

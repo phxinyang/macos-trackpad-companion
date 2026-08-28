@@ -1028,7 +1028,6 @@ impl<O: Output> State<O> {
     }
 
     fn transition(&mut self, new_kind: GestureKind, active: &[Contact], now: Timestamp) {
-
         // First contact after Idle cancels any in-flight scroll inertia.
         // `SwipeLatched → Idle → ...` doesn't count: a deliberate new
         // touch has to come from no-fingers, and the user wants their
@@ -1044,7 +1043,12 @@ impl<O: Output> State<O> {
                 log::debug!("touch born during coast — suppressing taps for this session");
             }
         }
-        if matches!(new_kind, GestureKind::ThreeFingerLive | GestureKind::FourFingerLive | GestureKind::ThreeFingerDrag) {
+        if matches!(
+            new_kind,
+            GestureKind::ThreeFingerLive
+                | GestureKind::FourFingerLive
+                | GestureKind::ThreeFingerDrag
+        ) {
             self.pending_right_click = None;
         }
         if matches!(self.kind, GestureKind::Idle) && matches!(new_kind, GestureKind::OneFinger) {
@@ -1313,18 +1317,10 @@ impl<O: Output> State<O> {
             }
             GestureKind::TwoFingerPinchAndRotate => {
                 log::debug!("pinch+rotate: ended");
-                if self
-                    .two_baseline
-                    .map(|b| b.pinch_admitted)
-                    .unwrap_or(true)
-                {
+                if self.two_baseline.map(|b| b.pinch_admitted).unwrap_or(true) {
                     self.out.pinch(0.0, Phase::Ended);
                 }
-                if self
-                    .two_baseline
-                    .map(|b| b.rotate_admitted)
-                    .unwrap_or(true)
-                {
+                if self.two_baseline.map(|b| b.rotate_admitted).unwrap_or(true) {
                     self.out.rotate(0.0, Phase::Ended);
                 }
                 if matches!(new_kind, GestureKind::OneFinger) {
@@ -1490,13 +1486,12 @@ impl<O: Output> State<O> {
                 }
             }
             GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => {
-                if self.drag_button_held
-                    && matches!(new_kind, GestureKind::Idle | GestureKind::SwipeLatched)
-                {
-                    self.out.set_drag_button_held(false);
-                    self.drag_button_held = false;
-                    log::debug!("4f swipe lift: released carried drag button in new Space");
-                }
+                // A carried three-finger drag must finish the Space gesture
+                // before releasing its left button. This matters for the
+                // macOS 26 symbolic flick path: its final switch can be
+                // committed on the Ended frame, after all fingers leave.
+                let release_carried_drag = self.drag_button_held
+                    && matches!(new_kind, GestureKind::Idle | GestureKind::SwipeLatched);
                 let swipe_in_flight = self
                     .multi_baseline
                     .as_ref()
@@ -1522,6 +1517,11 @@ impl<O: Output> State<O> {
                         velocity
                     );
                     self.out.swipe(axis, progress, velocity, Phase::Ended);
+                    if release_carried_drag {
+                        self.out.set_drag_button_held(false);
+                        self.drag_button_held = false;
+                        log::debug!("4f swipe lift: released carried drag button in new Space");
+                    }
                     self.kind = GestureKind::SwipeLatched;
                     self.started_at = now;
                     self.max_move_sq = 0.0;
@@ -1553,6 +1553,11 @@ impl<O: Output> State<O> {
                             self.suppress_one_finger_click = true;
                         }
                     }
+                }
+                if release_carried_drag {
+                    self.out.set_drag_button_held(false);
+                    self.drag_button_held = false;
+                    log::debug!("4f swipe lift: released carried drag button in new Space");
                 }
             }
             _ => {}
@@ -1613,8 +1618,10 @@ impl<O: Output> State<O> {
                         "2F gesture start: admit pinch={pinch_admitted} rotate={rotate_admitted}"
                     );
                 }
-                let right_edge_candidate =
-                    a.x >= 28.0 || b.x >= 28.0 || (a.x >= 0.65 && a.x <= 1.0) || (b.x >= 0.65 && b.x <= 1.0);
+                let right_edge_candidate = a.x >= 28.0
+                    || b.x >= 28.0
+                    || (a.x >= 0.65 && a.x <= 1.0)
+                    || (b.x >= 0.65 && b.x <= 1.0);
                 self.two_baseline = Some(TwoFingerBaseline {
                     initial_distance: dist,
                     initial_angle: ang,
@@ -2217,9 +2224,8 @@ impl<O: Output> State<O> {
             let is_active_pinch_or_rot = pinch_rot_motion_ready
                 && ((base.rotate_admitted && ang_delta_from_init >= ROTATE_LOCK_RAD)
                     || (base.pinch_admitted && pinch_ratio_from_init >= PINCH_LOCK_RATIO));
-            let could_still_tap = !is_active_pinch_or_rot
-                && max_move < TAP_MAX_MOVE_MM
-                && dur < TAP_MAX_DURATION;
+            let could_still_tap =
+                !is_active_pinch_or_rot && max_move < TAP_MAX_MOVE_MM && dur < TAP_MAX_DURATION;
             // The landing frame (and, with the default of 2, only the
             // landing frame) is observation-only: one contact is fresh
             // and the other is mid-glide, so any decomposition of their
@@ -2834,8 +2840,7 @@ mod tests {
     fn transform_delta_filter_is_time_and_frame_bounded() {
         for millis in [8, 16, 100] {
             let dt = Duration::from_millis(millis);
-            let expected = (PINCH_MAX_RATE * (millis as f64 / 1000.0))
-                .min(PINCH_MAX_FRAME_DELTA);
+            let expected = (PINCH_MAX_RATE * (millis as f64 / 1000.0)).min(PINCH_MAX_FRAME_DELTA);
             assert_eq!(
                 limit_transform_delta(1.0, dt, PINCH_MAX_RATE, PINCH_MAX_FRAME_DELTA),
                 expected,
@@ -2843,15 +2848,42 @@ mod tests {
             );
         }
         assert_eq!(
-            limit_transform_delta(-1.0, Duration::from_millis(16), PINCH_MAX_RATE, PINCH_MAX_FRAME_DELTA),
+            limit_transform_delta(
+                -1.0,
+                Duration::from_millis(16),
+                PINCH_MAX_RATE,
+                PINCH_MAX_FRAME_DELTA
+            ),
             -0.048
         );
         assert_eq!(
-            limit_transform_delta(1.0, Duration::from_millis(16), ROTATE_MAX_RATE_RAD, ROTATE_MAX_FRAME_RAD),
+            limit_transform_delta(
+                1.0,
+                Duration::from_millis(16),
+                ROTATE_MAX_RATE_RAD,
+                ROTATE_MAX_FRAME_RAD
+            ),
             0.192
         );
-        assert!((limit_transform_delta(0.01, Duration::from_millis(16), PINCH_MAX_RATE, PINCH_MAX_FRAME_DELTA) - 0.01).abs() < 1e-9);
-        assert_eq!(limit_transform_delta(f64::NAN, Duration::from_millis(16), PINCH_MAX_RATE, PINCH_MAX_FRAME_DELTA), 0.0);
+        assert!(
+            (limit_transform_delta(
+                0.01,
+                Duration::from_millis(16),
+                PINCH_MAX_RATE,
+                PINCH_MAX_FRAME_DELTA
+            ) - 0.01)
+                .abs()
+                < 1e-9
+        );
+        assert_eq!(
+            limit_transform_delta(
+                f64::NAN,
+                Duration::from_millis(16),
+                PINCH_MAX_RATE,
+                PINCH_MAX_FRAME_DELTA
+            ),
+            0.0
+        );
     }
 
     struct Recorder {
@@ -2974,7 +3006,9 @@ mod tests {
             self.log.borrow_mut().push("toggle_launchpad".to_string());
         }
         fn toggle_show_desktop(&self) {
-            self.log.borrow_mut().push("toggle_show_desktop".to_string());
+            self.log
+                .borrow_mut()
+                .push("toggle_show_desktop".to_string());
         }
         fn toggle_app_expose(&self) {
             self.log.borrow_mut().push("toggle_app_expose".to_string());
@@ -3212,15 +3246,13 @@ mod tests {
         // used to open a pinch stream on the second frame. This is within
         // finger settling noise and must remain tap/ambiguous instead.
         s.on_frame_at(frame(&[(1, 0.40, 0.60), (2, 0.70, 0.60)]), t0);
-        s.on_frame_at(
-            frame(&[(1, 0.394, 0.60), (2, 0.706, 0.60)]),
-            at(t0, 16),
-        );
+        s.on_frame_at(frame(&[(1, 0.394, 0.60), (2, 0.706, 0.60)]), at(t0, 16));
         s.on_frame_at(frame(&[]), at(t0, 80));
         s.tick(at(t0, 400));
         let log = r.pop();
         assert!(
-            !log.iter().any(|l| l.starts_with("pinch") || l.starts_with("rotate")),
+            !log.iter()
+                .any(|l| l.starts_with("pinch") || l.starts_with("rotate")),
             "sub-mm spread must not lock a transform stream: {log:?}"
         );
         assert!(
@@ -3838,19 +3870,23 @@ mod tests {
         s.on_frame(frame(&[]));
         let log = r.pop();
         assert!(
-            log.iter().any(|l| l.starts_with("scroll") && l.contains("Began")),
+            log.iter()
+                .any(|l| l.starts_with("scroll") && l.contains("Began")),
             "expected initial scroll Began, got: {log:?}"
         );
         assert!(
-            log.iter().any(|l| l.starts_with("scroll") && l.contains("Ended")),
+            log.iter()
+                .any(|l| l.starts_with("scroll") && l.contains("Ended")),
             "expected scroll Ended on dynamic transition, got: {log:?}"
         );
         assert!(
-            log.iter().any(|l| l.starts_with("pinch") && l.contains("Began")),
+            log.iter()
+                .any(|l| l.starts_with("pinch") && l.contains("Began")),
             "expected pinch Began on dynamic transition, got: {log:?}"
         );
         assert!(
-            log.iter().any(|l| l.starts_with("pinch") && l.contains("Changed")),
+            log.iter()
+                .any(|l| l.starts_with("pinch") && l.contains("Changed")),
             "expected pinch Changed, got: {log:?}"
         );
     }
@@ -5934,6 +5970,15 @@ mod tests {
             log3.contains(&"set_left_button_held false".to_string()),
             "lifting after the carried swipe must release the button: {log3:?}"
         );
+        let ended_at = log3
+            .iter()
+            .position(|l| l.starts_with("swipe ") && l.contains("Ended"));
+        let released_at = log3.iter().position(|l| l == "set_left_button_held false");
+        assert_eq!(
+            ended_at.map(|i| i < released_at.unwrap_or(usize::MAX)),
+            Some(true),
+            "the Space stream must end before the carried drag button is released: {log3:?}"
+        );
     }
 
     #[test]
@@ -6045,36 +6090,18 @@ mod tests {
         let t0 = Timestamp::now();
 
         // 2 fingers land stationary
-        s.on_frame_at(
-            frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]),
-            t0,
-        );
-        s.on_frame_at(
-            frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]),
-            at(t0, 20),
-        );
+        s.on_frame_at(frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]), t0);
+        s.on_frame_at(frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]), at(t0, 20));
 
         // Finger 2 lifts, leaving Finger 1 down
-        s.on_frame_at(
-            frame(&[(1, 0.3, 0.3)]),
-            at(t0, 40),
-        );
+        s.on_frame_at(frame(&[(1, 0.3, 0.3)]), at(t0, 40));
 
         // Finger 1 moves across screen (aiming at a target: 0.3 -> 0.35 is 2.5mm on 50mm pad)
-        s.on_frame_at(
-            frame(&[(1, 0.33, 0.3)]),
-            at(t0, 100),
-        );
-        s.on_frame_at(
-            frame(&[(1, 0.36, 0.3)]),
-            at(t0, 200),
-        );
+        s.on_frame_at(frame(&[(1, 0.33, 0.3)]), at(t0, 100));
+        s.on_frame_at(frame(&[(1, 0.36, 0.3)]), at(t0, 200));
 
         // Finger 1 lifts to click
-        s.on_frame_at(
-            frame(&[]),
-            at(t0, 220),
-        );
+        s.on_frame_at(frame(&[]), at(t0, 220));
 
         let log = r.pop();
         // Must NOT emit a right click!
@@ -6091,32 +6118,20 @@ mod tests {
         let t0 = Timestamp::now();
 
         // 3 fingers land stationary
-        s.on_frame_at(
-            frame(&[(1, 0.2, 0.3), (2, 0.4, 0.3), (3, 0.6, 0.3)]),
-            t0,
-        );
+        s.on_frame_at(frame(&[(1, 0.2, 0.3), (2, 0.4, 0.3), (3, 0.6, 0.3)]), t0);
         s.on_frame_at(
             frame(&[(1, 0.2, 0.3), (2, 0.4, 0.3), (3, 0.6, 0.3)]),
             at(t0, 30),
         );
 
         // Finger 3 lifts (3F -> 2F)
-        s.on_frame_at(
-            frame(&[(1, 0.2, 0.3), (2, 0.4, 0.3)]),
-            at(t0, 60),
-        );
+        s.on_frame_at(frame(&[(1, 0.2, 0.3), (2, 0.4, 0.3)]), at(t0, 60));
 
         // Finger 2 lifts (2F -> 1F)
-        s.on_frame_at(
-            frame(&[(1, 0.2, 0.3)]),
-            at(t0, 90),
-        );
+        s.on_frame_at(frame(&[(1, 0.2, 0.3)]), at(t0, 90));
 
         // Finger 1 lifts (1F -> 0F)
-        s.on_frame_at(
-            frame(&[]),
-            at(t0, 120),
-        );
+        s.on_frame_at(frame(&[]), at(t0, 120));
 
         let log = r.pop();
         assert!(
@@ -6131,27 +6146,18 @@ mod tests {
         let mut s = State::new(&r, test_accel());
         let t0 = Timestamp::now();
 
-        s.on_frame_at(
-            frame(&[(1, 0.4, 0.5), (2, 0.6, 0.5)]),
-            t0,
-        );
-        s.on_frame_at(
-            frame(&[(1, 0.4, 0.5), (2, 0.6, 0.5)]),
-            at(t0, 20),
-        );
+        s.on_frame_at(frame(&[(1, 0.4, 0.5), (2, 0.6, 0.5)]), t0);
+        s.on_frame_at(frame(&[(1, 0.4, 0.5), (2, 0.6, 0.5)]), at(t0, 20));
 
         // Rotate ~30° clockwise around centroid
-        s.on_frame_at(
-            frame(&[(1, 0.413, 0.45), (2, 0.587, 0.55)]),
-            at(t0, 60),
-        );
-        s.on_frame_at(
-            frame(&[(1, 0.45, 0.413), (2, 0.55, 0.587)]),
-            at(t0, 100),
-        );
+        s.on_frame_at(frame(&[(1, 0.413, 0.45), (2, 0.587, 0.55)]), at(t0, 60));
+        s.on_frame_at(frame(&[(1, 0.45, 0.413), (2, 0.55, 0.587)]), at(t0, 100));
 
         let log = r.pop();
-        let rot_changed: Vec<&String> = log.iter().filter(|l| l.starts_with("rotate ") && l.contains("Changed")).collect();
+        let rot_changed: Vec<&String> = log
+            .iter()
+            .filter(|l| l.starts_with("rotate ") && l.contains("Changed"))
+            .collect();
         assert!(!rot_changed.is_empty(), "Must emit rotate Changed: {log:?}");
         for entry in rot_changed {
             assert!(
@@ -6168,32 +6174,14 @@ mod tests {
         let t0 = Timestamp::now();
 
         // Tap 1: 2 fingers down and up quickly (50ms)
-        s.on_frame_at(
-            frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]),
-            t0,
-        );
-        s.on_frame_at(
-            frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]),
-            at(t0, 20),
-        );
-        s.on_frame_at(
-            frame(&[]),
-            at(t0, 50),
-        );
+        s.on_frame_at(frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]), t0);
+        s.on_frame_at(frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]), at(t0, 20));
+        s.on_frame_at(frame(&[]), at(t0, 50));
 
         // Tap 2: 2 fingers down 100ms later and up quickly
-        s.on_frame_at(
-            frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]),
-            at(t0, 150),
-        );
-        s.on_frame_at(
-            frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]),
-            at(t0, 170),
-        );
-        s.on_frame_at(
-            frame(&[]),
-            at(t0, 200),
-        );
+        s.on_frame_at(frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]), at(t0, 150));
+        s.on_frame_at(frame(&[(1, 0.3, 0.3), (2, 0.6, 0.3)]), at(t0, 170));
+        s.on_frame_at(frame(&[]), at(t0, 200));
 
         s.tick(at(t0, 500));
 

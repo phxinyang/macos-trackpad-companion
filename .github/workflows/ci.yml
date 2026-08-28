@@ -31,6 +31,21 @@ jobs:
       - name: Check macOS targets
         run: cargo check --all-targets
 
+  macos-settings-gui:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build shared config helper
+        run: cargo build --release --bin companion-config
+      - name: Build SwiftUI settings package
+        working-directory: macos/TrackpadCompanionSettings
+        env:
+          COMPANION_CONFIG_BIN: ${{ github.workspace }}/target/release/companion-config
+        run: swift build -c release
+
   android:
     runs-on: ubuntu-latest
     steps:
