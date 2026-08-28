@@ -279,15 +279,16 @@ coordinate scale. To remain compatible:
 The reference firmware therefore produces a **6-byte-per-contact** layout.
 The decoder also preserves descriptor bit offsets and widths, so compatible
 bit-packed contact fields can be decoded when the descriptor describes them;
-hybrid/parallel report aggregation remains outside this profile.
+the HID path now reassembles supported hybrid report fragments by Scan Time;
+the network protocol remains one complete frame per message.
 
 The Microsoft "PTPHQA" feature report is needed for Windows certification
 but ignored by macOS, so it's optional from the companion's perspective.
 
 The HID decoder is descriptor-driven for contact field offsets and widths,
 including non-byte-aligned fields. The project reference remains the 6-byte
-profile above; Microsoft parallel/hybrid aggregation and broader device
-compatibility are tracked in the execution plan's Phase C.
+profile above; broader real-device descriptor coverage and macOS validation
+are tracked in the execution plan's Phase C.
 
 ## Reference firmware
 

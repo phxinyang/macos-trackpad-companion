@@ -256,7 +256,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 
 ### 4.1 本轮验证记录
 
-- `~/.cargo/bin/cargo test --workspace`：通过，129 个主工程测试 + 9 个协议测试（包含 R1 transform filter、C1 bit-packed decode、C2 descriptor report-ID、C3 fixture 与 C4 hybrid 聚合回归）。
+- `~/.cargo/bin/cargo test --workspace`：通过，131 个主工程测试 + 9 个协议测试（包含 R1 transform filter、C1 bit-packed decode、C2 descriptor report-ID、C3 fixture、C4 hybrid 聚合与无编号 report 回归）。
 - `~/.cargo/bin/cargo check --all-targets`：通过。
 - `~/.cargo/bin/cargo check --target aarch64-apple-darwin --all-targets`：通过（交叉检查 macOS binary/module wiring；仅有既有 dead-code 警告）。
 - `android/./gradlew test`（工作目录 `android/`）：通过，Gradle `BUILD SUCCESSFUL`。
