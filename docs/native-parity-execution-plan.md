@@ -108,9 +108,11 @@
 - 启动时通过 Core Foundation `CFPreferencesCopyValue` 读取 `com.apple.AppleMultitouchTrackpad`，以 `com.apple.driver.AppleBluetoothMultitouch.trackpad` 作为缺失 key 的回退域，并读取 `.GlobalPreferences` 的 `com.apple.swipescrolldirection`。
 - 保存一个可审计的 `RawTrackpadPreferences` 快照：记录已知 key 的原始整数值、来源域、冲突和无法映射字段；日志只输出 key/value，不输出用户数据。
 - 将高确定性设置映射为 `NormalizedTrackpadPolicy`，再合并到 `Config`。合并优先级固定为：`显式 TOML 字段 > macOS 设置 > Rust 默认值`。
-- 第一阶段实际驱动：轻点点击、双指右键、自然滚动、滚动开关、滚动惯性、横向滚动、捏合、旋转、智能缩放、三指查词、三指拖移、拖移锁定、单指轻点拖移、右边缘通知中心、四指水平/垂直轻扫，以及 `HIDScrollZoomModifierMask`。
+- 第一阶段实际驱动：轻点点击、双指右键、自然滚动、滚动开关、滚动惯性、横向滚动、捏合、旋转、智能缩放、三指查词、三指拖移、单指轻点拖移、右边缘通知中心、四指水平/垂直轻扫，以及 `HIDScrollZoomModifierMask`。`DragLock` 只做诊断，不覆盖三指换把参数。
 - 非布尔或只影响 Apple 驱动/硬件的字段仍被探测并报告为 `unsupported`，包括压力阈值、palm/resting、Force Touch、五指捏合和 USB 鼠标联动；不把它们伪装成已应用。`ActuateDetents` 作为唯一高确定性触觉开关映射到 `macos.haptic_feedback`。
 - `HIDScrollZoomModifierMask` 解析为 Quartz modifier mask；值为未知位时保留已知位并记录告警，值缺失时继续使用 Cmd/Ctrl 兼容默认。
+- `.GlobalPreferences` 的 `com.apple.trackpad.scaling` / `com.apple.scrollwheel.scaling` 只做有界兼容性归一化：分别填充 `cursor.sensitivity` / `scroll.sensitivity`；`trackpad.scaling = -1` 仅映射为线性光标曲线。Apple 没有公开稳定的 px/mm 传递公式，不能把这些内部数值宣称成物理校准。
+- `Clicking = 0` 会按原生语义关闭手机 tap-to-click；日志会明确提示，可用 TOML `gestures.tap_to_click = "on"` 显式覆盖。`DragLock` 不再写入三指 `release_delay_ms`，避免错误地取消三指换把悬停。
 - macOS 输出实现使用 `NSHapticFeedbackManager.defaultPerformer()`：点击使用 Generic，拖拽接合使用 Alignment，系统手势确认使用 LevelChange。反馈是设备感知的确认提示，不构造 Force Touch 压力或私有触点事件。
 
 #### Not building
@@ -135,16 +137,19 @@
 | `TrackpadThreeFingerTapGesture` | `GestureOptions.dictionary_lookup` | 值 `2`（及兼容的非零启用值）开启查词 |
 | `TrackpadThreeFingerDrag` | `GestureOptions.three_finger_drag` | 值 `1` 为三指拖移，`0` 为三指轻扫 |
 | `Dragging` | `GestureOptions.one_finger_tap_drag` | 辅助功能拖移开关；只影响单指双击拖移 |
-| `DragLock` | `GestureOptions.release_delay_ms` | 开启使用 500ms，关闭使用 0ms；明确 TOML `release_delay_ms` 优先 |
+| `DragLock` | 诊断信息 | 不覆盖三指 `release_delay_ms`；该键与三指换把不是同一语义 |
 | `TrackpadTwoFingerFromRightEdgeSwipeGesture` | `GestureOptions.right_edge_swipe` | 非零启用右缘通知中心动作 |
 | `TrackpadFourFingerHoriz/VertSwipeGesture` | horizontal/vertical swipe policy | `0` 关闭对应轴，`2` 开启；未知值只记录并保留配置 |
 | `HIDScrollZoomModifierMask` | `output::Config.modifier_zoom_mask` | 使用系统 mask 锁定整个 scroll session 的 zoom 路由 |
 | `ActuateDetents` | `macos.haptic_feedback` | `1` 开启语义触觉，`0` 关闭；`auto` 模式由系统值填充 |
 | `com.apple.swipescrolldirection` | `output::Config.natural_scroll` | 全局值优先于触控板域中的历史别名 |
+| `.GlobalPreferences/com.apple.trackpad.scaling` | `[cursor] sensitivity` / `accel_exponent` | 有界兼容性归一化；`-1` 只表示线性曲线 |
+| `.GlobalPreferences/com.apple.scrollwheel.scaling` | `[scroll] sensitivity` | 以 `0.6875` 为常见基线的有界兼容性标量 |
 
 #### Verification
 
 - 单测覆盖：缺少 key、主域/回退域冲突、未知枚举、modifier mask、TOML 覆盖系统值，以及每个关闭开关的事件抑制。
+- 单测覆盖：缺少 Trackpad/global domain、scaling 正常值与越界/NaN、显式 TOML 对速度参数的覆盖，以及 `DragLock` 不改变三指 `release_delay_ms`。
 - macOS 真机启动日志记录系统版本、来源域、应用字段和 unsupported 列表；`scripts/diagnose-mac.sh` 输出与读取层使用同一组 key。
 - Linux 上运行 `cargo test --workspace`、`cargo check --all-targets`；macOS 上额外验证 Preview、Photos、Safari、Maps、Mission Control、Spaces 的 tap/scroll/inertia/pinch/rotate/swipe。
 
@@ -247,7 +252,10 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] F3. 增加滚动/点击/智能缩放/查词/三指拖移/四指 swipe 的高确定性开关映射。
 - [x] F3a. `HIDScrollZoomModifierMask` 只应用已知 Quartz modifier 位，未知位/负值写入 `unsupported` 诊断并保留默认策略。
 - [x] F4. 采用 `NSHapticFeedbackManager.defaultPerformer()` 提供设备感知触觉确认，并修复 Android `ACTION_CANCEL` 误震动。
+- [x] F5a. 接入 `com.apple.trackpad.scaling` / `com.apple.scrollwheel.scaling` 的有界兼容性归一化、显式 TOML 覆盖和缺失 domain 降级。
 - [x] R1-R3. 完成旋转/缩放相对增量过滤、phase 生命周期统一和 1:1 旋转默认值；新增纯逻辑回归测试。
+- [x] R7. 收紧两指 transform 锁定：低于明确意图位移的 spread/rotation 保持 tap/未分类，避免 pinch 误触。
+- [x] F5b. 修正 `DragLock` 误覆盖三指 `release_delay_ms` 的映射；三指 500ms 换把悬停恢复为配置默认。
 - [x] C2. 从 descriptor 发现 Input Mode feature report ID，新增非 `0x08` report ID 回归 fixture，并处理无编号 report 的 payload 规则。
 - [x] C1. 按 descriptor 位域解码非字节对齐 contact/trailing fields，新增 bit-packed report 回归 fixture。
 - [x] C4. 新增同 Scan Time hybrid 聚合、跨 Scan Time 丢弃和 button 合并回归测试。
@@ -256,7 +264,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 
 ### 4.1 本轮验证记录
 
-- `~/.cargo/bin/cargo test --workspace`：通过，131 个主工程测试 + 9 个协议测试（包含 R1 transform filter、C1 bit-packed decode、C2 descriptor report-ID、C3 fixture、C4 hybrid 聚合与无编号 report 回归）。
+- `~/.cargo/bin/cargo test --workspace`：通过，136 个主工程测试 + 9 个协议测试（包含 R1 transform filter、R7 两指误触回归、C1 bit-packed decode、C2 descriptor report-ID、C3 fixture、C4 hybrid 聚合与无编号 report 回归）。
 - `~/.cargo/bin/cargo check --all-targets`：通过。
 - `~/.cargo/bin/cargo check --target aarch64-apple-darwin --all-targets`：通过（交叉检查 macOS binary/module wiring；仅有既有 dead-code 警告）。
 - `android/./gradlew test`（工作目录 `android/`）：通过，Gradle `BUILD SUCCESSFUL`。
@@ -287,3 +295,4 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - 阶段 C：部分完成（C1-C5 的代码与合成 fixture 已完成；真实 HID descriptor/report 采样与 macOS 设备验收仍待执行）
 - 阶段 D：待真机
 - 阶段 E：部分完成（已收集 raw MultitouchSupport 资料；虚拟 HID 成本评估与架构决策待后续）
+- 阶段 F：部分完成（F1-F4、F5a/F5b 已完成；haptic performer、私有事件 payload 和真实 Mac 应用矩阵仍待真机）

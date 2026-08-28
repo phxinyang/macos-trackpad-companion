@@ -15,6 +15,8 @@ const FALLBACK_DOMAIN: &str = "com.apple.driver.AppleBluetoothMultitouch.trackpa
 #[cfg(target_os = "macos")]
 const GLOBAL_DOMAIN: &str = ".GlobalPreferences";
 const GLOBAL_NATURAL_SCROLL_KEY: &str = "com.apple.swipescrolldirection";
+const GLOBAL_TRACKPAD_SCALING_KEY: &str = "com.apple.trackpad.scaling";
+const GLOBAL_SCROLLWHEEL_SCALING_KEY: &str = "com.apple.scrollwheel.scaling";
 const KNOWN_QUARTZ_MODIFIER_MASK: u64 = 0x00FF_0000;
 
 /// Keys collected for diagnostics. A key can be reported even when the
@@ -50,10 +52,22 @@ pub const KNOWN_KEYS: &[&str] = &[
     "USBMouseStopsTrackpad",
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Legacy global scalars used by macOS' Tracking speed / scroll-wheel
+/// preference panes. Their numeric domains are not a stable public API, so
+/// normalization below deliberately applies bounded compatibility mappings.
+#[cfg(target_os = "macos")]
+const GLOBAL_SCALAR_KEYS: &[&str] = &[
+    GLOBAL_TRACKPAD_SCALING_KEY,
+    GLOBAL_SCROLLWHEEL_SCALING_KEY,
+];
+
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PreferenceValue {
     Integer(i64),
+    Float(f64),
     Boolean(bool),
+    /// A known preference key had a non-numeric/non-boolean CF type.
+    Unsupported,
 }
 
 impl PreferenceValue {
@@ -61,6 +75,15 @@ impl PreferenceValue {
         match self {
             Self::Integer(v) => Some(v),
             Self::Boolean(v) => Some(i64::from(v)),
+            Self::Float(_) | Self::Unsupported => None,
+        }
+    }
+
+    fn as_f64(self) -> Option<f64> {
+        match self {
+            Self::Integer(v) => Some(v as f64),
+            Self::Float(v) if v.is_finite() => Some(v),
+            Self::Boolean(_) | Self::Float(_) | Self::Unsupported => None,
         }
     }
 }
@@ -71,6 +94,8 @@ pub struct RawTrackpadPreferences {
     values: BTreeMap<String, PreferenceValue>,
     sources: BTreeMap<String, String>,
     conflicts: Vec<String>,
+    trackpad_domain_available: bool,
+    global_domain_available: bool,
 }
 
 impl RawTrackpadPreferences {
@@ -84,6 +109,14 @@ impl RawTrackpadPreferences {
 
     pub fn conflicts(&self) -> &[String] {
         &self.conflicts
+    }
+
+    pub fn trackpad_domain_available(&self) -> bool {
+        self.trackpad_domain_available
+    }
+
+    pub fn global_domain_available(&self) -> bool {
+        self.global_domain_available
     }
 
     #[cfg(test)]
@@ -104,9 +137,16 @@ impl RawTrackpadPreferences {
 }
 
 /// Settings that have a direct, defensible application-layer equivalent.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct NormalizedTrackpadPolicy {
     pub haptic_feedback: Option<bool>,
+    /// Compatibility-normalized value from `com.apple.trackpad.scaling`.
+    pub cursor_sensitivity: Option<f64>,
+    /// `-1` in the legacy tracking-speed key means acceleration disabled;
+    /// this is the one acceleration setting we can represent directly.
+    pub cursor_accel_exponent: Option<f64>,
+    /// Compatibility-normalized value from `com.apple.scrollwheel.scaling`.
+    pub scroll_sensitivity: Option<f64>,
     pub tap_to_click: Option<bool>,
     pub secondary_click: Option<bool>,
     pub scroll_enabled: Option<bool>,
@@ -119,7 +159,6 @@ pub struct NormalizedTrackpadPolicy {
     pub dictionary_lookup: Option<bool>,
     pub three_finger_drag: Option<bool>,
     pub one_finger_tap_drag: Option<bool>,
-    pub drag_lock: Option<bool>,
     pub right_edge_swipe: Option<bool>,
     pub horizontal_swipe: Option<bool>,
     pub vertical_swipe: Option<bool>,
@@ -131,6 +170,8 @@ pub struct NormalizedTrackpadPolicy {
 pub struct SyncReport {
     pub enabled: bool,
     pub raw_values: usize,
+    pub trackpad_domain_available: bool,
+    pub global_domain_available: bool,
     pub applied: Vec<String>,
     pub explicit_overrides: Vec<String>,
     pub unsupported: Vec<String>,
@@ -138,7 +179,11 @@ pub struct SyncReport {
 }
 
 fn bool01(raw: &RawTrackpadPreferences, key: &str, unsupported: &mut Vec<String>) -> Option<bool> {
-    let value = raw.value(key)?.as_i64()?;
+    let raw_value = raw.value(key)?;
+    let Some(value) = raw_value.as_i64() else {
+        unsupported.push(format!("{key}={raw_value:?} (expected integer 0/1)"));
+        return None;
+    };
     match value {
         0 => Some(false),
         1 => Some(true),
@@ -150,7 +195,11 @@ fn bool01(raw: &RawTrackpadPreferences, key: &str, unsupported: &mut Vec<String>
 }
 
 fn enum_02(raw: &RawTrackpadPreferences, key: &str, unsupported: &mut Vec<String>) -> Option<bool> {
-    let value = raw.value(key)?.as_i64()?;
+    let raw_value = raw.value(key)?;
+    let Some(value) = raw_value.as_i64() else {
+        unsupported.push(format!("{key}={raw_value:?} (expected integer 0/2)"));
+        return None;
+    };
     match value {
         0 => Some(false),
         2 => Some(true),
@@ -167,8 +216,55 @@ fn nonzero(raw: &RawTrackpadPreferences, key: &str) -> Option<bool> {
         .map(|v| v != 0)
 }
 
+const DEFAULT_CURSOR_SENSITIVITY: f64 = 28.0;
+const DEFAULT_SCROLL_SENSITIVITY: f64 = 20.0;
+const DEFAULT_SCROLLWHEEL_SCALING: f64 = 0.6875;
+
+fn normalize_scalars(raw: &RawTrackpadPreferences, policy: &mut NormalizedTrackpadPolicy) {
+    if let Some(value) = raw.value(GLOBAL_TRACKPAD_SCALING_KEY) {
+        match value.as_f64() {
+            Some(-1.0) => policy.cursor_accel_exponent = Some(1.0),
+            Some(value) if (0.0..=3.0).contains(&value) => {
+                // macOS' slider is observed as 0..3, but Apple does not
+                // publish a px/mm transfer function. Keep the mapping
+                // bounded and anchored at the companion default.
+                // A value of 1.0 is the common neutral setting. Keep the
+                // slider's observed 0..3 range bounded to 0.5..2.0x.
+                let factor = (0.5 + 0.5 * value).clamp(0.5, 2.0);
+                policy.cursor_sensitivity = Some(DEFAULT_CURSOR_SENSITIVITY * factor);
+            }
+            Some(value) => policy.unsupported.push(format!(
+                "{GLOBAL_TRACKPAD_SCALING_KEY}={value} (expected -1 or 0..3)"
+            )),
+            None => policy.unsupported.push(format!(
+                "{GLOBAL_TRACKPAD_SCALING_KEY}={value:?} (expected finite number)"
+            )),
+        }
+    }
+
+    if let Some(value) = raw.value(GLOBAL_SCROLLWHEEL_SCALING_KEY) {
+        match value.as_f64() {
+            Some(value) if value > 0.0 && value <= 4.0 => {
+                // 0.6875 is the commonly observed macOS baseline. This is
+                // a compatibility scalar, not an Apple-documented formula.
+                policy.scroll_sensitivity = Some(
+                    (DEFAULT_SCROLL_SENSITIVITY * (value / DEFAULT_SCROLLWHEEL_SCALING))
+                        .clamp(5.0, 80.0),
+                );
+            }
+            Some(value) => policy.unsupported.push(format!(
+                "{GLOBAL_SCROLLWHEEL_SCALING_KEY}={value} (expected 0<value<=4; -1 acceleration mode is unsupported)"
+            )),
+            None => policy.unsupported.push(format!(
+                "{GLOBAL_SCROLLWHEEL_SCALING_KEY}={value:?} (expected finite number)"
+            )),
+        }
+    }
+}
+
 pub fn normalize(raw: &RawTrackpadPreferences) -> NormalizedTrackpadPolicy {
     let mut policy = NormalizedTrackpadPolicy::default();
+    normalize_scalars(raw, &mut policy);
     policy.haptic_feedback = bool01(raw, "ActuateDetents", &mut policy.unsupported);
     policy.tap_to_click = bool01(raw, "Clicking", &mut policy.unsupported);
     policy.secondary_click = bool01(raw, "TrackpadRightClick", &mut policy.unsupported);
@@ -185,7 +281,6 @@ pub fn normalize(raw: &RawTrackpadPreferences) -> NormalizedTrackpadPolicy {
     policy.dictionary_lookup = nonzero(raw, "TrackpadThreeFingerTapGesture");
     policy.three_finger_drag = bool01(raw, "TrackpadThreeFingerDrag", &mut policy.unsupported);
     policy.one_finger_tap_drag = bool01(raw, "Dragging", &mut policy.unsupported);
-    policy.drag_lock = bool01(raw, "DragLock", &mut policy.unsupported);
     policy.right_edge_swipe = nonzero(raw, "TrackpadTwoFingerFromRightEdgeSwipeGesture");
     policy.horizontal_swipe = enum_02(
         raw,
@@ -226,6 +321,7 @@ pub fn normalize(raw: &RawTrackpadPreferences) -> NormalizedTrackpadPolicy {
 
     for key in [
         "FirstClickThreshold",
+        "DragLock",
         "ForceSuppressed",
         "SecondClickThreshold",
         "TrackpadCornerSecondaryClick",
@@ -282,6 +378,22 @@ fn set_bool(
     report.applied.push(path.to_string());
 }
 
+fn set_f64(
+    cfg: &mut Config,
+    path: &str,
+    value: Option<f64>,
+    slot: impl FnOnce(&mut Config, f64),
+    report: &mut SyncReport,
+) {
+    let Some(value) = value else { return };
+    if cfg.has_explicit(path) {
+        report.explicit_overrides.push(path.to_string());
+        return;
+    }
+    slot(cfg, value);
+    report.applied.push(path.to_string());
+}
+
 fn merge_policy(cfg: &mut Config, policy: &NormalizedTrackpadPolicy, report: &mut SyncReport) {
     if let Some(enabled) = policy.haptic_feedback {
         if cfg.has_explicit("macos.haptic_feedback") {
@@ -297,6 +409,27 @@ fn merge_policy(cfg: &mut Config, policy: &NormalizedTrackpadPolicy, report: &mu
             report.applied.push("macos.haptic_feedback".to_string());
         }
     }
+    set_f64(
+        cfg,
+        "cursor.sensitivity",
+        policy.cursor_sensitivity,
+        |cfg, value| cfg.cursor.sensitivity = value,
+        report,
+    );
+    set_f64(
+        cfg,
+        "cursor.accel_exponent",
+        policy.cursor_accel_exponent,
+        |cfg, value| cfg.cursor.accel_exponent = value,
+        report,
+    );
+    set_f64(
+        cfg,
+        "scroll.sensitivity",
+        policy.scroll_sensitivity,
+        |cfg, value| cfg.scroll.sensitivity = value,
+        report,
+    );
     set_enable(
         cfg,
         "gestures.tap_to_click",
@@ -414,18 +547,6 @@ fn merge_policy(cfg: &mut Config, policy: &NormalizedTrackpadPolicy, report: &mu
             report.applied.push("scroll.modifier_zoom_mask".to_string());
         }
     }
-    if let Some(lock) = policy.drag_lock {
-        if cfg.has_explicit("gestures.three_finger_drag.release_delay_ms") {
-            report
-                .explicit_overrides
-                .push("gestures.three_finger_drag.release_delay_ms".to_string());
-        } else {
-            cfg.gestures.three_finger_drag.release_delay_ms = if lock { 500 } else { 0 };
-            report
-                .applied
-                .push("gestures.three_finger_drag.release_delay_ms".to_string());
-        }
-    }
 }
 
 #[cfg(target_os = "macos")]
@@ -435,6 +556,7 @@ fn read_value(domain: &str, key: &str) -> Option<PreferenceValue> {
     use core_foundation::number::CFNumber;
     use core_foundation::string::CFString;
     use core_foundation_sys::base::CFTypeRef;
+    use core_foundation_sys::number::CFNumberIsFloatType;
     use core_foundation_sys::preferences;
 
     let domain = CFString::new(domain);
@@ -454,10 +576,13 @@ fn read_value(domain: &str, key: &str) -> Option<PreferenceValue> {
     if let Some(boolean) = value.downcast::<CFBoolean>() {
         return Some(PreferenceValue::Boolean(bool::from(boolean)));
     }
-    value
-        .downcast::<CFNumber>()
-        .and_then(|number| number.to_i64())
-        .map(PreferenceValue::Integer)
+    if let Some(number) = value.downcast::<CFNumber>() {
+        if unsafe { CFNumberIsFloatType(number.as_concrete_TypeRef()) != 0 } {
+            return number.to_f64().map(PreferenceValue::Float);
+        }
+        return number.to_i64().map(PreferenceValue::Integer);
+    }
+    Some(PreferenceValue::Unsupported)
 }
 
 #[cfg(target_os = "macos")]
@@ -473,13 +598,18 @@ pub fn read_raw() -> RawTrackpadPreferences {
                 .push(format!("{key}: primary={a:?} fallback={b:?}"));
         }
         if let Some(value) = primary {
+            raw.trackpad_domain_available = true;
             raw.insert(key, value, PRIMARY_DOMAIN);
         } else if let Some(value) = fallback {
+            raw.trackpad_domain_available = true;
             raw.insert(key, value, FALLBACK_DOMAIN);
         }
     }
-    if let Some(value) = read_value(GLOBAL_DOMAIN, GLOBAL_NATURAL_SCROLL_KEY) {
-        raw.insert(GLOBAL_NATURAL_SCROLL_KEY, value, GLOBAL_DOMAIN);
+    for key in std::iter::once(GLOBAL_NATURAL_SCROLL_KEY).chain(GLOBAL_SCALAR_KEYS.iter().copied()) {
+        if let Some(value) = read_value(GLOBAL_DOMAIN, key) {
+            raw.global_domain_available = true;
+            raw.insert(key, value, GLOBAL_DOMAIN);
+        }
     }
     raw
 }
@@ -501,12 +631,41 @@ pub fn apply(cfg: &mut Config) -> SyncReport {
     let raw = RawTrackpadPreferences::default();
     let policy = normalize(&raw);
     report.raw_values = raw.values.len();
-    report.conflicts = raw.conflicts.clone();
+    report.trackpad_domain_available = raw.trackpad_domain_available();
+    report.global_domain_available = raw.global_domain_available();
+    report.conflicts = raw.conflicts().to_vec();
     report.unsupported = policy.unsupported.clone();
     merge_policy(cfg, &policy, &mut report);
 
     #[cfg(target_os = "macos")]
     {
+        if !raw.trackpad_domain_available {
+            log::info!(
+                "macOS trackpad preference domain unavailable; using TOML/default values"
+            );
+        }
+        if raw.value(GLOBAL_TRACKPAD_SCALING_KEY).is_none() {
+            log::debug!(
+                "no macOS tracking speed preference; keeping cursor.sensitivity/accel defaults"
+            );
+        }
+        if raw.value(GLOBAL_SCROLLWHEEL_SCALING_KEY).is_none() {
+            log::debug!(
+                "no macOS scroll speed preference; keeping scroll.sensitivity default"
+            );
+        }
+        if raw.value("Clicking") == Some(PreferenceValue::Integer(0))
+            || raw.value("Clicking") == Some(PreferenceValue::Boolean(false))
+        {
+            log::warn!(
+                "macOS Tap to click is disabled (Clicking=0); phone taps will not emit left clicks unless TOML explicitly enables gestures.tap_to_click"
+            );
+        }
+        if raw.value("DragLock").is_some() {
+            log::debug!(
+                "macOS DragLock is diagnostic-only; three-finger re-grip uses gestures.three_finger_drag.release_delay_ms"
+            );
+        }
         for (key, value) in &raw.values {
             log::debug!(
                 "macOS trackpad preference: {key}={value:?} (source={})",
@@ -571,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_respects_explicit_toml_and_maps_drag_lock() {
+    fn merge_respects_explicit_toml_and_keeps_three_finger_drag_lock() {
         let mut cfg = Config::parse_str(
             r#"
             [scroll]
@@ -598,7 +757,7 @@ mod tests {
         assert_eq!(cfg.macos.haptic_feedback, HapticSetting::On);
         assert_eq!(cfg.gestures.pinch.enable, GestureEnable::On);
         assert_eq!(cfg.gestures.tap_to_click, GestureEnable::Off);
-        assert_eq!(cfg.gestures.three_finger_drag.release_delay_ms, 0);
+        assert_eq!(cfg.gestures.three_finger_drag.release_delay_ms, 500);
         assert!(
             report
                 .explicit_overrides
@@ -631,5 +790,114 @@ mod tests {
         let policy = normalize(&negative);
         assert_eq!(policy.modifier_zoom_mask, None);
         assert!(policy.unsupported.iter().any(|entry| entry.contains("negative")));
+    }
+
+    #[test]
+    fn scaling_keys_use_bounded_compatibility_mapping() {
+        let raw = RawTrackpadPreferences::from_pairs(&[
+            (GLOBAL_TRACKPAD_SCALING_KEY, PreferenceValue::Float(1.0)),
+            (GLOBAL_SCROLLWHEEL_SCALING_KEY, PreferenceValue::Float(0.6875)),
+        ]);
+        let policy = normalize(&raw);
+        assert_eq!(policy.cursor_sensitivity, Some(28.0));
+        assert_eq!(policy.scroll_sensitivity, Some(20.0));
+
+        let max = RawTrackpadPreferences::from_pairs(&[(
+            GLOBAL_TRACKPAD_SCALING_KEY,
+            PreferenceValue::Integer(3),
+        )]);
+        assert_eq!(normalize(&max).cursor_sensitivity, Some(56.0));
+
+        let linear = RawTrackpadPreferences::from_pairs(&[(
+            GLOBAL_TRACKPAD_SCALING_KEY,
+            PreferenceValue::Integer(-1),
+        )]);
+        assert_eq!(normalize(&linear).cursor_accel_exponent, Some(1.0));
+    }
+
+    #[test]
+    fn invalid_scaling_is_ignored_and_reported() {
+        let raw = RawTrackpadPreferences::from_pairs(&[
+            (
+                GLOBAL_TRACKPAD_SCALING_KEY,
+                PreferenceValue::Float(f64::NAN),
+            ),
+            (
+                GLOBAL_SCROLLWHEEL_SCALING_KEY,
+                PreferenceValue::Integer(-1),
+            ),
+        ]);
+        let policy = normalize(&raw);
+        assert_eq!(policy.cursor_sensitivity, None);
+        assert_eq!(policy.scroll_sensitivity, None);
+        assert!(policy.unsupported.iter().any(|x| x.contains("trackpad.scaling")));
+        assert!(policy.unsupported.iter().any(|x| x.contains("scrollwheel.scaling")));
+    }
+
+    #[test]
+    fn explicit_toml_sensitivity_wins_over_system_scaling() {
+        let mut cfg = Config::parse_str(
+            r#"
+            [cursor]
+            sensitivity = 41.0
+            [scroll]
+            sensitivity = 11.0
+            "#,
+        )
+        .unwrap();
+        let raw = RawTrackpadPreferences::from_pairs(&[
+            (GLOBAL_TRACKPAD_SCALING_KEY, PreferenceValue::Integer(3)),
+            (GLOBAL_SCROLLWHEEL_SCALING_KEY, PreferenceValue::Float(1.375)),
+        ]);
+        let policy = normalize(&raw);
+        let mut report = SyncReport {
+            enabled: true,
+            ..SyncReport::default()
+        };
+        merge_policy(&mut cfg, &policy, &mut report);
+        assert_eq!(cfg.cursor.sensitivity, 41.0);
+        assert_eq!(cfg.scroll.sensitivity, 11.0);
+        assert!(report.explicit_overrides.contains(&"cursor.sensitivity".to_string()));
+        assert!(report.explicit_overrides.contains(&"scroll.sensitivity".to_string()));
+    }
+
+    #[test]
+    fn explicit_tap_to_click_override_wins_over_clicking_off() {
+        let mut cfg = Config::parse_str(
+            r#"
+            [gestures]
+            tap_to_click = "on"
+            "#,
+        )
+        .unwrap();
+        let raw = RawTrackpadPreferences::from_pairs(&[(
+            "Clicking",
+            PreferenceValue::Integer(0),
+        )]);
+        let policy = normalize(&raw);
+        let mut report = SyncReport {
+            enabled: true,
+            ..SyncReport::default()
+        };
+        merge_policy(&mut cfg, &policy, &mut report);
+        assert_eq!(cfg.gestures.tap_to_click, GestureEnable::On);
+        assert!(report
+            .explicit_overrides
+            .contains(&"gestures.tap_to_click".to_string()));
+    }
+
+    #[test]
+    fn missing_preference_snapshot_is_a_valid_noop() {
+        let mut cfg = Config::default();
+        let policy = normalize(&RawTrackpadPreferences::default());
+        let mut report = SyncReport {
+            enabled: true,
+            ..SyncReport::default()
+        };
+        merge_policy(&mut cfg, &policy, &mut report);
+        assert_eq!(report.applied.len(), 0);
+        assert!(report.unsupported.is_empty());
+        assert_eq!(cfg.cursor.sensitivity, 28.0);
+        assert_eq!(cfg.scroll.sensitivity, 20.0);
     }
 }

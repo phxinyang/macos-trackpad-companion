@@ -36,13 +36,18 @@
 `com.apple.driver.AppleBluetoothMultitouch.trackpad`，自然滚动读取
 `.GlobalPreferences/com.apple.swipescrolldirection`。合并优先级为：
 显式 TOML 字段 > macOS 设置 > Rust 默认值；读取失败或未知枚举只会记日志并
-保留已有配置。该同步是启动时快照，不会写回系统设置。
+保留已有配置。该同步是启动时快照，不会写回系统设置。没有内置触控板、
+只有外接设备或系统隐藏 Trackpad pane 时，缺失 domain/key 视为正常降级，
+不会阻止 companion 启动。
 
 | 功能项 | 对应 Apple 原生偏好键 (`com.apple.AppleMultitouchTrackpad`) | 对应 `config.toml` 配置项 | 默认值与行为说明 |
 |---|---|---|---|
 | 轻点以点按 | `Clicking = 1` | `gestures.tap_to_click` | 默认开启，短触碰抬手触发单击 |
 | 辅助点按 (右键) | `TrackpadRightClick = 1` | `gestures.secondary_click` | 默认开启，两指轻点触发右键 |
 | 自然滚动 | `.GlobalPreferences/com.apple.swipescrolldirection = 1` | `[scroll] natural` | 全局值优先；默认 `true`（内容随手指同向移动） |
+| 指针追踪速度 | `.GlobalPreferences/com.apple.trackpad.scaling` | `[cursor] sensitivity` | 兼容性归一化：观察到的 0..3 滑杆映射到 0.5..2.0x；不是 Apple 公布的 px/mm 公式 |
+| 指针加速开关 | `.GlobalPreferences/com.apple.trackpad.scaling = -1` | `[cursor] accel_exponent` | 仅 `-1` 映射为线性 `1.0`；其他加速细节保留项目曲线 |
+| 滚动速度标量 | `.GlobalPreferences/com.apple.scrollwheel.scaling` | `[scroll] sensitivity` | 以常见 `0.6875` 为 1.0x，结果限制在 5..80 px/mm；不是稳定公开 API |
 | 滚动开关 | `TrackpadScroll = 1` | `[scroll] enable` | 关闭时不发 2F 滚动 |
 | 横向滚动 | `TrackpadHorizScroll = 1` | `[scroll] horizontal` | 关闭时只保留纵向分量 |
 | 滚动惯性 | `TrackpadMomentumScroll = 1` | `[scroll] momentum` | 关闭时抬手不启动 inertia |
@@ -51,7 +56,7 @@
 | 旋转 | `TrackpadRotate = 1` | `[gestures.rotate] enable` | 默认 `on`，支持针对特定 App 开启/关闭 |
 | 查词与数据检测器 | `TrackpadThreeFingerTapGesture = 2` | `gestures.dictionary_lookup` | 默认开启，三指轻点调用词典 |
 | 三指拖移 | `TrackpadThreeFingerDrag = 1` | `[gestures.three_finger_drag] enable` | 默认 `on`，三指按住左键拖拽 |
-| 拖移锁定与换把悬停 (Drag Lock) | `Dragging = 1`, `DragLock = 1` | `[gestures.three_finger_drag] release_delay_ms` | 默认 `500`（500ms 换把悬停延续锁定；设为 `0` 则抬手即松） |
+| 拖移锁定与换把悬停 (Drag Lock) | `Dragging` / `DragLock` | `[gestures.one_finger_tap_drag]` 与三指 `release_delay_ms` 分开配置 | `DragLock` 仅记录诊断，不覆盖三指 500ms 换把；三指悬停请直接设置 `release_delay_ms` |
 | 四指轻扫切换全屏 App / 桌面 | `TrackpadFourFingerHorizSwipeGesture = 2` | `[gestures.swipe.horizontal] backend = "synthetic"` | 默认 `synthetic`；私有 DockSwipe，待 macOS 版本实测 |
 | 四指调度中心 (Mission Control) | `TrackpadFourFingerVertSwipeGesture = 2` | `[gestures.swipe.vertical] backend = "synthetic"` | 默认按配置；私有 DockSwipe，待 macOS 版本实测 |
 | 四指捏合启动台 (Launchpad) | `TrackpadFourFingerPinchGesture = 2` | 触控区识别 + Dock 命令 | 仅记录设置；离散命令，待真机 |

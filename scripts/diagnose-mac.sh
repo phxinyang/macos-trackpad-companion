@@ -33,7 +33,9 @@ echo "========================================================"
 
     echo "=== 全局手势设置 (Global Defaults) ==="
     echo "com.apple.swipescrolldirection: $(defaults read -g com.apple.swipescrolldirection 2>/dev/null || echo '未设置')"
-    echo "(The companion reads the same global key via CFPreferences; legacy com.apple.trackpad.* aliases are diagnostic-only.)"
+    echo "com.apple.trackpad.scaling: $(defaults read -g com.apple.trackpad.scaling 2>/dev/null || echo '未设置')"
+    echo "com.apple.scrollwheel.scaling: $(defaults read -g com.apple.scrollwheel.scaling 2>/dev/null || echo '未设置')"
+    echo "(The companion reads these global keys via CFPreferences and applies bounded compatibility mappings; missing keys are normal.)"
     echo ""
 
     echo "=== Dock 手势与 Space 设置 (com.apple.dock) ==="
