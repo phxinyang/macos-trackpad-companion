@@ -276,18 +276,18 @@ coordinate scale. To remain compatible:
   - Contact Count — Digitizer 0x54 — 8 bits
   - Button 1 — Button 0x01 — 1 bit (then 7 bits padding)
 
-This produces a **6-byte-per-contact** layout. The companion's
-`Layout::validate` rejects anything else; if you change the per-contact
-field set, update both ends.
+The reference firmware therefore produces a **6-byte-per-contact** layout.
+The decoder also preserves descriptor bit offsets and widths, so compatible
+bit-packed contact fields can be decoded when the descriptor describes them;
+hybrid/parallel report aggregation remains outside this profile.
 
 The Microsoft "PTPHQA" feature report is needed for Windows certification
 but ignored by macOS, so it's optional from the companion's perspective.
 
-The HID decoder is currently profile-scoped: descriptor discovery finds the
-project's 6-byte contact layout, but `report.rs` still decodes contact fields
-at that layout rather than handling every descriptor-defined bit-packed or
-hybrid PTP report. Broader device compatibility is tracked in the execution
-plan's Phase C.
+The HID decoder is descriptor-driven for contact field offsets and widths,
+including non-byte-aligned fields. The project reference remains the 6-byte
+profile above; Microsoft parallel/hybrid aggregation and broader device
+compatibility are tracked in the execution plan's Phase C.
 
 ## Reference firmware
 
