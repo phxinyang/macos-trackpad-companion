@@ -2219,34 +2219,16 @@ impl<O: Output> State<O> {
             let pinch_dist_mm = (d_diff_x * u_x + d_diff_y * u_y).abs();
             // Pure relative motion tangential to inter-finger axis (real rotate)
             let rot_arc_mm = (d_diff_x * v_x + d_diff_y * v_y).abs();
-
             let pinch_rot_admissible =
                 !(ANCHORED_FINGER_FLOOR_MM..TAP_MAX_MOVE_MM).contains(&min_per_finger);
             // Penalize pinch/rot selection scores when the two finger-
             // motion vectors are roughly parallel (high positive
             // alignment cosine). Real pinch and real rotate have
             // anti-parallel or truly-anchored geometry — anti-parallel
-            // gives cos ≤ 0 (penalty 1.0, no effect) and truly-anchored
+            // gives cos <= 0 (penalty 1.0, no effect) and truly-anchored
             // gives cos = -1 by the code's fallback (penalty 1.0).
-            // Positive alignment is a "both fingers want the same
-            // direction" signal: most likely a slow scroll whose
-            // trailing finger lags. On the SoflePLUS2's small off-center
-            // trackpad the user's wrist offset systematically makes one
-            // finger drag less than the other, fooling the per-finger
-            // gates and locking pinch+rotate when scroll was intended.
-            // Linear falloff (1 - cos) clipped at 0; see gesture-tuning
-            // -ideas.md idea #2.
             let align_penalty = (1.0 - alignment).clamp(0.0, 1.0);
 
-            // The penalty multiplies the *whole* selection score, not
-            // just the ratio term. Leaving it on `pinch_raw` alone let
-            // the geometric term slip past it through the `max`, which
-            // defeated the gate entirely for the case it was written
-            // for: a lazy-trailer scroll produces real differential
-            // millimetres, so its geometric score stays high even when
-            // the alignment cosine says both fingers are heading the
-            // same way. Anti-parallel and truly-anchored geometries have
-            // penalty 1.0 and are unaffected.
             let pinch = if base.pinch_admitted && pinch_rot_admissible {
                 (pinch_dist_mm / (base.initial_distance * PINCH_LOCK_RATIO)).max(pinch_raw)
                     * align_penalty
@@ -2444,14 +2426,15 @@ impl<O: Output> State<O> {
 
                 // Dynamic transition to PinchAndRotate if user distinctly pinches or rotates mid-scroll
                 let scale_rel = (dist / base.initial_distance - 1.0).abs();
-                let rot_rel = angle_delta(ang, base.initial_angle).abs();
-                if (base.pinch_admitted && scale_rel >= 0.18)
-                    || (base.rotate_admitted && rot_rel >= 12.0_f64.to_radians())
+                let frame_rot = angle_delta(ang, base.prev_angle).abs();
+                let total_rot = angle_delta(ang, base.initial_angle).abs();
+                if (base.pinch_admitted && scale_rel >= 0.25)
+                    || (base.rotate_admitted && (frame_rot >= 2.0_f64.to_radians() || total_rot >= 15.0_f64.to_radians()))
                 {
                     log::info!(
-                        "2F dynamic transition from Pan -> PinchAndRotate (scale_rel={:.2} rot_rel={:.2}rad)",
+                        "2F dynamic transition from Pan -> PinchAndRotate (scale_rel={:.2} frame_rot={:.2}rad)",
                         scale_rel,
-                        rot_rel
+                        frame_rot
                     );
                     self.out.scroll(0.0, 0.0, Phase::Ended);
                     self.kind = GestureKind::TwoFingerPinchAndRotate;
@@ -2498,7 +2481,8 @@ impl<O: Output> State<O> {
                     // Apple AppKit NSEvent.rotation specifies: positive = counter-clockwise,
                     // negative = clockwise. Screen-coordinate atan2(+Y down) yields positive for
                     // clockwise, so invert sign for native parity!
-                    let appkit_angle_deg = -angle_d.to_degrees();
+                    // Apply 1.25x natural rotation multiplier for responsive feel in Preview/Photos/Maps.
+                    let appkit_angle_deg = -angle_d.to_degrees() * 1.25;
                     log::debug!("rotate: delta={:+.2}deg", appkit_angle_deg);
                     self.out.rotate(appkit_angle_deg, Phase::Changed);
                 }
