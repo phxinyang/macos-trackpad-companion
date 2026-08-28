@@ -391,7 +391,9 @@ unsafe extern "C" {
     fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
     fn CGEventSetLocation(event: CGEventRef, location: CGPoint);
     fn CGEventSetType(event: CGEventRef, ty: u32);
+    fn CGEventGetFlags(event: CGEventRef) -> u64;
     fn CGEventSetFlags(event: CGEventRef, flags: u64);
+    fn CGEventSourceFlagsState(state: i32) -> u64;
     fn CGEventSetTimestamp(event: CGEventRef, ts: u64);
     fn CGEventSetIntegerValueField(event: CGEventRef, field: u32, value: i64);
     fn CGEventSetDoubleValueField(event: CGEventRef, field: u32, value: f64);
@@ -452,10 +454,19 @@ impl Event {
     fn set_dbl(&self, field: u32, value: f64) {
         unsafe { CGEventSetDoubleValueField(self.0, field, value) };
     }
+    fn apply_current_modifiers(&self) {
+        let mods = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
+        if mods != 0 {
+            let existing = unsafe { CGEventGetFlags(self.0) };
+            unsafe { CGEventSetFlags(self.0, existing | mods) };
+        }
+    }
     fn post(&self) {
+        self.apply_current_modifiers();
         unsafe { CGEventPost(kCGHIDEventTap, self.0) };
     }
     fn post_to(&self, tap: u32) {
+        self.apply_current_modifiers();
         unsafe { CGEventPost(tap, self.0) };
     }
 }
