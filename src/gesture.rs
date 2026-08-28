@@ -2361,10 +2361,14 @@ impl<O: Output> State<O> {
                         if base.rotate_admitted {
                             self.out.rotate(0.0, Phase::Began);
                         }
-                        // Re-anchor prev_scale and prev_angle to initial baseline so that all motion
-                        // accumulated from touch-down to lock is fully delivered in the first Changed event.
-                        base.prev_scale = 1.0;
-                        base.prev_angle = base.initial_angle;
+                        // Re-anchor prev_scale or prev_angle for the dominant component so that
+                        // motion accumulated from touch-down to lock is delivered cleanly without cross-pollution.
+                        if rot >= pinch {
+                            base.prev_angle = base.initial_angle;
+                        }
+                        if pinch >= rot {
+                            base.prev_scale = 1.0;
+                        }
                         base.pinch_rotate_dominant =
                             match (base.pinch_admitted, base.rotate_admitted) {
                                 (false, true) => PinchRotateDominant::Rotate,
@@ -2491,8 +2495,8 @@ impl<O: Output> State<O> {
                     log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
                     self.out.pinch(scale_delta, Phase::Changed);
                 }
-                let rot_noise_floor = if scale_delta.abs() > 0.03 { 0.20 } else { 0.10 };
-                if angle_d.to_degrees().abs() >= rot_noise_floor && base.rotate_admitted {
+                let rot_noise_floor = if scale_delta.abs() > 0.02 { 0.12_f64.to_radians() } else { 1e-4 };
+                if angle_d.abs() >= rot_noise_floor && base.rotate_admitted {
                     // Apple AppKit NSEvent.rotation specifies: positive = counter-clockwise,
                     // negative = clockwise. Screen-coordinate atan2(+Y down) yields positive for
                     // clockwise, so invert sign for native parity!
