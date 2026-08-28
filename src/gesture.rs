@@ -114,6 +114,11 @@ const SWIPE_PROGRESS_REF_MM: f64 = 50.0;
 /// Apple standard is ~200-220ms. Longer windows cause accidental text selection drags.
 const TAP_DRAG_INTERVAL: Duration = Duration::from_millis(220);
 
+/// Maximum interval between two 2F taps for double-tap smart zoom.
+/// Under Apple standard (~220-250ms), a second tap inside this window resolves to smart zoom;
+/// otherwise single tap resolves to secondary click (Right Click).
+const TWO_FINGER_DOUBLE_TAP_WINDOW: Duration = Duration::from_millis(220);
+
 /// Centroid travel needed to engage a tap-drag before posting the
 /// synthetic left-button hold. 0.8mm ensures natural micro-jitter doesn't latch.
 const DRAG_ENGAGE_MM: f64 = 0.80;
@@ -323,6 +328,9 @@ struct TwoFingerBaseline {
     /// scroll. With both `false`, only TwoFingerPan is reachable.
     pinch_admitted: bool,
     rotate_admitted: bool,
+    cumulative_dx: f64,
+    right_edge_candidate: bool,
+    right_edge_latched: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -367,6 +375,21 @@ struct MultiBaseline {
     /// to the Ended event as the lift-velocity signal that the Dock
     /// uses to decide commit-vs-rubber-band.
     velocity: (f64, f64),
+    /// Mean distance of all contacts from centroid at touchdown.
+    initial_radial_spread: f64,
+    /// Latch for 4-finger radial gestures (Launchpad/Show Desktop) so they fire once per touch session.
+    radial_action_latched: bool,
+}
+
+fn compute_radial_spread(active: &[Contact], centroid: (f64, f64)) -> f64 {
+    if active.is_empty() {
+        return 0.0;
+    }
+    let sum: f64 = active
+        .iter()
+        .map(|c| ((c.x - centroid.0).powi(2) + (c.y - centroid.1).powi(2)).sqrt())
+        .sum();
+    sum / active.len() as f64
 }
 
 /// Runtime-tunable behavior switches. Passed via [`State::with_options`];
@@ -389,6 +412,8 @@ pub struct GestureOptions {
     /// a quick tap followed by cursor movement moves the cursor normally
     /// instead of locking the left mouse button into a drag.
     pub one_finger_tap_drag: bool,
+    /// Whether single-finger press-and-hold (stationary hold >= 450ms) latches the left mouse button.
+    pub press_and_hold_drag: bool,
 }
 
 impl Default for GestureOptions {
@@ -397,6 +422,7 @@ impl Default for GestureOptions {
             three_finger_drag: true,
             release_delay_ms: 500,
             one_finger_tap_drag: true,
+            press_and_hold_drag: false,
         }
     }
 }
@@ -575,7 +601,7 @@ pub struct State<O: Output> {
     /// gestures (taps/scroll still classify normally while held).
     prev_button: bool,
     last_1f_tap: Option<Timestamp>,
-    last_2f_tap: Option<Timestamp>,
+    pending_right_click: Option<Timestamp>,
     tap_drag_candidate: bool,
     tap_drag_active: bool,
     /// Set when a second tap lands inside the tap-drag window, and
@@ -587,6 +613,7 @@ pub struct State<O: Output> {
     /// double-click arrive as a click plus an unrelated press/release
     /// pair, which is why double-clicks stopped registering.
     tap_drag_pending_since: Option<Timestamp>,
+    hold_latched: bool,
 }
 
 impl<O: Output> State<O> {
@@ -621,10 +648,11 @@ impl<O: Output> State<O> {
             suppress_one_finger_click: false,
             prev_button: false,
             last_1f_tap: None,
-            last_2f_tap: None,
+            pending_right_click: None,
             tap_drag_candidate: false,
             tap_drag_active: false,
             tap_drag_pending_since: None,
+            hold_latched: false,
         }
     }
 
@@ -760,7 +788,7 @@ impl<O: Output> State<O> {
         self.tap_drag_pending_since = None;
         self.tap_drag_candidate = false;
         self.last_1f_tap = None;
-        self.last_2f_tap = None;
+        self.pending_right_click = None;
         self.out.set_event_time(now);
         // A link timeout is not evidence of a deliberate lift. Close
         // every live stream with Cancelled so scroll consumers do not
@@ -801,9 +829,10 @@ impl<O: Output> State<O> {
             self.out.set_drag_button_held(false);
             self.drag_button_held = false;
         }
-        if self.prev_button {
+        if self.prev_button || self.hold_latched {
             self.out.set_left_button_held(false);
             self.prev_button = false;
+            self.hold_latched = false;
         }
         // A canceled touch must not leave a drag-lock timer armed: the
         // fingers whose return would cancel it are not coming back.
@@ -825,10 +854,20 @@ impl<O: Output> State<O> {
 
     /// Advance time-based gesture state. Called from the transport
     /// loops' idle heartbeat (they poll on a ~50 ms cadence even with
-    /// zero traffic), which is what drives the three-finger-drag lock
-    /// release after its configured delay.
+    /// zero traffic), which drives 2F tap right-click confirmation and
+    /// three-finger-drag lock release.
     #[allow(dead_code)]
     pub fn tick(&mut self, now: Timestamp) {
+        if let Some(tap_time) = self.pending_right_click {
+            if now.saturating_duration_since(tap_time) >= TWO_FINGER_DOUBLE_TAP_WINDOW {
+                self.pending_right_click = None;
+                log::debug!(
+                    "2f tap: confirmed after double-tap window ({}ms) -> click Right",
+                    TWO_FINGER_DOUBLE_TAP_WINDOW.as_millis()
+                );
+                self.out.click(MouseButton::Right);
+            }
+        }
         let Some(expires_at) = self.pending_drag_release else {
             return;
         };
@@ -856,6 +895,33 @@ impl<O: Output> State<O> {
         self.cursor_carry_x_px = 0.0;
         self.cursor_carry_y_px = 0.0;
         self.born_during_coast = false;
+    }
+
+    fn flush_pending_right_click(&mut self) {
+        if let Some(_) = self.pending_right_click.take() {
+            log::debug!("2f tap: flushing pending right-click -> click Right");
+            self.out.click(MouseButton::Right);
+        }
+    }
+
+    fn on_two_finger_tap_lift(&mut self, now: Timestamp) {
+        self.last_1f_tap = None;
+        self.tap_drag_candidate = false;
+        if let Some(prev) = self.pending_right_click.take() {
+            if now.saturating_duration_since(prev) <= TWO_FINGER_DOUBLE_TAP_WINDOW {
+                log::debug!(
+                    "2f double tap: smart zoom / smart magnify (interval={}ms)",
+                    now.saturating_duration_since(prev).as_millis()
+                );
+                self.out.smart_magnify();
+                return;
+            } else {
+                log::debug!("2f tap: previous right-click expired, flushing");
+                self.out.click(MouseButton::Right);
+            }
+        }
+        log::debug!("2f tap: pending right-click (debouncing for double tap smart zoom)");
+        self.pending_right_click = Some(now);
     }
 
     fn classify(&self, n: usize) -> GestureKind {
@@ -925,6 +991,9 @@ impl<O: Output> State<O> {
                 log::debug!("touch born during coast — suppressing taps for this session");
             }
         }
+        if matches!(new_kind, GestureKind::ThreeFingerLive | GestureKind::FourFingerLive | GestureKind::ThreeFingerDrag) {
+            self.pending_right_click = None;
+        }
         if matches!(self.kind, GestureKind::Idle) && matches!(new_kind, GestureKind::OneFinger) {
             self.tap_drag_active = false;
             if self.options.one_finger_tap_drag {
@@ -987,7 +1056,15 @@ impl<O: Output> State<O> {
                 let pending_3f = self.pending_three_finger_tap.take();
                 let suppress_residual = std::mem::take(&mut self.suppress_one_finger_click);
                 if matches!(new_kind, GestureKind::Idle) {
-                    if self.tap_drag_active {
+                    if self.hold_latched {
+                        log::debug!("1f press-and-hold: release left button on lift");
+                        self.out.set_left_button_held(false);
+                        self.hold_latched = false;
+                        self.tap_drag_active = false;
+                        self.tap_drag_candidate = false;
+                        self.tap_drag_pending_since = None;
+                        self.last_1f_tap = None;
+                    } else if self.tap_drag_active {
                         if self.drag_button_held {
                             self.out.set_drag_button_held(false);
                             self.drag_button_held = false;
@@ -1062,32 +1139,7 @@ impl<O: Output> State<O> {
                         } else if total_dur < TAP_MAX_DURATION
                             && combined_max_move < TAP_MAX_MOVE_MM
                         {
-                            if let Some(prev) = self.last_2f_tap {
-                                if now.saturating_duration_since(prev) < Duration::from_millis(350) {
-                                    log::debug!(
-                                        "2f double tap (split lift): smart zoom / smart magnify (interval={}ms)",
-                                        now.saturating_duration_since(prev).as_millis()
-                                    );
-                                    self.last_2f_tap = None;
-                                    self.out.smart_magnify();
-                                } else {
-                                    log::debug!(
-                                        "2f tap (split lift): click Right (total_dur={}ms combined_max_move={:.2}mm)",
-                                        total_dur.as_millis(),
-                                        combined_max_move,
-                                    );
-                                    self.out.click(MouseButton::Right);
-                                    self.last_2f_tap = Some(now);
-                                }
-                            } else {
-                                log::debug!(
-                                    "2f tap (split lift): click Right (total_dur={}ms combined_max_move={:.2}mm)",
-                                    total_dur.as_millis(),
-                                    combined_max_move,
-                                );
-                                self.out.click(MouseButton::Right);
-                                self.last_2f_tap = Some(now);
-                            }
+                            self.on_two_finger_tap_lift(now);
                         } else {
                             // If total duration exceeded or moved, it was NOT a 2F tap!
                             // Fallback to evaluating the residual 1F touch as a normal 1F tap so single taps are never lost!
@@ -1173,6 +1225,17 @@ impl<O: Output> State<O> {
                 // whether the seed is fast enough to coast on; gesture-side
                 // we always offer it.
                 self.out.scroll_inertia(vx, vy);
+                if matches!(new_kind, GestureKind::Idle) {
+                    if let Some(base) = self.two_baseline {
+                        if base.right_edge_candidate && base.cumulative_dx <= -5.0 {
+                            log::debug!(
+                                "2f right edge swipe: toggle notification center (cumulative_dx={:.2}mm)",
+                                base.cumulative_dx
+                            );
+                            self.out.toggle_notification_center();
+                        }
+                    }
+                }
                 if matches!(
                     new_kind,
                     GestureKind::ThreeFingerLive | GestureKind::FourFingerLive
@@ -1270,34 +1333,9 @@ impl<O: Output> State<O> {
                         );
                         self.out.click(MouseButton::Left);
                         self.last_1f_tap = Some(now);
-                        self.last_2f_tap = None;
+                        self.pending_right_click = None;
                     } else if tap_eligible {
-                        if let Some(prev) = self.last_2f_tap {
-                            if now.saturating_duration_since(prev) < Duration::from_millis(350) {
-                                log::debug!(
-                                    "2f double tap: smart zoom / smart magnify (interval={}ms)",
-                                    now.saturating_duration_since(prev).as_millis()
-                                );
-                                self.last_2f_tap = None;
-                                self.out.smart_magnify();
-                            } else {
-                                log::debug!(
-                                    "2f tap: click Right (dur={}ms max_move={:.2}mm)",
-                                    dur.as_millis(),
-                                    max_move,
-                                );
-                                self.out.click(MouseButton::Right);
-                                self.last_2f_tap = Some(now);
-                            }
-                        } else {
-                            log::debug!(
-                                "2f tap: click Right (dur={}ms max_move={:.2}mm)",
-                                dur.as_millis(),
-                                max_move,
-                            );
-                            self.out.click(MouseButton::Right);
-                            self.last_2f_tap = Some(now);
-                        }
+                        self.on_two_finger_tap_lift(now);
                     } else {
                         log::debug!(
                             "2f lift, no tap: dur={}ms max_move={:.2}mm",
@@ -1522,6 +1560,8 @@ impl<O: Output> State<O> {
                         "2F gesture start: admit pinch={pinch_admitted} rotate={rotate_admitted}"
                     );
                 }
+                let right_edge_candidate =
+                    a.x >= 28.0 || b.x >= 28.0 || (a.x >= 0.65 && a.x <= 1.0) || (b.x >= 0.65 && b.x <= 1.0);
                 self.two_baseline = Some(TwoFingerBaseline {
                     initial_distance: dist,
                     initial_angle: ang,
@@ -1541,6 +1581,9 @@ impl<O: Output> State<O> {
                     pinch_rot_lock_pending: false,
                     pinch_admitted,
                     rotate_admitted,
+                    cumulative_dx: 0.0,
+                    right_edge_candidate,
+                    right_edge_latched: false,
                 });
             }
             GestureKind::ThreeFingerDrag => {
@@ -1567,6 +1610,7 @@ impl<O: Output> State<O> {
                          swipe.v={swipe_vertical_admitted}"
                     );
                 }
+                let initial_radial_spread = compute_radial_spread(active, (cx, cy));
                 self.multi_baseline = Some(MultiBaseline {
                     _initial_centroid: (cx, cy),
                     finger_count: active.len(),
@@ -1579,6 +1623,8 @@ impl<O: Output> State<O> {
                     velocity: (0.0, 0.0),
                     swipe_horizontal_admitted,
                     swipe_vertical_admitted,
+                    initial_radial_spread,
+                    radial_action_latched: false,
                 });
             }
             _ => {}
@@ -1856,7 +1902,7 @@ impl<O: Output> State<O> {
 
     fn dispatch_one(&mut self, active: &[Contact], now: Timestamp, frame_dt: Duration) {
         let c = active[0];
-        let Some(tr) = self.contacts.get(&c.id) else {
+        let Some(tr) = self.contacts.get(&c.id).copied() else {
             return;
         };
 
@@ -1879,6 +1925,7 @@ impl<O: Output> State<O> {
         let move_1f = tr.max_move_sq.sqrt();
         let dur_1f = now.saturating_duration_since(tr.down_at);
         if move_1f > 0.4 || dur_1f > Duration::from_millis(150) {
+            self.flush_pending_right_click();
             if self.pending_two_finger_tap.is_some() {
                 log::debug!(
                     "1f motion/hold: cleared stale pending 2f tap (move={:.2}mm dur={}ms)",
@@ -1916,6 +1963,24 @@ impl<O: Output> State<O> {
                 // pointer does not creep off the target while we wait.
                 self.pending_motion = None;
                 return;
+            }
+        }
+
+        // Press-and-hold drag detection:
+        // Stationary single finger held >= HOLD_TIME (450ms) latches left button
+        const HOLD_TIME: Duration = Duration::from_millis(450);
+        if self.options.press_and_hold_drag
+            && !self.hold_latched
+            && !self.tap_drag_candidate
+            && !self.tap_drag_active
+            && self.contacts.len() == 1
+        {
+            let dur = now.saturating_duration_since(tr.down_at);
+            let max_move = tr.max_move_sq.sqrt();
+            if dur >= HOLD_TIME && max_move <= TAP_MAX_MOVE_MM {
+                log::debug!("1f press-and-hold: latched left button held=true");
+                self.out.set_left_button_held(true);
+                self.hold_latched = true;
             }
         }
 
@@ -2234,6 +2299,7 @@ impl<O: Output> State<O> {
                     GestureKind::TwoFingerPinchAndRotate
                 };
                 self.kind = new_kind;
+                self.pending_right_click = None;
                 let pan_tag = if pan_qualified {
                     String::new()
                 } else if !margin_ok {
@@ -2362,6 +2428,15 @@ impl<O: Output> State<O> {
                         base.scroll_velocity.1,
                     );
                     self.out.scroll(ddx, ddy, Phase::Changed);
+                    base.cumulative_dx += ddx;
+                    if base.right_edge_candidate && !base.right_edge_latched && base.cumulative_dx <= -3.8 {
+                        log::info!(
+                            "2f right-edge swipe in: toggle notification center (cumulative_dx={:.2}mm)",
+                            base.cumulative_dx
+                        );
+                        self.out.toggle_notification_center();
+                        base.right_edge_latched = true;
+                    }
                     base.last_centroid = centroid;
                 }
                 base.prev_scale = scale;
@@ -2476,6 +2551,46 @@ impl<O: Output> State<O> {
 
         let dx = base.cumulative_dx;
         let dy = base.cumulative_dy;
+
+        // 4-Finger Radial Pinch/Spread Detection (Launchpad & Show Desktop):
+        if base.finger_count >= 4
+            && !base.radial_action_latched
+            && base.axis.is_none()
+            && base.initial_radial_spread > 1.0
+        {
+            let current_radial = compute_radial_spread(active, (cx, cy));
+            let ratio = current_radial / base.initial_radial_spread;
+            let travel = (dx * dx + dy * dy).sqrt();
+
+            // Pinch in: fingers move toward centroid -> Launchpad (启动台)
+            if ratio <= 0.72 && travel < 4.5 {
+                log::info!("4f radial pinch-in: toggle Launchpad (ratio={ratio:.2})");
+                self.out.toggle_launchpad();
+                base.radial_action_latched = true;
+                base.last_centroid = (cx, cy);
+                base.last_centroid_time = Some(now);
+                self.multi_baseline = Some(base);
+                return;
+            }
+
+            // Spread out: fingers move away from centroid -> Show Desktop (显示桌面)
+            if ratio >= 1.28 && travel < 4.5 {
+                log::info!("4f radial spread-out: toggle Show Desktop (ratio={ratio:.2})");
+                self.out.toggle_show_desktop();
+                base.radial_action_latched = true;
+                base.last_centroid = (cx, cy);
+                base.last_centroid_time = Some(now);
+                self.multi_baseline = Some(base);
+                return;
+            }
+        }
+
+        if base.radial_action_latched {
+            base.last_centroid = (cx, cy);
+            base.last_centroid_time = Some(now);
+            self.multi_baseline = Some(base);
+            return;
+        }
 
         // Lock the swipe axis on first significant centroid motion.
         // Holding the axis for the rest of the gesture means a slight
@@ -2687,6 +2802,25 @@ mod tests {
         fn smart_magnify(&self) {
             self.log.borrow_mut().push("smart_magnify".to_string());
         }
+        fn toggle_notification_center(&self) {
+            self.log
+                .borrow_mut()
+                .push("toggle_notification_center".to_string());
+        }
+        fn toggle_launchpad(&self) {
+            self.log.borrow_mut().push("toggle_launchpad".to_string());
+        }
+        fn toggle_show_desktop(&self) {
+            self.log.borrow_mut().push("toggle_show_desktop".to_string());
+        }
+        fn toggle_app_expose(&self) {
+            self.log.borrow_mut().push("toggle_app_expose".to_string());
+        }
+        fn toggle_mission_control(&self) {
+            self.log
+                .borrow_mut()
+                .push("toggle_mission_control".to_string());
+        }
     }
 
     /// Tests pre-date the chip-px → mm migration: their coordinates are
@@ -2798,8 +2932,10 @@ mod tests {
     fn two_finger_tap_emits_right_click() {
         let r = Recorder::default();
         let mut s = State::new(&r, test_accel());
-        s.on_frame(frame(&[(1, 0.4, 0.5), (2, 0.6, 0.5)]));
-        s.on_frame(frame(&[]));
+        let t0 = Timestamp::now();
+        s.on_frame_at(frame(&[(1, 0.4, 0.5), (2, 0.6, 0.5)]), t0);
+        s.on_frame_at(frame(&[]), at(t0, 50));
+        s.tick(at(t0, 300));
         let log = r.pop();
         assert!(log.iter().any(|l| l.contains("click Right")), "{log:?}");
     }
@@ -3508,6 +3644,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn two_finger_right_edge_swipe_toggles_notification_center() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        // Two fingers land near the right edge (x >= 0.85 on test pad of 50mm -> x >= 42.5mm)
+        s.on_frame(frame(&[(1, 0.90, 0.50), (2, 0.90, 0.60)]));
+        s.on_frame(frame(&[(1, 0.85, 0.50), (2, 0.85, 0.60)]));
+        s.on_frame(frame(&[(1, 0.70, 0.50), (2, 0.70, 0.60)]));
+        s.on_frame(frame(&[(1, 0.50, 0.50), (2, 0.50, 0.60)]));
+        s.on_frame(frame(&[(1, 0.30, 0.50), (2, 0.30, 0.60)]));
+        s.on_frame(frame(&[]));
+        let log = r.pop();
+        assert!(
+            log.iter().any(|l| l == "toggle_notification_center"),
+            "expected toggle_notification_center after right edge swipe, got: {log:?}"
+        );
+    }
+
     /// Anti-parallel diagonal motion that's mostly rotation around the
     /// centroid but carries ~4% radial spread as a side effect.
     /// Reproduces the SoflePLUS2 hardware case from /tmp/rotate.txt:99-109.
@@ -3690,6 +3844,7 @@ mod tests {
         let t0 = Timestamp::now();
         s.on_frame_at(frame(&[(1, 0.4, 0.5), (2, 0.6, 0.5)]), t0);
         s.on_frame_at(frame(&[]), at(t0, 80));
+        s.tick(at(t0, 350));
         let log = r.pop();
         assert!(log.iter().any(|l| l.contains("click Right")), "{log:?}");
     }
@@ -3790,34 +3945,32 @@ mod tests {
 
     /// Press-and-hold should latch the left button after HOLD_TIME, then
     /// pass cursor motion through with the button held, releasing on lift.
-    /// Currently *not* implemented in `gesture.rs` — there's no hold
-    /// detection at all, so a >220 ms stationary touch produces nothing.
     /// Port of rmk's `software_press_and_hold_latches_button_then_drags_and_releases`.
     #[test]
-    #[ignore = "press-and-hold drag not implemented in gesture.rs"]
     fn software_press_and_hold_latches_button_then_drags_and_releases() {
         let r = Recorder::default();
-        let mut s = State::new(&r, test_accel());
+        let mut s = State::with_options(
+            &r,
+            test_accel(),
+            GestureOptions {
+                press_and_hold_drag: true,
+                ..GestureOptions::default()
+            },
+        );
         let t0 = Timestamp::now();
-        // Touch persists past the (yet-to-be-defined) hold threshold,
-        // analogous to rmk's HOLD_TIME = 450 ms.
+        // Touch persists past the hold threshold (HOLD_TIME = 450 ms).
         s.on_frame_at(frame(&[(1, 0.50, 0.50)]), t0);
         s.on_frame_at(frame(&[(1, 0.50, 0.50)]), at(t0, 200));
         s.on_frame_at(frame(&[(1, 0.50, 0.50)]), at(t0, 460));
         // Drag motion under the held button.
-        s.on_frame_at(frame(&[(1, 0.51, 0.50)]), at(t0, 475));
-        s.on_frame_at(frame(&[(1, 0.52, 0.50)]), at(t0, 488));
+        s.on_frame_at(frame(&[(1, 0.54, 0.50)]), at(t0, 475));
+        s.on_frame_at(frame(&[(1, 0.58, 0.50)]), at(t0, 488));
+        s.on_frame_at(frame(&[(1, 0.62, 0.50)]), at(t0, 495));
         // Lift releases the button.
         s.on_frame_at(frame(&[]), at(t0, 501));
         let log = r.pop();
-        // Expect: a synthesized button-1 press (NOT a one-shot click),
-        // then move events, then a release. Today there's no API on the
-        // Output trait for "press" vs. "click" — adding press-and-hold
-        // will require extending `Output` with `mouse_down`/`mouse_up`
-        // (or similar) and routing them from `gesture.rs`.
         assert!(
-            log.iter()
-                .any(|l| l.contains("press") || l.contains("down")),
+            log.iter().any(|l| l == "set_left_button_held true"),
             "expected explicit button press from hold latch ({log:?})",
         );
         assert!(
@@ -3825,8 +3978,7 @@ mod tests {
             "expected drag motion under held button ({log:?})",
         );
         assert!(
-            log.iter()
-                .any(|l| l.contains("release") || l.contains("up")),
+            log.iter().any(|l| l == "set_left_button_held false"),
             "expected button release on lift ({log:?})",
         );
     }
@@ -3836,20 +3988,25 @@ mod tests {
     /// scroll/right-click). Port of rmk's
     /// `software_press_and_hold_does_not_latch_with_motion_or_two_fingers`.
     #[test]
-    #[ignore = "press-and-hold drag not implemented in gesture.rs"]
     fn software_press_and_hold_does_not_latch_with_motion_or_two_fingers() {
         // Motion past TAP_MAX_MOVE_MM before the hold window — no latch.
         {
             let r = Recorder::default();
-            let mut s = State::new(&r, test_accel());
+            let mut s = State::with_options(
+                &r,
+                test_accel(),
+                GestureOptions {
+                    press_and_hold_drag: true,
+                    ..GestureOptions::default()
+                },
+            );
             let t0 = Timestamp::now();
             s.on_frame_at(frame(&[(1, 0.50, 0.50)]), t0);
             s.on_frame_at(frame(&[(1, 0.55, 0.55)]), at(t0, 30));
             s.on_frame_at(frame(&[(1, 0.55, 0.55)]), at(t0, 460));
             let log = r.pop();
             assert!(
-                !log.iter()
-                    .any(|l| l.contains("press") || l.contains("down")),
+                !log.iter().any(|l| l.starts_with("set_left_button_held")),
                 "motion past TAP_MAX_MOVE_MM must not latch a hold ({log:?})",
             );
         }
@@ -3857,17 +4014,89 @@ mod tests {
         // Two-finger sessions never latch a hold.
         {
             let r = Recorder::default();
-            let mut s = State::new(&r, test_accel());
+            let mut s = State::with_options(
+                &r,
+                test_accel(),
+                GestureOptions {
+                    press_and_hold_drag: true,
+                    ..GestureOptions::default()
+                },
+            );
             let t0 = Timestamp::now();
             s.on_frame_at(frame(&[(1, 0.40, 0.50), (2, 0.60, 0.50)]), t0);
             s.on_frame_at(frame(&[(1, 0.40, 0.50), (2, 0.60, 0.50)]), at(t0, 460));
             let log = r.pop();
             assert!(
-                !log.iter()
-                    .any(|l| l.contains("press") || l.contains("down")),
+                !log.iter().any(|l| l.starts_with("set_left_button_held")),
                 "two-finger touch must not latch a hold ({log:?})",
             );
         }
+    }
+
+    #[test]
+    fn four_finger_radial_pinch_in_triggers_launchpad() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+        // 4 contacts spaced around center (0.5, 0.5):
+        s.on_frame_at(
+            frame(&[
+                (1, 0.30, 0.30),
+                (2, 0.70, 0.30),
+                (3, 0.30, 0.70),
+                (4, 0.70, 0.70),
+            ]),
+            t0,
+        );
+        // Pinch in by ~50% toward (0.5, 0.5):
+        s.on_frame_at(
+            frame(&[
+                (1, 0.40, 0.40),
+                (2, 0.60, 0.40),
+                (3, 0.40, 0.60),
+                (4, 0.60, 0.60),
+            ]),
+            at(t0, 40),
+        );
+        s.on_frame_at(frame(&[]), at(t0, 80));
+        let log = r.pop();
+        assert!(
+            log.iter().any(|l| l == "toggle_launchpad"),
+            "expected toggle_launchpad after 4F radial pinch-in, got: {log:?}"
+        );
+    }
+
+    #[test]
+    fn four_finger_radial_spread_out_triggers_show_desktop() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+        // 4 contacts close around center (0.5, 0.5):
+        s.on_frame_at(
+            frame(&[
+                (1, 0.45, 0.45),
+                (2, 0.55, 0.45),
+                (3, 0.45, 0.55),
+                (4, 0.55, 0.55),
+            ]),
+            t0,
+        );
+        // Spread out outward by ~60%:
+        s.on_frame_at(
+            frame(&[
+                (1, 0.30, 0.30),
+                (2, 0.70, 0.30),
+                (3, 0.30, 0.70),
+                (4, 0.70, 0.70),
+            ]),
+            at(t0, 40),
+        );
+        s.on_frame_at(frame(&[]), at(t0, 80));
+        let log = r.pop();
+        assert!(
+            log.iter().any(|l| l == "toggle_show_desktop"),
+            "expected toggle_show_desktop after 4F radial spread-out, got: {log:?}"
+        );
     }
 
     /// On finger lift, the last frame's motion is commonly a centroid-shift
@@ -4296,6 +4525,7 @@ mod tests {
             },
             at(t0, 75),
         );
+        s.tick(at(t0, 350));
 
         let log = r.pop();
         assert!(
@@ -4365,6 +4595,7 @@ mod tests {
         // t=77: id=1 also lifts. OneFinger → Idle consumes the pending
         // right-click.
         s.on_frame_at(single(one(1, 31.80, 29.50, false)), at(t0, 77));
+        s.tick(at(t0, 350));
 
         let log = r.pop();
         assert!(
@@ -5753,10 +5984,16 @@ mod tests {
             at(t0, 200),
         );
 
+        s.tick(at(t0, 500));
+
         let log = r.pop();
         assert!(
             log.contains(&"smart_magnify".to_string()),
-            "Two 2F taps within 350ms must emit smart_magnify: {log:?}"
+            "Two 2F taps within 220ms must emit smart_magnify: {log:?}"
+        );
+        assert!(
+            !log.iter().any(|l| l.contains("click Right")),
+            "Two 2F double tap must NEVER emit right click: {log:?}"
         );
     }
 }

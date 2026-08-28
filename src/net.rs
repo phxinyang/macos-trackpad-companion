@@ -634,7 +634,7 @@ fn write_simple(stream: &mut TcpStream, code: u16, body: &str) -> Result<()> {
     };
     write!(
         stream,
-        "HTTP/1.1 {code} {reason}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "HTTP/1.1 {code} {reason}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nCache-Control: no-cache, no-store, must-revalidate, max-age=0\r\nPragma: no-cache\r\nExpires: 0\r\nConnection: close\r\n\r\n{body}",
         body.len()
     )?;
     stream.flush()?;

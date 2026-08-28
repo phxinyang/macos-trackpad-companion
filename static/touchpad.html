@@ -73,11 +73,20 @@
     z-index: 99; opacity: 0.6; transition: opacity 0.2s;
   }
   #float-btn:active { opacity: 1; }
+  #edge-hint {
+    position: absolute; right: 0; top: 15%; bottom: 15%; width: 18px;
+    border-radius: 9px 0 0 9px;
+    background: linear-gradient(to left, rgba(0, 122, 255, 0.15), transparent);
+    border-right: 2px solid rgba(0, 122, 255, 0.35);
+    pointer-events: none;
+    display: flex; align-items: center; justify-content: center;
+  }
 </style>
 </head>
 <body>
 <div id="pad-container">
   <div id="pad-frame"></div>
+  <div id="edge-hint" title="双指从右边缘向左滑入打开通知中心"></div>
   <canvas id="pad-canvas"></canvas>
 </div>
 

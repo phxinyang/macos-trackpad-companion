@@ -96,6 +96,11 @@ pub trait Output {
     fn swipe(&self, axis: SwipeAxis, signed_progress: f64, velocity_mm_per_sec: f64, phase: Phase);
     fn look_up_dictionary(&self) {}
     fn smart_magnify(&self) {}
+    fn toggle_notification_center(&self) {}
+    fn toggle_launchpad(&self) {}
+    fn toggle_show_desktop(&self) {}
+    fn toggle_app_expose(&self) {}
+    fn toggle_mission_control(&self) {}
 }
 
 /// No-op emitter used only when a downstream crate wants to exercise the

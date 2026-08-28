@@ -394,6 +394,22 @@ class MainActivity : Activity() {
             GestureTestRunner.runThreeFingerDrag(sender)
         })
 
+        container.addView(makeTestBtn("📬 通知中心 (Notification Center)", "双指从右边缘向左滑入：打开/关闭 macOS 系统通知中心", 0xFF0C4A6E.toInt()) {
+            GestureTestRunner.runNotificationCenter(sender)
+        })
+
+        container.addView(makeTestBtn("🚀 启动台 (Launchpad)", "四指向内捏合：展开 macOS Launchpad 应用程序网格", 0xFF047857.toInt()) {
+            GestureTestRunner.runLaunchpadPinch(sender)
+        })
+
+        container.addView(makeTestBtn("🖥️ 显示桌面 (Show Desktop)", "四指向外张开：推开所有应用窗口显示纯净桌面", 0xFF0369A1.toInt()) {
+            GestureTestRunner.runShowDesktopSpread(sender)
+        })
+
+        container.addView(makeTestBtn("✊ 软件长按拖拽 (Press-and-Hold Drag)", "单指原地按住450ms扣住左键并拖拽选中，抬手释放", 0xFFB45309.toInt()) {
+            GestureTestRunner.runPressAndHoldDrag(sender)
+        })
+
         val closeBtn = Button(this).apply {
             text = "关闭面板"
             setTextColor(Color.WHITE)
