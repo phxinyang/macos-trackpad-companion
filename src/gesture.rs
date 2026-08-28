@@ -2361,12 +2361,12 @@ impl<O: Output> State<O> {
                         if base.rotate_admitted {
                             self.out.rotate(0.0, Phase::Began);
                         }
-                        // Re-anchor prev_scale or prev_angle for the dominant component so that
-                        // motion accumulated from touch-down to lock is delivered cleanly without cross-pollution.
-                        if rot >= pinch {
+                        // Re-anchor baseline for streams that actually crossed lock threshold so initial
+                        // travel is delivered without noise cross-pollution.
+                        if rot >= 1.0 {
                             base.prev_angle = base.initial_angle;
                         }
-                        if pinch >= rot {
+                        if pinch >= 1.0 {
                             base.prev_scale = 1.0;
                         }
                         base.pinch_rotate_dominant =
@@ -2489,14 +2489,50 @@ impl<O: Output> State<O> {
                     raw_angle_d
                 };
 
-                // Native concurrent dispatch: both pinch and rotate emit their respective
-                // continuous delta streams independently, matching native macOS AppKit / Multitouch.
-                if scale_delta.abs() > 1e-5 && base.pinch_admitted {
+                // One stream owns each frame. Normalize both signals against their lock thresholds,
+                // then only hand the frame to the other stream when it beats the incumbent by
+                // PINCH_ROTATE_HYSTERESIS. This prevents minor distance jitter during rotation
+                // from emitting conflicting pinch events that break Preview/Photos rotate recognizers!
+                let pinch_mag = scale_delta.abs() / PINCH_LOCK_RATIO;
+                let rot_mag = angle_d.abs() / ROTATE_LOCK_RAD;
+                base.pinch_rotate_dominant = match base.pinch_rotate_dominant {
+                    PinchRotateDominant::Pinch
+                        if base.rotate_admitted
+                            && rot_mag > pinch_mag * PINCH_ROTATE_HYSTERESIS =>
+                    {
+                        log::debug!(
+                            "pinch+rotate: dominance -> rotate (rot={rot_mag:.2} pinch={pinch_mag:.2})"
+                        );
+                        PinchRotateDominant::Rotate
+                    }
+                    PinchRotateDominant::Rotate
+                        if base.pinch_admitted
+                            && pinch_mag > rot_mag * PINCH_ROTATE_HYSTERESIS =>
+                    {
+                        log::debug!(
+                            "pinch+rotate: dominance -> pinch (pinch={pinch_mag:.2} rot={rot_mag:.2})"
+                        );
+                        PinchRotateDominant::Pinch
+                    }
+                    other => other,
+                };
+
+                let emit_pinch = if pinch_mag >= 1.0 {
+                    true
+                } else {
+                    matches!(base.pinch_rotate_dominant, PinchRotateDominant::Pinch)
+                };
+                if emit_pinch && scale_delta.abs() > 1e-4 && base.pinch_admitted {
                     log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
                     self.out.pinch(scale_delta, Phase::Changed);
                 }
-                let rot_noise_floor = if scale_delta.abs() > 0.02 { 0.12_f64.to_radians() } else { 1e-4 };
-                if angle_d.abs() >= rot_noise_floor && base.rotate_admitted {
+
+                let emit_rot = if rot_mag >= 1.0 {
+                    true
+                } else {
+                    matches!(base.pinch_rotate_dominant, PinchRotateDominant::Rotate)
+                };
+                if emit_rot && angle_d.abs() > 1e-4 && base.rotate_admitted {
                     let dt = base
                         .last_scroll_time
                         .map(|t| (now - t).as_secs_f64())
