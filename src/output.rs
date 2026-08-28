@@ -970,6 +970,16 @@ pub trait Output {
     fn look_up_dictionary(&self) {}
     /// Trigger macOS smart zoom (Smart Magnify).
     fn smart_magnify(&self) {}
+    /// Trigger macOS notification center toggle.
+    fn toggle_notification_center(&self) {}
+    /// Trigger macOS Launchpad toggle.
+    fn toggle_launchpad(&self) {}
+    /// Trigger macOS Show Desktop toggle.
+    fn toggle_show_desktop(&self) {}
+    /// Trigger macOS App Exposé toggle.
+    fn toggle_app_expose(&self) {}
+    /// Trigger macOS Mission Control toggle.
+    fn toggle_mission_control(&self) {}
 }
 
 /// Decorator over an [`Output`] that flashes a debug HUD on each
@@ -1070,6 +1080,26 @@ impl<O: Output> Output for OverlayOutput<O> {
     fn smart_magnify(&self) {
         self.flash("SMART ZOOM");
         self.inner.smart_magnify();
+    }
+    fn toggle_notification_center(&self) {
+        self.flash("NOTIFICATION CENTER");
+        self.inner.toggle_notification_center();
+    }
+    fn toggle_launchpad(&self) {
+        self.flash("LAUNCHPAD");
+        self.inner.toggle_launchpad();
+    }
+    fn toggle_show_desktop(&self) {
+        self.flash("SHOW DESKTOP");
+        self.inner.toggle_show_desktop();
+    }
+    fn toggle_app_expose(&self) {
+        self.flash("APP EXPOSÉ");
+        self.inner.toggle_app_expose();
+    }
+    fn toggle_mission_control(&self) {
+        self.flash("MISSION CONTROL");
+        self.inner.toggle_mission_control();
     }
 }
 
@@ -1729,6 +1759,126 @@ fn post_cmd_ctrl_key(source: CGEventSourceRef, keycode: u16, ts: Timestamp) {
     post_key(kVK_Command, false, 0, 17);
 }
 
+/// Trigger a system symbolic hotkey via SkyLight / CoreGraphicsServices.
+///
+/// Symbolic hotkeys are internal WindowServer action IDs:
+/// - 163: Show Notification Center
+/// - 32: Mission Control
+/// - 33: Application Windows (Exposé)
+/// - 36: Show Desktop
+/// - 160: Launchpad
+/// - 70: Look Up
+///
+/// Matches Mac Mouse Fix `SymbolicHotKeys.m` reverse-engineered implementation.
+fn post_symbolic_hotkey(source: CGEventSourceRef, shk: u32, ts: Timestamp) -> bool {
+    type CGSSetSymbolicHotKeyEnabledFn = unsafe extern "C" fn(hotkey: u32, enabled: bool) -> i32;
+    type CGSGetSymbolicHotKeyValueFn = unsafe extern "C" fn(
+        hotkey: u32,
+        out_keq: *mut u16,
+        out_vkc: *mut u16,
+        out_mods: *mut u64,
+    ) -> i32;
+    type CGSSetSymbolicHotKeyValueFn = unsafe extern "C" fn(
+        hotkey: u32,
+        keq: u16,
+        vkc: u16,
+        mods: u64,
+    ) -> i32;
+
+    use std::sync::OnceLock;
+
+    static SYMBOLS: OnceLock<
+        Option<(
+            CGSSetSymbolicHotKeyEnabledFn,
+            CGSGetSymbolicHotKeyValueFn,
+            CGSSetSymbolicHotKeyValueFn,
+        )>,
+    > = OnceLock::new();
+
+    let syms = SYMBOLS.get_or_init(|| {
+        let frameworks = [
+            c"/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight",
+            c"/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices",
+            c"/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics",
+        ];
+        for fw in frameworks {
+            let handle = unsafe { libc::dlopen(fw.as_ptr(), libc::RTLD_LAZY) };
+            if handle.is_null() {
+                continue;
+            }
+            let get_fn = unsafe { libc::dlsym(handle, c"CGSGetSymbolicHotKeyValue".as_ptr()) };
+            let set_en_fn =
+                unsafe { libc::dlsym(handle, c"CGSSetSymbolicHotKeyEnabled".as_ptr()) };
+            let set_val_fn =
+                unsafe { libc::dlsym(handle, c"CGSSetSymbolicHotKeyValue".as_ptr()) };
+
+            if !get_fn.is_null() && !set_en_fn.is_null() && !set_val_fn.is_null() {
+                return Some((
+                    unsafe { std::mem::transmute(set_en_fn) },
+                    unsafe { std::mem::transmute(get_fn) },
+                    unsafe { std::mem::transmute(set_val_fn) },
+                ));
+            }
+        }
+        None
+    });
+
+    // Valid macOS virtual keycode (kVK_F20 = 90, kVK_F19 = 80). Must be <= 127 for CGEventCreateKeyboardEvent.
+    let vkc_out_of_reach = (80 + (shk % 15)) as u16;
+    const SHK_MODS: u64 = (1 << 21) | (1 << 23); // kCGSNumericPadKeyMask | kCGSFunctionKeyMask
+
+    let (vkc_to_send, mods_to_send, has_native_binding) = if let Some((set_en, get_val, set_val)) = *syms {
+        let mut keq: u16 = 65535;
+        let mut vkc: u16 = 65535;
+        let mut mods: u64 = 0;
+
+        let err = unsafe { get_val(shk, &mut keq, &mut vkc, &mut mods) };
+        if err == 0 && vkc != 65535 && vkc != 0 {
+            unsafe { set_en(shk, true) };
+            (vkc, mods, true)
+        } else {
+            unsafe {
+                set_en(shk, true);
+                set_val(shk, 65535, vkc_out_of_reach, SHK_MODS);
+            }
+            (vkc_out_of_reach, SHK_MODS, false)
+        }
+    } else {
+        (vkc_out_of_reach, SHK_MODS, false)
+    };
+
+    const kCGAnnotatedSessionEventTap: u32 = 2;
+
+    let post_key = |code: u16, down: bool, f: u64, offset_ms: u64| {
+        // Pass NULL (std::ptr::null_mut()) so the event is created from the default system source, matching Mac Mouse Fix
+        let raw = unsafe {
+            let p = CGEventCreateKeyboardEvent(std::ptr::null_mut(), code, down);
+            if p.is_null() {
+                CGEventCreateKeyboardEvent(source, code, down)
+            } else {
+                p
+            }
+        };
+        if let Some(ev) = Event::from_raw(raw) {
+            let ev_ts = ts + Duration::from_millis(offset_ms);
+            unsafe {
+                CGEventSetFlags(ev.0, f);
+                CGEventSetTimestamp(ev.0, ev_ts.as_nanos());
+            }
+            ev.post_to(kCGSessionEventTap);
+            ev.post_to(kCGHIDEventTap);
+            ev.post_to(kCGAnnotatedSessionEventTap);
+        }
+    };
+
+    post_key(vkc_to_send, true, mods_to_send, 0);
+    post_key(vkc_to_send, false, mods_to_send, 16);
+    log::debug!(
+        "post: symbolic hotkey {shk} sent via vkc={vkc_to_send} mods=0x{mods_to_send:x} (native_binding={has_native_binding})"
+    );
+    true
+}
+
 /// Function pointer signature for `CoreDockSendNotification`. Symbol
 /// is exported from the dyld shared cache (no on-disk framework
 /// binary). Resolved on first use via `dlsym(RTLD_DEFAULT, …)` and
@@ -1740,7 +1890,7 @@ type CoreDockSendNotificationFn =
 /// `CoreDockSendNotification` function — same path Hammerspoon's
 /// `hs.spaces.toggleMissionControl` and `toggleAppExpose` use. Logs
 /// and no-ops if the symbol can't be resolved or the call fails.
-fn send_dock_notification(name: &str) {
+fn send_dock_notification(name: &str) -> bool {
     use core_foundation::base::TCFType;
     use core_foundation::string::CFString;
     use std::sync::OnceLock;
@@ -1788,11 +1938,14 @@ fn send_dock_notification(name: &str) {
             Some(unsafe { std::mem::transmute::<*mut c_void, CoreDockSendNotificationFn>(raw) })
         }
     });
-    let Some(f) = f else { return };
+    let Some(f) = f else { return false; };
     let cf_name = CFString::new(name);
     let rc = unsafe { f(cf_name.as_concrete_TypeRef() as *const c_void, 0) };
     if rc != 0 {
         log::warn!("CoreDockSendNotification({name:?}, 0) returned {rc}");
+        false
+    } else {
+        true
     }
 }
 
@@ -2423,33 +2576,55 @@ impl Output for Emitter {
         post_cmd_ctrl_key(self.event_source, kVK_ANSI_D, self.event_timestamp());
     }
     fn smart_magnify(&self) {
-        log::debug!("post: smart zoom via GESTURE_SUBTYPE_SMART_MAGNIFY (discrete)");
-        const GESTURE_SUBTYPE_SMART_MAGNIFY: u32 = 0x17;
-        const kCGEventSmartMagnify: u32 = 32;
-        let ts = self.event_timestamp();
-        let p = self.cursor();
-
-        // 1. Standard discrete CGS gesture event with Phase=0 (None)
-        if let Some(event) = synthesize_gesture_event(
-            GESTURE_SUBTYPE_SMART_MAGNIFY,
-            0, // Phase=0 (None / Discrete single-shot event, matching Mac Mouse Fix)
-            GesturePayload::Magnification(0.0),
-            ts,
-        ) {
-            unsafe { CGEventSetLocation(event.0, p) };
-            event.post_to(kCGSessionEventTap);
+        log::debug!("post: smart zoom via Mac Mouse Fix exact formula (field 55=29, field 110=22)");
+        // 1. Exact Mac Mouse Fix TouchSimulator.m formula:
+        if let Some(event) = Event::with_source(self.event_source) {
+            event.set_int(55, 29); // NSEventTypeGesture
+            event.set_int(110, 22); // kIOHIDEventTypeZoomToggle (22)
             event.post_to(kCGHIDEventTap);
+            event.post_to(kCGSessionEventTap);
         }
 
-        // 2. Direct top-level NSEventTypeSmartMagnify (32) event
+        // 2. Also send raw type 32 with location:
         if let Some(event) = Event::with_source(self.event_source) {
+            event.set_int(55, 29);
+            event.set_int(110, 22);
             unsafe {
-                CGEventSetType(event.0, kCGEventSmartMagnify);
+                CGEventSetType(event.0, 32);
+                CGEventSetLocation(event.0, self.cursor());
                 CGEventSetFlags(event.0, GESTURE_EVENT_FLAGS);
-                CGEventSetLocation(event.0, p);
-            }
-            event.set_int(kCGSEventTypeField, kCGEventSmartMagnify as i64);
+            };
+            event.post_to(kCGHIDEventTap);
             event.post_to(kCGSessionEventTap);
+        }
+    }
+    fn toggle_notification_center(&self) {
+        log::debug!("post: toggle notification center via SkyLight SymbolicHotKey 163");
+        let ts = self.event_timestamp();
+        post_symbolic_hotkey(self.event_source, 163, ts);
+    }
+    fn toggle_launchpad(&self) {
+        log::debug!("post: toggle launchpad via CoreDock (fallback to SkyLight 160)");
+        if !send_dock_notification("com.apple.launchpad.toggle") {
+            post_symbolic_hotkey(self.event_source, 160, self.event_timestamp());
+        }
+    }
+    fn toggle_show_desktop(&self) {
+        log::debug!("post: toggle show desktop via CoreDock (fallback to SkyLight 36)");
+        if !send_dock_notification("com.apple.showdesktop.awake") {
+            post_symbolic_hotkey(self.event_source, 36, self.event_timestamp());
+        }
+    }
+    fn toggle_app_expose(&self) {
+        log::debug!("post: toggle app expose via CoreDock (fallback to SkyLight 33)");
+        if !send_dock_notification("com.apple.expose.front.awake") {
+            post_symbolic_hotkey(self.event_source, 33, self.event_timestamp());
+        }
+    }
+    fn toggle_mission_control(&self) {
+        log::debug!("post: toggle mission control via CoreDock (fallback to SkyLight 32)");
+        if !send_dock_notification("com.apple.expose.awake") {
+            post_symbolic_hotkey(self.event_source, 32, self.event_timestamp());
         }
     }
 }

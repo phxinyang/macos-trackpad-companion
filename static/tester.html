@@ -82,9 +82,8 @@
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--r-chip); }
 
     .chrome {
-      position: sticky;
-      top: 0;
-      z-index: 20;
+      position: relative;
+      z-index: 10;
       min-height: 64px;
       padding: 12px max(22px, calc((100vw - 1080px) / 2)) 13px;
       display: flex;
@@ -92,16 +91,9 @@
       justify-content: space-between;
       gap: 20px;
       flex-wrap: wrap;
-      background: rgba(245, 245, 247, 0.78);
-      backdrop-filter: saturate(180%) blur(20px);
-      -webkit-backdrop-filter: saturate(180%) blur(20px);
-      border-bottom: 1px solid transparent;
-      transition-property: border-color, box-shadow;
-      transition-duration: 220ms;
+      background: var(--bg);
+      border-bottom: 1px solid var(--hairline);
     }
-
-    @media (prefers-color-scheme: dark) { .chrome { background: rgba(28, 28, 30, 0.78); } }
-    .chrome.scrolled { border-bottom-color: var(--hairline); box-shadow: 0 1px 12px rgba(0, 0, 0, 0.06); }
 
     .wordmark h1 { font-size: 19px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; }
     .wordmark p { margin-top: 2px; color: var(--label-2); font-size: 12px; line-height: 1.35; }
@@ -592,7 +584,69 @@
       <div class="metrics">
         <span>抽屉 <b id="edgeStatus">收起</b></span>
         <span>起始位置 <b id="edgeOrigin">—</b></span>
+        <button id="btnTriggerNoti">模拟触发</button>
       </div>
+      <p class="note">双指从手机触控板右边缘向左滑入触发 macOS 系统通知中心；网页卡片支持抽屉联动与快捷测试。</p>
+    </section>
+
+    <!-- 启动台与显示桌面 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="8" cy="8" r="6" />
+            <path d="M8 5v6M5 8h6" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>四指捏合 (启动台) 与张开 (显示桌面)</h2>
+          <p>4 指向心捏合打开 Launchpad，离心张开推开窗口显示桌面。</p>
+        </hgroup>
+        <span class="fingers">4 指</span>
+      </div>
+      <div class="stage" style="display:flex;align-items:center;justify-content:space-around;">
+        <div style="text-align:center;padding:12px;background:var(--fill);border-radius:var(--r-chip);">
+          <div style="font-size:24px;">🤏</div>
+          <div style="font-size:11px;font-weight:600;margin-top:4px;">四指捏合</div>
+          <div style="font-size:10px;color:var(--label-2);">启动台 Launchpad</div>
+        </div>
+        <div style="text-align:center;padding:12px;background:var(--fill);border-radius:var(--r-chip);">
+          <div style="font-size:24px;">🖐️</div>
+          <div style="font-size:11px;font-weight:600;margin-top:4px;">四指张开</div>
+          <div style="font-size:10px;color:var(--label-2);">显示桌面 Show Desktop</div>
+        </div>
+      </div>
+      <div class="metrics">
+        <span>状态 <b>支持原生 CoreDock 广播</b></span>
+      </div>
+      <p class="note">通过 CoreDock 进程内高优先 IPC 派发，零延迟唤出系统桌面与应用抽屉。</p>
+    </section>
+
+    <!-- 单指长按拖拽 -->
+    <section class="card">
+      <div class="head">
+        <div class="glyph" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="10" height="10" rx="2" />
+            <path d="M6 8h4" />
+          </svg>
+        </div>
+        <hgroup>
+          <h2>单指长按拖拽 (Press-and-Hold)</h2>
+          <p>单指静止停留 >450ms 自动扣下鼠标左键，移动即可拖选。</p>
+        </hgroup>
+        <span class="fingers">1 指</span>
+      </div>
+      <div class="stage" id="dragStage" style="user-select:none;cursor:grab;display:grid;place-items:center;">
+        <div id="dragBox" style="padding:14px 20px;background:var(--accent);color:#fff;border-radius:var(--r-chip);font-weight:600;font-size:12px;">
+          在此处按住并拖动此方块
+        </div>
+      </div>
+      <div class="metrics">
+        <span>按压状态 <b id="dragLatchStatus">未按压</b></span>
+        <span>移动距离 <b id="dragMoveDist">0 px</b></span>
+      </div>
+      <p class="note">静止450ms扣住左键，抬手自动释放，无需双击或物理压感。</p>
     </section>
 
     <!-- 事件流 -->
@@ -1086,6 +1140,11 @@
         setDrawer(!drawerOpen, '点击卡片切换');
       }
     });
+
+    document.getElementById('btnTriggerNoti').onclick = (e) => {
+      e.stopPropagation();
+      setDrawer(!drawerOpen, '按钮手动测试');
+    };
   </script>
 
   <script>

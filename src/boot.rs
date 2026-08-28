@@ -41,6 +41,7 @@ pub fn gesture_options(cfg: &config::Config) -> gesture::GestureOptions {
         three_finger_drag,
         one_finger_tap_drag,
         release_delay_ms: cfg.gestures.three_finger_drag.release_delay_ms,
+        press_and_hold_drag: false,
     }
 }
 

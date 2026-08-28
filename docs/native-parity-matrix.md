@@ -21,7 +21,11 @@
 | **11** | **三指拖移与悬停换把<br>(3F Drag & Regrip)** | 经典三指拖移：手指位移即按住左键拖拽；支持抬手 500ms 悬停换把（Drag Lock / 跨屏延续），中途可加入第 4 指切桌面携窗 | `0.35mm` 触发门限；默认 `release_delay_ms=500`（500ms 悬停延续锁定）；进入 4 指切桌面时**保持 `drag_button_held=true`** | • 原生：支持 Drag Lock 换把悬停<br>• 本项目：默认 500ms 换把悬停，单指轻触即释放 | **已完全对齐**<br>(彻底解决“屏幕边缘抬手换把掉窗”) |
 | **12** | **四指桌面平移切换<br>(4F Spaces Swipe)** | 四指横扫通过 DockControl / SkyLight 驱动多桌面平滑过渡动画 | **手指数跳变重锚**（$4 \to 3$ 或 $3 \to 4$ 时几何重置，累加 `cumulative_dx`，彻底杜绝丢指抖动）；支持 macOS 27+ `SLEventSetIOHIDEvent` 与旧版 CGEvent 双路径 | • 原生行程：$50\text{mm}$ 对应 1.0 满行程进度<br>• 本项目：`SWIPE_PROGRESS_REF_MM=50.0mm` | **已完全对齐**<br>(彻底根治“四指切桌面中途跳变/抖动”) |
 | **13** | **四指调度中心 / Exposé<br>(4F Mission Control)** | 四指向上推滑出调度中心，向下推滑出 App Exposé | 纵向 $3.0\text{mm}$ 轴向锁定，派发连续 Vertical DockControl 流 | • 原生锁定：$3.0\text{mm}$ 轴向死区<br>• 本项目：`SWIPE_AXIS_LOCK_MM=3.0mm` | **已完全对齐** |
-| **14** | **网络会话隔离与断链保护<br>(Session & Link Safety)** | 网络丢包或客户端断开不能导致指针卡死、按键粘连或虚假点击 | `PeerGate` 实施 600ms 会话隔离与时钟重置；`on_link_timeout` 发送 `Cancelled` 并彻底释放所有按键 | • 原生：无迟到帧污染，断线即 Reset<br>• 本项目：600ms 隔离，显式 Cancel 状态收尾 | **已完全对齐** |
+| **14** | **四指捏合启动台<br>(4F Pinch-in Launchpad)** | 四指向心捏合（拇指与三指相向聚拢）展开系统 Launchpad 网格 | 径向收缩比率 $R/R_0 \le 0.72$ 且质心平移 $<4.5\text{mm}$；派发 `CoreDockSendNotification("com.apple.launchpad.toggle")` + SkyLight HotKey 160 | • 原生向心收缩：$\Delta R \ge 28\%$<br>• 本项目：$R/R_0 \le 0.72$，单次触碰锁存防重入 | **已完全对齐** |
+| **15** | **四指张开显示桌面<br>(4F Spread-out Show Desktop)** | 四指离心张开（拇指与三指反向推开）推开所有窗口露显纯净桌面 | 径向扩散比率 $R/R_0 \ge 1.28$ 且质心平移 $<4.5\text{mm}$；派发 `CoreDockSendNotification("com.apple.showdesktop.awake")` + SkyLight HotKey 36 | • 原生离心扩散：$\Delta R \ge 28\%$<br>• 本项目：$R/R_0 \ge 1.28$，单次触碰锁存防重入 | **已完全对齐** |
+| **16** | **双指右边缘滑入通知中心<br>(2F Right Edge Swipe)** | 双指从触控板右边缘向左滑入展开/收起系统通知中心 | 边缘区域起始 $x \ge 28\text{mm}$，向左滑动 $\Delta x \le -3.8\text{mm}$ 实时触发通知中心唤出；派发 SkyLight HotKey 163 与 ControlCenter 时钟锚点 | • 原生右缘判定：$x \ge \text{EdgeZone}$，$\Delta x \le -3.5\text{mm}$<br>• 本项目：$x \ge 28.0\text{mm}$，$\Delta x \le -3.8\text{mm}$ 实时触发 | **已完全对齐**<br>(彻底根治异步抬指丢失与误开蓝牙) |
+| **17** | **单指软件长按拖拽<br>(1F Press-and-Hold Drag)** | 单指在原地静止停留 $>450\text{ms}$ 自动扣下左键进入拖拽，移动即可选区/拉动，抬指自动释放 | `HOLD_TIME = 450ms` 且位移 $\le 1.0\text{mm}$ 时自动激活 `set_left_button_held(true)`；在 `OneFinger -> Idle` 时释放 | • 原生/经典：停留 $\ge 450\text{ms}$ 扣下左键<br>• 本项目：`HOLD_TIME=450ms`, `TAP_MAX_MOVE=1.0mm` | **已完全对齐** |
+| **18** | **网络会话隔离与断链保护<br>(Session & Link Safety)** | 网络丢包或客户端断开不能导致指针卡死、按键粘连或虚假点击 | `PeerGate` 实施 600ms 会话隔离与时钟重置；`on_link_timeout` 发送 `Cancelled` 并彻底释放所有按键 | • 原生：无迟到帧污染，断线即 Reset<br>• 本项目：600ms 隔离，显式 Cancel 状态收尾 | **已完全对齐** |
 
 ---
 
@@ -40,7 +44,9 @@
 | 拖移锁定与换把悬停 (Drag Lock) | `Dragging = 1`, `DragLock = 1` | `[gestures.three_finger_drag] release_delay_ms` | 默认 `500`（500ms 换把悬停延续锁定；设为 `0` 则抬手即松） |
 | 四指轻扫切换全屏 App / 桌面 | `TrackpadFourFingerHorizSwipeGesture = 2` | `[gestures.horizontal_swipe] backend = "synthetic"` | 默认 `synthetic`，四指左右横扫切 Space |
 | 四指调度中心 (Mission Control) | `TrackpadFourFingerVertSwipeGesture = 2` | `[gestures.vertical_swipe] backend = "synthetic"` | 默认 `synthetic`，四指上推调度中心 |
-| 指针跟踪速度 | `Scaling = 0.0 ~ 3.0` | `[cursor] sensitivity = 28.0`, `accel_exponent = 1.35` | 矢量加速增益，平滑覆盖慢速微操与快速跨屏 |
+| 四指捏合启动台 (Launchpad) | `TrackpadFourFingerPinchGesture = 2` | 内置原生支持（四指捏合） | 默认开启，四指向心捏合展开 Launchpad |
+| 四指张开显示桌面 (Show Desktop) | `TrackpadFourFingerPinchGesture = 2` | 内置原生支持（四指张开） | 默认开启，四指离心张开显示桌面 |
+| 单指长按拖拽 (Press-and-Hold) | `DragLock = 1` / 辅助功能 | `[gestures.one_finger_tap_drag]` | 默认开启，单指原地按住450ms进入拖拽 |
 
 ---
 

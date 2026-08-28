@@ -267,6 +267,117 @@ object GestureTestRunner {
         }
     }
 
+    /**
+     * Simulates a two-finger right-edge swipe to toggle Notification Center.
+     * Both fingers start at x >= 28mm (right edge zone) and sweep left by ~12mm.
+     */
+    fun runNotificationCenter(sender: UdpSender, onDone: (() -> Unit)? = null) {
+        executor.execute {
+            val c1 = 1; val c2 = 2
+            // Start from the right edge (x >= 28mm triggers right_edge_candidate)
+            val startX1 = 30f; val startX2 = 34f
+            val y1 = 45f; val y2 = 55f
+            val steps = 10
+            val totalDx = -15f  // sweep left
+
+            for (i in 0..steps) {
+                val progress = i.toFloat() / steps
+                // Ease-out curve for natural feel
+                val eased = 1f - (1f - progress) * (1f - progress)
+                val currentDx = totalDx * eased
+                val contacts = listOf(
+                    FrameEncoder.Contact(c1, startX1 + currentDx, y1),
+                    FrameEncoder.Contact(c2, startX2 + currentDx, y2)
+                )
+                sendContacts(sender, contacts)
+                sleep(16)
+            }
+            sendLift(sender)
+            onDone?.invoke()
+        }
+    }
+
+    /**
+     * Simulates a 4-finger radial pinch-in to trigger Launchpad (启动台).
+     */
+    fun runLaunchpadPinch(sender: UdpSender, onDone: (() -> Unit)? = null) {
+        executor.execute {
+            val ids = listOf(1, 2, 3, 4)
+            val midX = 50f; val midY = 50f
+            val startR = 20f
+            val endR = 8f
+            val steps = 10
+
+            for (i in 0..steps) {
+                val progress = i.toFloat() / steps
+                val r = startR + (endR - startR) * progress
+                val contacts = listOf(
+                    FrameEncoder.Contact(ids[0], midX - r, midY - r),
+                    FrameEncoder.Contact(ids[1], midX + r, midY - r),
+                    FrameEncoder.Contact(ids[2], midX - r, midY + r),
+                    FrameEncoder.Contact(ids[3], midX + r, midY + r)
+                )
+                sendContacts(sender, contacts)
+                sleep(16)
+            }
+            sendLift(sender)
+            onDone?.invoke()
+        }
+    }
+
+    /**
+     * Simulates a 4-finger radial spread-out to trigger Show Desktop (显示桌面).
+     */
+    fun runShowDesktopSpread(sender: UdpSender, onDone: (() -> Unit)? = null) {
+        executor.execute {
+            val ids = listOf(1, 2, 3, 4)
+            val midX = 50f; val midY = 50f
+            val startR = 10f
+            val endR = 22f
+            val steps = 10
+
+            for (i in 0..steps) {
+                val progress = i.toFloat() / steps
+                val r = startR + (endR - startR) * progress
+                val contacts = listOf(
+                    FrameEncoder.Contact(ids[0], midX - r, midY - r),
+                    FrameEncoder.Contact(ids[1], midX + r, midY - r),
+                    FrameEncoder.Contact(ids[2], midX - r, midY + r),
+                    FrameEncoder.Contact(ids[3], midX + r, midY + r)
+                )
+                sendContacts(sender, contacts)
+                sleep(16)
+            }
+            sendLift(sender)
+            onDone?.invoke()
+        }
+    }
+
+    /**
+     * Simulates 1-finger Press-and-Hold Drag.
+     * Finger rests stationary for 480ms (latches left button), then drags across.
+     */
+    fun runPressAndHoldDrag(sender: UdpSender, onDone: (() -> Unit)? = null) {
+        executor.execute {
+            val id = 1
+            val startX = 40f; val y = 50f
+            // Touchdown and hold stationary for ~480ms
+            for (i in 0..24) {
+                sendContacts(sender, listOf(FrameEncoder.Contact(id, startX, y)))
+                sleep(20)
+            }
+            // Drag across by +18mm
+            val steps = 10
+            for (i in 1..steps) {
+                val dx = 18f * (i.toFloat() / steps)
+                sendContacts(sender, listOf(FrameEncoder.Contact(id, startX + dx, y)))
+                sleep(16)
+            }
+            sendLift(sender)
+            onDone?.invoke()
+        }
+    }
+
     private fun sendContacts(sender: UdpSender, contacts: List<FrameEncoder.Contact>) {
         val payload = FrameEncoder.encode(sender.nextSeq(), sender.nowTicks(), false, contacts)
         sender.send(payload)
