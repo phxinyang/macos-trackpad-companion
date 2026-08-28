@@ -584,14 +584,12 @@ fn set_input_mode(device: IOHIDDeviceRef, report_id: isize, mode: u8) {
 
 fn set_feature_byte(device: IOHIDDeviceRef, report_id: isize, byte: u8) -> IOReturn {
     // For numbered reports, HID 1.11 §7.2.2 puts the Report ID byte at
-    // the head of the SET_REPORT control payload. Linux's
-    // `hid_output_report` builds the buffer that way; macOS
-    // `IOHIDDeviceSetReport` does NOT prepend automatically — it puts
-    // the `report_id` parameter in wValue and sends the buffer
-    // verbatim. So we have to include the prefix ourselves to match
-    // the wire format every other host produces. (hidapi follows the
-    // same convention.)
-    let payload = [report_id as u8, byte];
+    // the head of the SET_REPORT control payload. macOS
+    // `IOHIDDeviceSetReport` does not prepend it automatically: the
+    // `report_id` parameter goes in wValue and the buffer is sent
+    // verbatim. Unnumbered report 0 is the exception and carries only
+    // the feature value.
+    let payload = feature_payload(report_id, byte);
     unsafe {
         IOHIDDeviceSetReport(
             device,
@@ -600,6 +598,29 @@ fn set_feature_byte(device: IOHIDDeviceRef, report_id: isize, byte: u8) -> IORet
             payload.as_ptr(),
             payload.len() as isize,
         )
+    }
+}
+
+/// Numbered HID reports carry the report ID as the first byte of the
+/// control payload. An unnumbered report (ID 0) has no prefix; adding one
+/// shifts the feature value and makes otherwise valid descriptors fail.
+#[cfg(any(target_os = "macos", test))]
+fn feature_payload(report_id: isize, byte: u8) -> Vec<u8> {
+    if report_id == 0 {
+        vec![byte]
+    } else {
+        vec![report_id as u8, byte]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::feature_payload;
+
+    #[test]
+    fn feature_payload_omits_id_for_unnumbered_report() {
+        assert_eq!(feature_payload(0, 0x03), vec![0x03]);
+        assert_eq!(feature_payload(0x07, 0x03), vec![0x07, 0x03]);
     }
 }
 
