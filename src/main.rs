@@ -16,22 +16,39 @@
 //! intentionally only carries `--config PATH` and `-v` — see `config.rs`
 //! / README for the full schema.
 
+#[cfg(target_os = "macos")]
 mod app_context;
+#[cfg(target_os = "macos")]
+mod boot;
+#[cfg(target_os = "macos")]
 mod config;
+#[cfg(target_os = "macos")]
 mod descriptor;
+#[cfg(target_os = "macos")]
 mod gesture;
+#[cfg(target_os = "macos")]
 mod hid;
+#[cfg(target_os = "macos")]
 mod instance_lock;
+#[cfg(target_os = "macos")]
 mod output;
+#[cfg(target_os = "macos")]
 mod overlay;
+#[cfg(target_os = "macos")]
 mod report;
+#[cfg(target_os = "macos")]
 mod scan_clock;
+#[cfg(target_os = "macos")]
 mod time;
 
+#[cfg(target_os = "macos")]
 use anyhow::{Context, Result};
+#[cfg(target_os = "macos")]
 use clap::Parser;
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 
+#[cfg(target_os = "macos")]
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Args {
@@ -48,6 +65,7 @@ struct Args {
     verbose: u8,
 }
 
+#[cfg(target_os = "macos")]
 fn main() -> Result<()> {
     // Block SIGINT/SIGTERM in the main thread *before* any other code
     // runs. Threads inherit the caller's signal mask at spawn time;
@@ -107,59 +125,32 @@ fn main() -> Result<()> {
     let lock = instance_lock::acquire()?;
     log::debug!("acquired instance lock at {}", lock.path.display());
 
-    let out_cfg = output::Config {
-        scroll_accel: cfg.scroll.sensitivity,
-        natural_scroll: cfg.scroll.natural,
-        pinch: enable_to_policy(&cfg.gestures.pinch.enable),
-        rotate: enable_to_policy(&cfg.gestures.rotate.enable),
-        horizontal_swipe: resolve_swipe(&cfg.gestures.swipe.horizontal),
-        vertical_swipe: resolve_swipe(&cfg.gestures.swipe.vertical),
-    };
-    let cursor_accel = gesture::CursorAccel {
-        px_per_mm_at_ref: cfg.cursor.sensitivity,
-        exponent: cfg.cursor.accel_exponent,
-        ref_mm_per_sec: cfg.cursor.accel_ref,
-    };
-    let emitter = output::Emitter::new(out_cfg);
+    let emitter = output::Emitter::new(boot::emitter_config(&cfg));
+    let cursor_accel = boot::cursor_accel(&cfg);
     let mut manager = hid::Manager::new(hid::Filter {
         vid: cfg.device.vid,
         pid: cfg.device.pid,
     })
     .context("open IOHIDManager")?;
 
+    let gesture_options = boot::gesture_options(&cfg);
+
     if cfg.overlay.enable {
         let overlay = overlay::Overlay::new(cfg.overlay.duration_ms);
         let wrapped = output::OverlayOutput::new(emitter, overlay);
-        let mut state = gesture::State::new(wrapped, cursor_accel);
+        let mut state = gesture::State::with_options(wrapped, cursor_accel, gesture_options);
         manager.run(move |frame, ts| state.on_frame_at(frame, ts))?;
     } else {
-        let mut state = gesture::State::new(emitter, cursor_accel);
+        let mut state = gesture::State::with_options(emitter, cursor_accel, gesture_options);
         manager.run(move |frame, ts| state.on_frame_at(frame, ts))?;
     }
 
     Ok(())
 }
 
-/// Translate a [`config::GestureEnable`] (TOML-shaped) into the
-/// [`output::GesturePolicy`] the emitter consumes. Cheap clone — the
-/// app lists are small and only constructed once at startup.
-fn enable_to_policy(en: &config::GestureEnable) -> output::GesturePolicy {
-    match en {
-        config::GestureEnable::On => output::GesturePolicy::On,
-        config::GestureEnable::Off => output::GesturePolicy::Off,
-        config::GestureEnable::Only(apps) => output::GesturePolicy::Only(apps.clone()),
-        config::GestureEnable::Except(apps) => output::GesturePolicy::Except(apps.clone()),
-    }
-}
-
-fn resolve_swipe(c: &config::SwipeAxisCfg) -> output::SwipeConfig {
-    let backend = match c.backend {
-        config::SwipeBackend::Synthetic => output::SwipeBackend::Synthetic,
-        config::SwipeBackend::Notification => output::SwipeBackend::Notification,
-        config::SwipeBackend::Off => output::SwipeBackend::Off,
-    };
-    output::SwipeConfig {
-        policy: enable_to_policy(&c.enable),
-        backend,
-    }
+#[cfg(not(target_os = "macos"))]
+fn main() {
+    eprintln!(
+        "macos-trackpad-companion requires macOS; run `cargo test --lib` for portable gesture tests"
+    );
 }

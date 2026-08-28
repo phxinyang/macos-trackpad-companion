@@ -41,6 +41,12 @@ const PUMP_POLL: Duration = Duration::from_millis(50);
 /// so a silent terminal unambiguously means "no packets arriving".
 const STATS_EVERY: Duration = Duration::from_secs(30);
 
+/// Authenticated UDP envelope. The payload remains an unchanged ATP1 frame;
+/// the envelope is only required when `[net].token` is configured.
+const AUTH_MAGIC: [u8; 4] = *b"ATK1";
+const AUTH_HEADER_LEN: usize = 6;
+const AUTH_TOKEN_MAX_BYTES: usize = 256;
+
 #[derive(Default)]
 struct Stats {
     udp_datagrams: AtomicU64,
@@ -51,9 +57,63 @@ struct Stats {
 
 enum Incoming {
     /// A newly accepted frame, still in wire form.
-    Frame(touchpad_proto::Frame),
+    Frame {
+        peer: PeerId,
+        frame: touchpad_proto::Frame,
+    },
     /// Loss telemetry from the UDP path, only for logging.
-    Gap { lost: u32 },
+    Gap { peer: PeerId, lost: u32 },
+}
+
+/// A transport endpoint is part of the gesture session identity.  UDP and
+/// WebSocket sequence numbers are independent, and a late packet from a
+/// previous client must never be interpreted as a continuation of the
+/// current client's finger set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum PeerTransport {
+    Udp,
+    WebSocket,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct PeerId {
+    transport: PeerTransport,
+    addr: SocketAddr,
+}
+
+/// Keep a source that just lost ownership from immediately taking the state
+/// machine back when one of its in-flight packets arrives after a peer switch.
+/// The interval is deliberately short: a client that reconnects after this
+/// grace period is admitted as a fresh session.
+const PEER_QUARANTINE: Duration = Duration::from_millis(600);
+
+#[derive(Debug, PartialEq, Eq)]
+enum PeerDecision {
+    Accept { switched_from: Option<PeerId> },
+    IgnoreRetired,
+}
+
+#[derive(Default)]
+struct PeerGate {
+    active: Option<PeerId>,
+    retired: HashMap<PeerId, Instant>,
+}
+
+impl PeerGate {
+    fn observe(&mut self, peer: PeerId, now: Instant) -> PeerDecision {
+        self.retired.retain(|_, until| *until > now);
+        if self.retired.contains_key(&peer) {
+            return PeerDecision::IgnoreRetired;
+        }
+        if self.active == Some(peer) {
+            return PeerDecision::Accept { switched_from: None };
+        }
+        let switched_from = self.active.replace(peer);
+        if let Some(previous) = switched_from {
+            self.retired.insert(previous, now + PEER_QUARANTINE);
+        }
+        PeerDecision::Accept { switched_from }
+    }
 }
 
 /// The net transport pushes frames and idle-ticks into this sink.
@@ -107,8 +167,22 @@ impl Server {
     /// `sink` until the process exits (Ctrl+C kills us outright —
     /// unlike the HID path there is no hardware to reset).
     pub fn run(&mut self, sink: &mut dyn InputSink) -> Result<()> {
-        if self.cfg.token.is_some() {
-            log::warn!("[net] token is set in config but v1 ships unauthenticated — ignored");
+        let token = self
+            .cfg
+            .token
+            .clone()
+            .filter(|token| !token.is_empty());
+        if let Some(token) = token.as_deref() {
+            if token.len() > AUTH_TOKEN_MAX_BYTES {
+                anyhow::bail!(
+                    "[net] token is too long ({} bytes; maximum is {})",
+                    token.len(),
+                    AUTH_TOKEN_MAX_BYTES
+                );
+            }
+            log::info!(
+                "[net] bearer token enabled for WebSocket and UDP ATK1 envelopes"
+            );
         }
         let bind_ip = self
             .cfg
@@ -141,7 +215,8 @@ impl Server {
             .spawn({
                 let tx = tx.clone();
                 let stats = Arc::clone(&stats);
-                move || udp_reader(udp, tx, stats)
+                let token = token.clone();
+                move || udp_reader(udp, tx, stats, token.as_deref())
             })
             .context("spawn udp reader")?;
 
@@ -159,7 +234,8 @@ impl Server {
             .spawn({
                 let tx = tx.clone();
                 let stats = Arc::clone(&stats);
-                move || tcp_acceptor(tcp, tx, page_ctx, stats)
+                let token = token.clone();
+                move || tcp_acceptor(tcp, tx, page_ctx, stats, token.as_deref())
             })
             .context("spawn tcp acceptor")?;
 
@@ -197,13 +273,43 @@ fn pump(rx: mpsc::Receiver<Incoming>, stats: &Stats, sink: &mut dyn InputSink) -
     let mut scan_clock = ScanTimeClock::new();
     let mut contacts_down = false;
     let mut last_arrival = Instant::now();
+    let mut peers = PeerGate::default();
 
     loop {
         match rx.recv_timeout(PUMP_POLL) {
-            Ok(Incoming::Gap { lost }) => {
+            Ok(Incoming::Gap { peer, lost }) => {
+                if peers.active != Some(peer) {
+                    continue;
+                }
                 log::warn!("[net] seq gap: {lost} frame(s) lost mid-stream");
             }
-            Ok(Incoming::Frame(wire)) => {
+            Ok(Incoming::Frame { peer, frame: wire }) => {
+                let now = Instant::now();
+                let switched_from = match peers.observe(peer, now) {
+                    PeerDecision::IgnoreRetired => {
+                        log::debug!("[net] ignoring late frame from retired peer {peer:?}");
+                        continue;
+                    }
+                    PeerDecision::Accept { switched_from } => switched_from,
+                };
+                if let Some(previous) = switched_from {
+                    if contacts_down {
+                        log::info!(
+                            "[net] peer changed {previous:?} → {peer:?}; canceling active touch"
+                        );
+                        sink.on_link_timeout(Timestamp::now());
+                    } else {
+                        log::info!("[net] peer changed {previous:?} → {peer:?}");
+                    }
+                } else if peers.active == Some(peer) {
+                    log::debug!("[net] active peer = {peer:?}");
+                }
+                if switched_from.is_some() {
+                    // Scan clocks are sender-local. Reusing the previous
+                    // offset would turn a new sender's arbitrary scan time
+                    // into a large fake motion interval.
+                    scan_clock = ScanTimeClock::new();
+                }
                 stats.consumed.fetch_add(1, Ordering::Relaxed);
                 // Current state, not sticky: this exact flag drives the
                 // idle-lift watchdog below.
@@ -237,6 +343,7 @@ fn pump(rx: mpsc::Receiver<Incoming>, stats: &Stats, sink: &mut dyn InputSink) -
                 IDLE_LIFT_AFTER
             );
             sink.on_link_timeout(Timestamp::now());
+            scan_clock = ScanTimeClock::new();
         }
     }
 }
@@ -321,15 +428,30 @@ impl UdpIngest {
     }
 }
 
-fn udp_reader(socket: UdpSocket, tx: mpsc::Sender<Incoming>, stats: Arc<Stats>) {
+fn udp_reader(
+    socket: UdpSocket,
+    tx: mpsc::Sender<Incoming>,
+    stats: Arc<Stats>,
+    token: Option<&str>,
+) {
     let mut ingest = UdpIngest::default();
-    let mut buf = [0u8; 256]; // max legal frame is 115 B
+    // Max authenticated datagram = 6-byte envelope + 256-byte token +
+    // 115-byte ATP1 frame. Keep headroom for future envelope versions.
+    let mut buf = [0u8; 512];
 
     loop {
         match socket.recv_from(&mut buf) {
             Ok((n, peer)) => {
                 stats.udp_datagrams.fetch_add(1, Ordering::Relaxed);
-                let frame = match touchpad_proto::decode(&buf[..n]) {
+                let payload = match authenticated_udp_payload(&buf[..n], token) {
+                    Some(payload) => payload,
+                    None => {
+                        stats.decode_errors.fetch_add(1, Ordering::Relaxed);
+                        log::debug!("[net] dropping UDP frame with invalid authentication");
+                        continue;
+                    }
+                };
+                let frame = match touchpad_proto::decode(payload) {
                     Ok(f) => f,
                     Err(DecodeError::TooShort) | Err(DecodeError::BadMagic) => {
                         stats.decode_errors.fetch_add(1, Ordering::Relaxed);
@@ -344,13 +466,13 @@ fn udp_reader(socket: UdpSocket, tx: mpsc::Sender<Incoming>, stats: Arc<Stats>) 
                 match ingest.admit(peer, frame.seq) {
                     Admit::Fresh { lost_since_last } => {
                         if let Some(lost) = lost_since_last {
-                            let _ = tx.send(Incoming::Gap { lost });
+                            let _ = tx.send(Incoming::Gap { peer: PeerId { transport: PeerTransport::Udp, addr: peer }, lost });
                         }
-                        let _ = tx.send(Incoming::Frame(frame));
+                        let _ = tx.send(Incoming::Frame { peer: PeerId { transport: PeerTransport::Udp, addr: peer }, frame });
                     }
                     Admit::Replay if frame.contacts.is_empty() => {
                         // Retransmitted lift — intentional safety copy.
-                        let _ = tx.send(Incoming::Frame(frame));
+                        let _ = tx.send(Incoming::Frame { peer: PeerId { transport: PeerTransport::Udp, addr: peer }, frame });
                     }
                     Admit::Replay => {} // superseded motion frame
                 }
@@ -394,6 +516,7 @@ fn tcp_acceptor(
     tx: mpsc::Sender<Incoming>,
     page: WebPageContext,
     stats: Arc<Stats>,
+    token: Option<&str>,
 ) {
     for conn in listener.incoming() {
         let stream = match conn {
@@ -407,8 +530,9 @@ fn tcp_acceptor(
             tester_html: page.tester_html.clone(),
             port: page.port,
         };
+        let token = token.map(str::to_owned);
         std::thread::spawn(move || {
-            let _ = handle_conn(stream, tx, page, stats);
+            let _ = handle_conn(stream, tx, page, stats, token.as_deref());
         });
     }
 }
@@ -418,6 +542,7 @@ fn handle_conn(
     tx: mpsc::Sender<Incoming>,
     page: WebPageContext,
     stats: Arc<Stats>,
+    token: Option<&str>,
 ) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let head = read_http_head(&mut stream)?;
@@ -435,16 +560,24 @@ fn handle_conn(
     // WebSocket upgrade for the touchpad event channel.
     let wants_ws = (clean_path == "/ws" || raw_path == "/ws") && head.to_ascii_lowercase().contains("upgrade: websocket");
     if wants_ws {
+        if !authorized_http_request(&head, raw_path, token) {
+            write_unauthorized(&mut stream)?;
+            return Ok(());
+        }
+        let peer = PeerId {
+            transport: PeerTransport::WebSocket,
+            addr: stream.peer_addr()?,
+        };
         let key = ws_handshake_key(&head).ok_or_else(|| anyhow::anyhow!("no Sec-WebSocket-Key"))?;
         write!(
             stream,
             "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: {key}\r\n\r\n"
         )?;
         stream.flush()?;
-        ws_relay(stream, tx, &stats)
+        ws_relay(stream, peer, tx, &stats)
     } else {
         let lower_path = clean_path.to_ascii_lowercase();
-        if lower_path == "" || lower_path == "/index.html" || lower_path == "/touchpad.html" || lower_path == "/touchpad" {
+        if lower_path.is_empty() || lower_path == "/index.html" || lower_path == "/touchpad.html" || lower_path == "/touchpad" {
             write_simple(&mut stream, 200, &page.html)?;
             Ok(())
         } else if lower_path == "/test" || lower_path == "/tester" || lower_path == "/test.html" || lower_path == "/tester.html" {
@@ -508,6 +641,111 @@ fn write_simple(stream: &mut TcpStream, code: u16, body: &str) -> Result<()> {
     Ok(())
 }
 
+fn write_unauthorized(stream: &mut TcpStream) -> Result<()> {
+    let body = "unauthorized";
+    write!(
+        stream,
+        "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Bearer\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    )?;
+    stream.flush()?;
+    Ok(())
+}
+
+/// Return the ATP1 payload from a UDP datagram. With no configured token,
+/// v1 packets remain byte-for-byte compatible. With a token, callers must use
+/// `ATK1 | token_len:u16 | token | ATP1 frame`.
+fn authenticated_udp_payload<'a>(buf: &'a [u8], token: Option<&str>) -> Option<&'a [u8]> {
+    let Some(expected) = token else {
+        return Some(buf);
+    };
+    if buf.len() < AUTH_HEADER_LEN || buf[..4] != AUTH_MAGIC {
+        return None;
+    }
+    let token_len = u16::from_le_bytes([buf[4], buf[5]]) as usize;
+    if token_len == 0 || token_len > AUTH_TOKEN_MAX_BYTES {
+        return None;
+    }
+    let payload_at = AUTH_HEADER_LEN.checked_add(token_len)?;
+    if payload_at >= buf.len() {
+        return None;
+    }
+    if !constant_time_eq(&buf[AUTH_HEADER_LEN..payload_at], expected.as_bytes()) {
+        return None;
+    }
+    Some(&buf[payload_at..])
+}
+
+fn authorized_http_request(head: &str, raw_path: &str, expected: Option<&str>) -> bool {
+    let Some(expected) = expected else {
+        return true;
+    };
+    let header_token = head.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if !name.trim().eq_ignore_ascii_case("authorization") {
+            return None;
+        }
+        let value = value.trim();
+        value
+            .strip_prefix("Bearer ")
+            .or_else(|| value.strip_prefix("bearer "))
+            .map(str::to_owned)
+    });
+    if header_token
+        .as_deref()
+        .is_some_and(|candidate| constant_time_eq(candidate.as_bytes(), expected.as_bytes()))
+    {
+        return true;
+    }
+    query_param(raw_path, "token")
+        .is_some_and(|candidate| constant_time_eq(candidate.as_bytes(), expected.as_bytes()))
+}
+
+fn query_param(path: &str, wanted: &str) -> Option<String> {
+    let query = path.split_once('?')?.1;
+    query.split('&').find_map(|part| {
+        let (name, value) = part.split_once('=')?;
+        if name != wanted {
+            return None;
+        }
+        percent_decode(value)
+    })
+}
+
+fn percent_decode(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => {
+                let hi = (bytes[i + 1] as char).to_digit(16)? as u8;
+                let lo = (bytes[i + 2] as char).to_digit(16)? as u8;
+                out.push((hi << 4) | lo);
+                i += 3;
+            }
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            byte => {
+                out.push(byte);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    let mut diff = a.len() ^ b.len();
+    for i in 0..a.len().max(b.len()) {
+        diff |= usize::from(a.get(i).copied().unwrap_or(0) ^ b.get(i).copied().unwrap_or(0));
+    }
+    diff == 0
+}
+
 /// RFC 6455 Sec-WebSocket-Accept = base64(SHA1(key + GUID)).
 fn ws_handshake_key(head: &str) -> Option<String> {
     const GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -551,7 +789,12 @@ fn base64(data: &[u8]) -> String {
 /// Relays WebSocket binary frames into the pump channel until the peer
 /// closes. Only unfragmented binary payloads ≤ 255 B are accepted —
 /// the protocol's largest legal frame is 115 B.
-fn ws_relay(mut stream: TcpStream, tx: mpsc::Sender<Incoming>, stats: &Stats) -> Result<()> {
+fn ws_relay(
+    mut stream: TcpStream,
+    peer: PeerId,
+    tx: mpsc::Sender<Incoming>,
+    stats: &Stats,
+) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(300)))?;
     // TCP delivers everything in order — no dedup needed at all.
     let mut header = [0u8; 2];
@@ -603,7 +846,7 @@ fn ws_relay(mut stream: TcpStream, tx: mpsc::Sender<Incoming>, stats: &Stats) ->
             0x2 => match touchpad_proto::decode(&payload) {
                 Ok(f) => {
                     stats.ws_frames.fetch_add(1, Ordering::Relaxed);
-                    let _ = tx.send(Incoming::Frame(f));
+                    let _ = tx.send(Incoming::Frame { peer, frame: f });
                 }
                 Err(e) => log::debug!("[net] bad ws frame: {e}"),
             },
@@ -623,6 +866,13 @@ mod tests {
 
     fn peer(port: u16) -> SocketAddr {
         ([127, 0, 0, 1], port).into()
+    }
+
+    fn endpoint(transport: PeerTransport, port: u16) -> PeerId {
+        PeerId {
+            transport,
+            addr: peer(port),
+        }
     }
 
     #[test]
@@ -678,5 +928,98 @@ mod tests {
             }
         );
         assert_eq!(ingest.admit(a, 13), Admit::Replay);
+    }
+
+    #[test]
+    fn peer_switch_is_reported_once_and_old_source_is_quarantined() {
+        let mut gate = PeerGate::default();
+        let t0 = Instant::now();
+        let udp = endpoint(PeerTransport::Udp, 1001);
+        let ws = endpoint(PeerTransport::WebSocket, 1002);
+
+        assert_eq!(
+            gate.observe(udp, t0),
+            PeerDecision::Accept { switched_from: None }
+        );
+        assert_eq!(
+            gate.observe(udp, t0 + Duration::from_millis(10)),
+            PeerDecision::Accept { switched_from: None }
+        );
+        assert_eq!(
+            gate.observe(ws, t0 + Duration::from_millis(20)),
+            PeerDecision::Accept {
+                switched_from: Some(udp)
+            }
+        );
+        assert_eq!(
+            gate.observe(udp, t0 + Duration::from_millis(30)),
+            PeerDecision::IgnoreRetired
+        );
+        assert_eq!(
+            gate.observe(udp, t0 + PEER_QUARANTINE + Duration::from_millis(21)),
+            PeerDecision::Accept {
+                switched_from: Some(ws)
+            }
+        );
+    }
+
+    #[test]
+    fn transport_is_part_of_peer_identity() {
+        let mut gate = PeerGate::default();
+        let t0 = Instant::now();
+        let udp = endpoint(PeerTransport::Udp, 1001);
+        let ws = endpoint(PeerTransport::WebSocket, 1001);
+        assert_eq!(
+            gate.observe(udp, t0),
+            PeerDecision::Accept { switched_from: None }
+        );
+        assert_eq!(
+            gate.observe(ws, t0 + Duration::from_millis(1)),
+            PeerDecision::Accept {
+                switched_from: Some(udp)
+            }
+        );
+    }
+
+    #[test]
+    fn authenticated_udp_envelope_preserves_atp1_payload() {
+        let frame = touchpad_proto::Frame {
+            seq: 7,
+            scan_time_100us: 123,
+            button: false,
+            contacts: Vec::new(),
+        };
+        let encoded = frame.encode();
+        assert_eq!(authenticated_udp_payload(&encoded, None), Some(encoded.as_slice()));
+
+        let token = b"s3cret";
+        let mut envelope = Vec::from(AUTH_MAGIC);
+        envelope.extend_from_slice(&(token.len() as u16).to_le_bytes());
+        envelope.extend_from_slice(token);
+        envelope.extend_from_slice(&encoded);
+        assert_eq!(
+            authenticated_udp_payload(&envelope, Some("s3cret")),
+            Some(encoded.as_slice())
+        );
+        assert_eq!(authenticated_udp_payload(&envelope, Some("wrong")), None);
+        assert_eq!(authenticated_udp_payload(&encoded, Some("s3cret")), None);
+    }
+
+    #[test]
+    fn websocket_auth_accepts_bearer_header_or_encoded_query() {
+        let header = "GET /ws HTTP/1.1\r\nAuthorization: Bearer s3cret\r\n\r\n";
+        assert!(authorized_http_request(header, "/ws", Some("s3cret")));
+        assert!(!authorized_http_request(header, "/ws", Some("wrong")));
+        assert!(authorized_http_request(
+            "GET /ws?token=s3cret HTTP/1.1\r\n\r\n",
+            "/ws?token=s3cret",
+            Some("s3cret")
+        ));
+        assert!(authorized_http_request(
+            "GET /ws?token=s%33cret HTTP/1.1\r\n\r\n",
+            "/ws?token=s%33cret",
+            Some("s3cret")
+        ));
+        assert!(authorized_http_request("", "/ws", None));
     }
 }

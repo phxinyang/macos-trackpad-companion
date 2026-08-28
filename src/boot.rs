@@ -3,9 +3,8 @@
 //! consumes. Kept here so each bin stays thin and the mapping rules
 //! have exactly one home going forward.
 //!
-//! Note: `main.rs` still carries a private copy of this logic from
-//! before the facade existed; `companion_net.rs` goes through this
-//! module. The behavior of both must stay identical.
+//! Both `companion` and `companion-net` go through this module so their
+//! gesture behavior stays identical.
 
 use crate::config::{self, GestureEnable, SwipeAxisCfg};
 use crate::gesture;
@@ -36,12 +35,12 @@ pub fn gesture_options(cfg: &config::Config) -> gesture::GestureOptions {
     // are decided by where the cursor lands); treat the table forms as
     // an implicit on.
     let three_finger_drag = !matches!(cfg.gestures.three_finger_drag.enable, GestureEnable::Off);
-    let one_finger_tap_drag = !matches!(cfg.gestures.one_finger_tap_drag.enable, GestureEnable::Off);
+    let one_finger_tap_drag =
+        !matches!(cfg.gestures.one_finger_tap_drag.enable, GestureEnable::Off);
     gesture::GestureOptions {
         three_finger_drag,
         one_finger_tap_drag,
-        release_delay_ms: 500,
-        ..gesture::GestureOptions::default()
+        release_delay_ms: cfg.gestures.three_finger_drag.release_delay_ms,
     }
 }
 

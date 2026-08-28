@@ -85,6 +85,18 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE); setHintTextColor(0xFF777788.toInt())
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 0.8f).apply { marginEnd = dp(6) }
         }
+        val token = EditText(this).apply {
+            hint = "Token（可选）"
+            setText(prefs.getString(KEY_TOKEN, ""))
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            textSize = 14f
+            background = makeInputBg()
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            setTextColor(Color.WHITE); setHintTextColor(0xFF777788.toInt())
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.2f).apply { marginEnd = dp(6) }
+        }
 
         fun makeBtnBg(activeColor: Int = 0xFF2A2A36.toInt()): GradientDrawable = GradientDrawable().apply {
             setColor(activeColor)
@@ -117,7 +129,7 @@ class MainActivity : Activity() {
             layoutParams = lp
             addView(dot)
             addView(status)
-            addView(ip); addView(port); addView(connect)
+            addView(ip); addView(port); addView(token); addView(connect)
         }
 
         controls = LinearLayout(this).apply {
@@ -125,12 +137,30 @@ class MainActivity : Activity() {
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(4), dp(10), dp(8))
 
+            val testBtn = Button(this@MainActivity).apply {
+                text = "🛠 手势测试"
+                setTextColor(Color.WHITE)
+                textSize = 12f
+                background = makeBtnBg(0xFF5856D6.toInt())
+                setPadding(dp(12), dp(4), dp(12), dp(4))
+                val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    marginStart = dp(8)
+                }
+                layoutParams = lp
+                setOnClickListener { showGestureTestDialog() }
+            }
+            addView(testBtn)
+
             val fullscreenBtn = Button(this@MainActivity).apply {
                 text = "⛶ 全屏"
                 setTextColor(Color.WHITE)
                 textSize = 12f
                 background = makeBtnBg()
                 setPadding(dp(12), dp(4), dp(12), dp(4))
+                val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    marginStart = dp(8)
+                }
+                layoutParams = lp
                 setOnClickListener { toggleFullscreen(true) }
             }
             addView(fullscreenBtn)
@@ -215,10 +245,11 @@ class MainActivity : Activity() {
         connect.setOnClickListener {
             val host = ip.text.toString().trim()
             val portText = port.text.toString().trim().ifEmpty { "4242" }
+            val tokenText = token.text.toString().trim()
             if (host.isEmpty()) { Toast.makeText(this, "先填 Mac 的 IP", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            prefs.edit().putString(KEY_HOST, host).putString(KEY_PORT, portText).apply()
+            prefs.edit().putString(KEY_HOST, host).putString(KEY_PORT, portText).putString(KEY_TOKEN, tokenText).apply()
             setStatus(false, "连接中…")
-            sender.connect(host, portText.toIntOrNull() ?: 4242, object : UdpSender.Listener {
+            sender.connect(host, portText.toIntOrNull() ?: 4242, tokenText.ifEmpty { null }, object : UdpSender.Listener {
                 override fun onState(connected: Boolean, message: String) =
                     runOnUiThread { setStatus(connected, message) }
             })
@@ -239,6 +270,151 @@ class MainActivity : Activity() {
         fullscreenFloatBtn.visibility = if (fullscreen) View.VISIBLE else View.GONE
         immersive()
         excludeSystemGestures(pad)
+    }
+
+    private fun showGestureTestDialog() {
+        val dialog = android.app.Dialog(this).apply {
+            requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+            window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        }
+
+        val scroll = android.widget.ScrollView(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val bg = GradientDrawable().apply {
+                setColor(0xF0181822.toInt())
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), 0x44FFFFFF)
+            }
+            background = bg
+            setPadding(dp(20), dp(18), dp(20), dp(20))
+        }
+
+        val title = TextView(this).apply {
+            text = "🛠 macOS 手势命令发射面板"
+            setTextColor(Color.WHITE)
+            textSize = 16f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val subtitle = TextView(this).apply {
+            text = "点击按钮直接模拟真实指尖轨迹派发至 Mac\n请将 Mac 鼠标先悬停在 Safari / 目标窗口上"
+            setTextColor(0xFFAAAAAA.toInt())
+            textSize = 11f
+            gravity = Gravity.CENTER_HORIZONTAL
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, dp(4), 0, dp(14))
+            }
+            layoutParams = lp
+        }
+
+        container.addView(title)
+        container.addView(subtitle)
+
+        fun makeTestBtn(name: String, desc: String, color: Int, action: () -> Unit): View {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                val bg = GradientDrawable().apply {
+                    setColor(color)
+                    cornerRadius = dp(10).toFloat()
+                    setStroke(dp(1), 0x33FFFFFF)
+                }
+                background = bg
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    setMargins(0, dp(4), 0, dp(4))
+                }
+                layoutParams = lp
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    action()
+                    Toast.makeText(this@MainActivity, "已发射：$name", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            val tName = TextView(this).apply {
+                text = name
+                setTextColor(Color.WHITE)
+                textSize = 13f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            }
+            val tDesc = TextView(this).apply {
+                text = desc
+                setTextColor(0xCCFFFFFF.toInt())
+                textSize = 10f
+            }
+            card.addView(tName)
+            card.addView(tDesc)
+            return card
+        }
+
+        // Add test triggers
+        container.addView(makeTestBtn("🔍 智能缩放 (Smart Zoom)", "双指双击：Safari/预览 网页段落或图片平滑放大居中", 0xFF1E3A8A.toInt()) {
+            GestureTestRunner.runSmartZoom(sender)
+        })
+
+        container.addView(makeTestBtn("📖 三指查词 (Look Up)", "三指轻点：弹出 macOS 系统词典释义气泡", 0xFF065F46.toInt()) {
+            GestureTestRunner.runLookup(sender)
+        })
+
+        container.addView(makeTestBtn("◀️ 四指左轻扫 (切到右侧桌面)", "四指水平左扫：切换到下一个 Spaces 桌面", 0xFF3730A3.toInt()) {
+            GestureTestRunner.runSwipeLeft(sender)
+        })
+
+        container.addView(makeTestBtn("▶️ 四指右轻扫 (切到左侧桌面)", "四指水平右扫：切换到上一个 Spaces 桌面", 0xFF3730A3.toInt()) {
+            GestureTestRunner.runSwipeRight(sender)
+        })
+
+        container.addView(makeTestBtn("🔼 四指上滑 (调度中心)", "四指垂直上推：展开 macOS Mission Control", 0xFF6B21A8.toInt()) {
+            GestureTestRunner.runSwipeUp(sender)
+        })
+
+        container.addView(makeTestBtn("🔽 四指下滑 (应用程序窗口)", "四指垂直下拉：展开 App Exposé 当前应用多窗口", 0xFF6B21A8.toInt()) {
+            GestureTestRunner.runSwipeDown(sender)
+        })
+
+        container.addView(makeTestBtn("🔍➕ 双指捏合放大 (+30%)", "双指向外扩张：Safari/地图/文档 视口无级缩放", 0xFF831843.toInt()) {
+            GestureTestRunner.runPinchIn(sender)
+        })
+
+        container.addView(makeTestBtn("🔍➖ 双指捏合缩小 (-30%)", "双指向内聚拢：Safari/地图/文档 视口缩小", 0xFF831843.toInt()) {
+            GestureTestRunner.runPinchOut(sender)
+        })
+
+        container.addView(makeTestBtn("🔄 双指顺时针旋转 90°", "双指圆周旋转：在照片/预览中旋转图片", 0xFF92400E.toInt()) {
+            GestureTestRunner.runRotate(sender)
+        })
+
+        container.addView(makeTestBtn("🖱 双指右键点击", "双指轻点：弹出光标所在处的系统右键上下文菜单", 0xFF1F2937.toInt()) {
+            GestureTestRunner.runRightClick(sender)
+        })
+
+        container.addView(makeTestBtn("✋ 三指拖移测试", "三指接触并平移：选中文本或拖动窗口标题栏", 0xFF1F2937.toInt()) {
+            GestureTestRunner.runThreeFingerDrag(sender)
+        })
+
+        val closeBtn = Button(this).apply {
+            text = "关闭面板"
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            val bg = GradientDrawable().apply {
+                setColor(0xFF333340.toInt())
+                cornerRadius = dp(8).toFloat()
+            }
+            background = bg
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, dp(12), 0, 0)
+            }
+            layoutParams = lp
+            setOnClickListener { dialog.dismiss() }
+        }
+        container.addView(closeBtn)
+
+        scroll.addView(container)
+        dialog.setContentView(scroll)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.90).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.show()
     }
 
     private fun setStatus(connected: Boolean, msg: String) {
@@ -296,6 +472,7 @@ class MainActivity : Activity() {
     companion object {
         private const val KEY_HOST = "host"
         private const val KEY_PORT = "port"
+        private const val KEY_TOKEN = "token"
         private const val KEY_SCALE = "scale"
         private const val KEY_HAPTIC = "haptic"
     }

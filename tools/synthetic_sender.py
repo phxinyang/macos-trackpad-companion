@@ -20,6 +20,7 @@ import struct
 import time
 
 MAGIC = b"ATP1"
+AUTH_MAGIC = b"ATK1"
 VERSION = 1
 FLAG_BUTTON = 0x01
 CONTACT_TIP = 0x01
@@ -46,7 +47,7 @@ def encode(seq: int, scan_time: int, button: bool, contacts: list[bytes]) -> byt
 class Sender:
     """Frames at a fixed rate, mirroring what phone clients do."""
 
-    def __init__(self, sock: socket.socket, addr, rate_hz: float):
+    def __init__(self, sock: socket.socket, addr, rate_hz: float, token: str | None = None):
         self.sock = sock
         self.addr = addr
         self.period = 1.0 / rate_hz
@@ -54,6 +55,9 @@ class Sender:
         # with the receiver's recent-seq replay window (docs/wire-protocol.md).
         self.seq = random.randrange(1 << 32)
         self.t0 = time.monotonic_ns()
+        self.token = token.encode("utf-8") if token else None
+        if self.token is not None and not 1 <= len(self.token) <= 256:
+            raise ValueError("token must be 1..256 UTF-8 bytes")
 
     def now_ticks(self) -> int:
         # Sender monotonic clock in 100 µs ticks; receiver uses low 16 bits.
@@ -61,6 +65,8 @@ class Sender:
 
     def send(self, contacts: list[bytes], button: bool = False, lift_extra: bool = False):
         packet = encode(self.seq, self.now_ticks(), button, contacts)
+        if self.token is not None:
+            packet = AUTH_MAGIC + struct.pack("<H", len(self.token)) + self.token + packet
         self.sock.sendto(packet, self.addr)
         # The final "all lifted" frame is the only stateful transition in
         # the protocol; losing it stalls taps/clicks until the next touch.
@@ -258,10 +264,11 @@ def main():
     ap.add_argument("--repeat", type=int, default=1, help="times to run the mode")
     ap.add_argument("--dist", type=float, default=1.0, help="travel scale for animated modes")
     ap.add_argument("--dur", type=float, default=0, help="override duration (s); 0 = mode default")
+    ap.add_argument("--token", help="optional [net].token; wraps packets in the ATK1 envelope")
     args = ap.parse_args()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sender = Sender(sock, (args.host, args.port), args.rate)
+    sender = Sender(sock, (args.host, args.port), args.rate, args.token)
 
     # Always start from a known lifted state.
     sender.send([], lift_extra=True)

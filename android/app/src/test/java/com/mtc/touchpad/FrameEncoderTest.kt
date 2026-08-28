@@ -42,6 +42,16 @@ class FrameEncoderTest {
     }
 
     @Test
+    fun authenticated_frame_wraps_atp1_without_changing_payload() {
+        val frame = FrameEncoder.encode(seq = 9, scanTimeTicks = 4, button = false, contacts = emptyList())
+        val wrapped = FrameEncoder.authenticate("s3cret", frame)
+        assertEquals(6 + 6 + frame.size, wrapped.size)
+        assertEquals("ATK1", wrapped.copyOfRange(0, 4).toString(Charsets.US_ASCII))
+        assertEquals(6, (wrapped[4].toInt() and 0xff) or ((wrapped[5].toInt() and 0xff) shl 8))
+        assertEquals(frame.toList(), wrapped.copyOfRange(12, wrapped.size).toList())
+    }
+
+    @Test
     fun physical_pixel_scale_is_isotropic() {
         val mm = mmPerPixel(xdpi = 445.6f, ydpi = 445.6f, densityDpi = 520)
         assertEquals(25.4f / 445.6f, mm, 0.00001f)

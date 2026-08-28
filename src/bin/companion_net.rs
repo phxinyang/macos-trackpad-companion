@@ -15,12 +15,18 @@
 //! Mutually exclusive with the HID daemon via the same instance lock:
 //! two live input sources would both drive one cursor.
 
+#[cfg(target_os = "macos")]
 use anyhow::{Context, Result};
+#[cfg(target_os = "macos")]
 use clap::Parser;
+#[cfg(target_os = "macos")]
 use companion::{boot, config, gesture, instance_lock, net, output, overlay};
+#[cfg(target_os = "macos")]
 use macos_trackpad_companion as companion;
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
 
+#[cfg(target_os = "macos")]
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Args {
@@ -43,12 +49,13 @@ struct Args {
     #[arg(long, value_name = "IP")]
     listen_ip: Option<String>,
 
-    /// Override the reserved `[net].token` field. Protocol v1 remains
-    /// unauthenticated; setting this only emits the startup warning.
+    /// Override `[net].token`. Enables bearer authentication for WebSocket
+    /// and ATK1-wrapped UDP frames.
     #[arg(long, value_name = "TOKEN")]
     token: Option<String>,
 }
 
+#[cfg(target_os = "macos")]
 fn main() -> Result<()> {
     let args = Args::parse();
     let (mut cfg, cfg_path) = config::load(args.config.as_deref())?;
@@ -116,10 +123,16 @@ fn main() -> Result<()> {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+fn main() {
+    eprintln!("companion-net requires macOS; run `cargo test --lib` for portable gesture tests");
+}
+
 /// Returns `true` once this process may post synthetic events. With
 /// `prompt = true` macOS shows its own "would like to control this
 /// computer" dialog; the terminal app hosting this binary is what gets
 /// TCC-attributed when the binary isn't a bundled .app.
+#[cfg(target_os = "macos")]
 fn ax_trusted(prompt: bool) -> bool {
     use core_foundation::base::TCFType;
     use core_foundation::boolean::CFBoolean;
@@ -138,6 +151,7 @@ fn ax_trusted(prompt: bool) -> bool {
     unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef() as *const _) != 0 }
 }
 
+#[cfg(target_os = "macos")]
 fn ensure_accessibility() -> Result<()> {
     if ax_trusted(true) {
         return Ok(());

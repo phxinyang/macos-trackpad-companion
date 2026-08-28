@@ -25,6 +25,7 @@ class UdpSender {
 
     @Volatile private var socket: DatagramSocket? = null
     @Volatile var target: InetAddress? = null; private set
+    @Volatile private var token: String? = null
 
     /** Random session start per protocol docs; wraps in Int space. */
     private val seq = Random.nextInt()
@@ -36,7 +37,12 @@ class UdpSender {
     /** 100 µs ticks since boot, like every other sender of this protocol. */
     fun nowTicks(): Int = (SystemClock.elapsedRealtimeNanos() / 100_000L).toInt()
 
+    /** Backward-compatible unauthenticated connection entry point. */
     fun connect(host: String, port: Int, listener: Listener) {
+        connect(host, port, null, listener)
+    }
+
+    fun connect(host: String, port: Int, token: String? = null, listener: Listener) {
         handler.post {
             try {
                 closeSocket()
@@ -45,9 +51,10 @@ class UdpSender {
                 socket = sock
                 target = addr
                 this.portField = port
+                this.token = token?.takeIf { it.isNotEmpty() }
                 listener.onState(true, "已连接 $host")
             } catch (e: Exception) {
-                socket = null; target = null
+                socket = null; target = null; this.token = null
                 listener.onState(false, "连接失败：${e.message}")
             }
         }
@@ -60,7 +67,8 @@ class UdpSender {
             val sock = socket ?: return@post
             val addr = target ?: return@post
             try {
-                sock.send(DatagramPacket(bytes, bytes.size, addr, portField))
+                val payload = token?.let { FrameEncoder.authenticate(it, bytes) } ?: bytes
+                sock.send(DatagramPacket(payload, payload.size, addr, portField))
             } catch (_: Exception) {
                 // Dropped mid-stream: next frame self-corrects. Lift loss
                 // is covered by echoLift() retransmits at the source.
@@ -77,6 +85,6 @@ class UdpSender {
 
     private fun closeSocket() {
         runCatching { socket?.close() }
-        socket = null; target = null
+        socket = null; target = null; token = null
     }
 }

@@ -257,7 +257,7 @@ impl<'a> Walker<'a> {
             .usages
             .first()
             .copied()
-            .unwrap_or(((self.usage_page as u32) << 16) | 0);
+            .unwrap_or((self.usage_page as u32) << 16);
 
         self.collections.push(Collection { kind, primary_usage });
 
