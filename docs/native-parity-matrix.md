@@ -16,7 +16,7 @@
 | **06** | **双指平滑次像素滚动<br>(2F Pixel Scroll)** | `NSScrollWheel` 携带 `Phase::Began -> Changed -> Ended`；支持 Q16.16 高精度定点微位移与自然滚动反向 | 注入 `kCGSessionEventTap`；写入 `FixedPtDeltaAxis1/2` (Q16.16) 与 `PointDeltaAxis1/2`；2 帧落指静止观察窗消除噪声 | • 原生：1 line $\approx 10\text{px}$，65536 固定定点<br>• 本项目：`FixedPt = px * 65536.0`，完全符合 AppKit 标准 | **自动化覆盖；待真机** |
 | **07** | **双指滚动物理惯性<br>(2F Scroll Momentum)** | 抬手后由 RunLoop 驱动 `momentumPhase` 自然衰减，手指触碰瞬间物理制动拦截 | 60Hz 衰减飞轮；采集抬手前 $50\text{ms}$ 内峰值速度作为种子；新触碰或断链立即派发 `MomentumPhase::Ended / Cancelled` 物理制动 | • 原生衰减：尾部 $50\text{ms}$ 冲量捕捉<br>• 本项目：`INERTIA_PEAK_WINDOW=50ms`, `SEED=25mm/s` | **自动化覆盖；待真机衰减校准** |
 | **08** | **双指智能缩放对焦<br>(2F Smart Zoom)** | 双指快速双击，向系统发送 `GESTURE_SUBTYPE_SMART_MAGNIFY (0x17)` 局部对焦；双击时绝不提前弹出右键菜单 | 识别 $350\text{ms}$ 双指快速双击，绑定瞬时光标坐标 `CGEventSetLocation` 投递 `GESTURE_SUBTYPE_SMART_MAGNIFY`；第 2 次轻点优先消费并清除连击态 | • 原生：$350\text{ms}$ 双击间隔，光标对焦<br>• 本项目：$350\text{ms}$，坐标精准命中 | **私有 payload；待真机应用验证** |
-| **09** | **双指缩放与 360° 旋转<br>(Pinch & 360° Rotate)** | 相对增量流；AppKit `NSEvent.magnification` 和 `NSEvent.rotation` 都是应累加到当前状态的变化量；滚动/轻扫开始后由 AppKit 锁定，magnify/rotate 可在多点序列中切换；旋转逆时针为正 | 采用上一帧瞬时间距/角度差分；当前锁定模式会同时发两个 `Began`，随后按经验 dominance 每帧只发一个 `Changed`，结束时再同时发两个 `Ended`；保留 Pan→pinch/rotate 动态转场；**旋转角增量取反 `-angle_d.to_degrees()`**，并叠加未经 Apple 参数证实的角速度增益 | • 原生：相对增量、方向约定和 scroll lock 有公开语义<br>• 本项目：portable 分类测试覆盖；phase 合同、首帧行为、tap 位置、child payload 和增益曲线均待 macOS 应用验证 | **部分完成；实验性私有 payload；待真机** |
+| **09** | **双指缩放与 360° 旋转<br>(Pinch & 360° Rotate)** | 相对增量流；AppKit `NSEvent.magnification` 和 `NSEvent.rotation` 都是应累加到当前状态的变化量；滚动/轻扫开始后由 AppKit 锁定，magnify/rotate 可在多点序列中切换；旋转逆时针为正 | 采用上一帧瞬时间距/角度差分；锁定后每个已准入 stream 都保持完整 `Began -> Changed* -> Ended/Cancelled` 生命周期；增量使用独立 transform 时间基准并受速率和 `±0.08` 缩放硬上限保护；旋转默认输出 **1:1** 的 `-angle_d.to_degrees()`，不再叠加未经验证的经验加速；Pan→pinch/rotate 转场仍作为兼容策略保留 | • 原生：相对增量、方向约定和 scroll lock 有公开语义<br>• 本项目：portable 分类测试覆盖；事件 tap、首帧行为、child payload、转场策略和真实应用结果仍待 macOS 验证 | **代码合同已收紧；私有 payload/应用兼容待真机** |
 | **10** | **三指轻点查词<br>(3F Look Up Dictionary)** | 三指并拢轻点，调用系统词典与数据探测器（`Cmd+Ctrl+D` 或系统 Lookup 接口） | 贯通 **$3\text{F}\to 2\text{F}\to 1\text{F}\to 0$ 全链路异步抬指管道**，按触碰总时长与总位移判定；`Cmd+Ctrl+D` 注入 15ms 真实物理脉冲时序并双路投递 Session+HID | • 原生：$300\text{ms} \sim 380\text{ms}$ 时限<br>• 本项目：$380\text{ms}$ / $2.5\text{mm}$ (直抬) / $420\text{ms}$ (分步抬) | **键等价物路径；待真机** |
 | **11** | **三指拖移与悬停换把<br>(3F Drag & Regrip)** | 经典三指拖移：手指位移即按住左键拖拽；支持抬手 500ms 悬停换把（Drag Lock / 跨屏延续），中途可加入第 4 指切桌面携窗 | `0.35mm` 触发门限；默认 `release_delay_ms=500`（500ms 悬停延续锁定）；进入 4 指切桌面时**保持 `drag_button_held=true`** | • 原生：支持 Drag Lock 换把悬停<br>• 本项目：默认 500ms 换把悬停，单指轻触即释放 | **自动化覆盖；与 Apple Drag Lock 语义不同，待真机** |
 | **12** | **四指桌面平移切换<br>(4F Spaces Swipe)** | 四指横扫通过 DockControl / SkyLight 驱动多桌面平滑过渡动画 | **手指数跳变重锚**（$4 \to 3$ 或 $3 \to 4$ 时几何重置，累加 `cumulative_dx`，避免丢指跳变）；支持 macOS 27+ `SLEventSetIOHIDEvent` 与旧版 CGEvent 双路径 | • 原生行程：$50\text{mm}$ 对应 1.0 满行程进度<br>• 本项目：`SWIPE_PROGRESS_REF_MM=50.0mm` | **私有 ABI；待 macOS 版本实测** |
@@ -77,8 +77,8 @@
 * **解法**：设立 `FAT_FINGER_SPLIT_MM = 8.0mm` 间距红线。凡是两指初始间距小于 8mm 的触碰，在抬手时一律判定为肉指拆分，**自动降级为单指左键单击**。
 
 ### 4. 双指缩放与旋转串扰
-* **历史背景**：旧代码曾每帧同时发射 pinch 和 rotate 事件，后续改为 dominant stream 以减少跨应用 recognizer 串扰；但当前 `Began/Changed/Ended` 组合尚未证明符合 Apple 的序列切换语义，不能据此宣称问题已根治。
-* **解法**：恢复 1.5 倍主导权滞回机制（`rot_mag > pinch_mag * 1.5` 才允许切换主导流），并加入 $0.18^\circ$ 旋转物理死区。
+* **历史背景**：旧代码曾在 pinch/rotate 之间按 dominant stream 静默抑制事件，造成 `Began/Changed/Ended` 生命周期不完整。当前已改为对每个已准入 stream 保持完整相对增量序列，但仍不能在缺少 macOS 真机应用证据时宣称跨应用兼容已根治。
+* **解法**：锁定后两个已准入 stream 独立输出相对增量；各自使用小死区抑制噪声，并通过独立 transform 时间基准和单帧上限过滤丢帧跳变。旋转默认保持几何 1:1，待真机 A/B 再评估加速。
 
 ### 5. 三指拖拽接四指切桌面卡死
 * **根因**：三指拖拽跨桌面时状态机流转到 `SwipeLatched`，但退出分支漏掉了按键释放。

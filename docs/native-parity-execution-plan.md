@@ -181,7 +181,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 1. `src/descriptor.rs:65-71` 强制 `bytes_per_contact == 6`，而 `src/report.rs:45-55` 固定按 flags/id/u16 X/u16 Y 解码；这与 descriptor-defined bit-packed、5-byte contact 和 hybrid PTP 不兼容。阶段 C 前 README 已明确收窄为项目 6-byte profile。
 2. `src/hid.rs:43-58` 仍把 Input Mode Feature Report `0x08` 写成 universal；应改为从 descriptor 发现 report ID，并把 vendor `0x10` 作为设备特例。
 3. `src/output.rs:702-718` 构造 parent digitizer 且 `child_event_mask=0`，没有真实 child contacts；它可能被部分 AppKit 应用接受，但不能等同 CalfTrail 的 raw child touch stream，需阶段 D 逐字段真机比对。
-4. `src/gesture.rs:2521-2564` 当前实现 dominant stream 隔离，注释声称“一帧只有一个 stream”；但当另一信号超过阈值时仍存在同时 emit 的契约边界，必须在 Preview/Photos/Figma 矩阵中验证。
+4. `src/gesture.rs:2521-2610` 当前实现已改为两个已准入 transform stream 各自保持完整 phase 生命周期，并对相对增量限速；Pan→pinch/rotate 动态转场仍是兼容策略，必须在 Preview/Photos/Figma 矩阵中验证。
 5. `src/output.rs:2104-2117` 的 DockSwipe 依赖私有 SkyLight ABI；虽然 macOS 27+ 缺失 attach 时会 fail-closed，但 ownership、timestamp、phase、velocity 仍无本机证据。
 6. `src/output.rs:2622-2643` Smart Zoom 同时投递两种事件形状、两个 tap，疑似重复触发；阶段 D3 必须用单一 recorder/应用结果决定保留哪条路径。
 7. `src/config.rs:72-80` 默认网络监听地址为空，`src/net.rs:190-198` 解析为 `0.0.0.0`；无 token 时局域网任意主机可注入事件。README 已保留警告，生产部署应显式绑定回环/LAN 和 token。
@@ -215,19 +215,19 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 
 #### 当前代码的具体风险排序
 
-1. **高：phase/stream 合同不一致。** `src/gesture.rs` 在锁定时可能同时发送 pinch 和 rotate 的 `Began`，随后依据 dominance 每帧只发送其中一个 `Changed`，最后又同时发送两个 `Ended`。这不是 Apple 文档描述的“一个序列切换到另一个序列”，也不是两个完整并行序列；Preview/Photos/Figma 可能因此表现为首帧丢失、旋转被吞或结束状态残留。
-2. **高：缩放单帧上限过宽。** 当前 `scale_delta` 允许 `±0.5`，远大于 CalfTrail 的 `±0.025`。网络丢帧、线程暂停或接触重排都会转化为一次 50% 缩放跳变，正好符合“放大缩小不好用”的症状。
-3. **高：2.0x 旋转曲线无证据。** `src/gesture.rs` 用角速度把旋转放大到 2.0x，且 `last_scroll_time` 复用于旋转 dt。这个状态变量在 Pan→pinch/rotate 转场时可能带入旧时间，造成首个旋转 delta 的倍率异常；Apple 公开 API 只定义差分角度，不定义该加速曲线。
+1. **已处理（待真机确认）：phase/stream 合同。** `src/gesture.rs` 现在在锁定时为每个已准入 stream 发送完整的 `Began -> Changed* -> Ended/Cancelled` 生命周期，不再使用 dominant-only 的中间静默。应用层兼容性仍需 Preview/Photos/Figma 真机验收。
+2. **已处理（待真机校准）：缩放单帧跳变。** `scale_delta` 现在同时受时间速率和 `±0.08` 单帧硬上限约束；异常暂停、丢帧和非有限输入会被限制或丢弃。上限是防护参数，不代表 Apple 的官方阈值。
+3. **已处理（保守默认）：旋转增益。** 旋转改为独立 transform 时间基准，并默认输出几何 1:1 的有符号相对角度；原先未经验证的 2.0x 经验曲线已移除，后续只能通过真机 A/B 作为显式实验参数恢复。
 4. **高：Pan→Pinch 动态转场不是 Apple 的 scroll lock。** Apple 文档只允许 magnify/rotate 在一个多点接触中重新解释；scroll 一旦开始应锁定到结束。当前为补救误分类而保留的 Pan→pinch 转场应标成兼容性策略，而不是 native parity。
 5. **中：输出 tap 未完成 A/B。** 当前 `src/output.rs` 的 pinch/rotate 发往 `kCGSessionEventTap`，而 Mac Mouse Fix、Hammerspoon 的主路径都使用 `kCGHIDEventTap`。Hammerspoon 旧 PR 说当时“无影响”，所以应在目标系统录制两条路径后再定，不应把当前选择写成原生事实。
 6. **中：payload 只含 parent digitizer。** 当前 `child_event_mask=0`、vendor payload 的 device ID 为 0，没有真实 child contacts；这可能足够触发简单 `NSResponder` 路径，但不足以证明对 `NSMagnificationGestureRecognizer`/`NSRotationGestureRecognizer` 的跨应用兼容。
-7. **中：dominance 归一化阈值把“旋转中的轻微距离噪声”当作竞争 stream。** `PINCH_ROTATE_HYSTERESIS=1.5`、`PINCH_LOCK_RATIO=0.04` 和每帧角速度曲线都是本项目经验参数；现有测试只证明 recorder 中的调用顺序，没有证明应用收到的 NSEvent 结果。
+7. **中：应用层事件接受仍无证据。** 现在的 phase 合同和 1:1 几何增量在 portable recorder 上可回归，但 `kCGSessionEventTap`、parent-only payload、首帧策略和动态转场仍需目标 macOS 应用矩阵验证。
 
 #### 下一步决策（先测合同，再调参数）
 
-- [ ] R1. 增加纯逻辑的 pinch/rotate delta filter：测试 8ms、16ms、100ms 间隔、单帧丢失、反向和 contact-ID 重排；先把每帧增量限制和累积策略固定下来。
-- [ ] R2. 选定一种 phase 合同：要么两个 stream 都完整发送 Changed，要么 dominance 切换时显式 `Ended(old) → Began(new)`；禁止 `Began/Ended` 双发而中间只发一个 stream。
-- [ ] R3. 暂停“native rotation curve”命名，默认回到 1:1 几何角度；任何加速只作为显式实验参数，并记录应用矩阵结果。
+- [x] R1. 增加纯逻辑的 pinch/rotate delta filter：使用时间速率 + 单帧上限，覆盖正常、超限和非有限输入。
+- [x] R2. 选定 phase 合同：两个已准入 stream 都完整发送 `Changed`，结束时分别发送 `Ended` 或 `Cancelled`。
+- [x] R3. 暂停“native rotation curve”命名，默认回到 1:1 几何角度；经验加速不再进入默认路径。
 - [ ] R4. 在 macOS recorder 上对 HID tap/session tap、空 child/真实 child、首帧 0 delta/首帧有效 delta 做最小 A/B 矩阵；记录 Preview、Photos、Safari、Maps、Figma 的实际回调和结束状态。
 - [ ] R5. 在 R1-R4 有结果前，不继续微调 1.25x/1.85x/2.0x 等倍率，也不把测试 recorder 的“调用成功”升级成“原生体验完成”。
 - [ ] R6. 把 Pan→pinch 转场作为独立“兼容模式”开关评估；native 模式默认保持 scroll lock，避免用一个非原生补救策略掩盖识别器问题。
@@ -245,11 +245,12 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] F2. 固定 TOML 显式字段优先级，启动时合并到 HID 与 network 两条入口。
 - [x] F3. 增加滚动/点击/智能缩放/查词/三指拖移/四指 swipe 的高确定性开关映射。
 - [x] F4. 采用 `NSHapticFeedbackManager.defaultPerformer()` 提供设备感知触觉确认，并修复 Android `ACTION_CANCEL` 误震动。
+- [x] R1-R3. 完成旋转/缩放相对增量过滤、phase 生命周期统一和 1:1 旋转默认值；新增纯逻辑回归测试。
 - [ ] F5. 在目标 macOS 版本用真实 MacBook/Magic Trackpad 验证 performer 是否可用、触发时机和系统“触控反馈”开关；未完成前不宣称硬件 click parity。
 
 ### 4.1 本轮验证记录
 
-- `~/.cargo/bin/cargo test --workspace`：通过，122 个主工程测试 + 9 个协议测试。
+- `~/.cargo/bin/cargo test --workspace`：通过，123 个主工程测试 + 9 个协议测试（包含 R1 transform filter 回归）。
 - `~/.cargo/bin/cargo check --all-targets`：通过。
 - `~/.cargo/bin/cargo check --target aarch64-apple-darwin --all-targets`：通过（交叉检查 macOS binary/module wiring；仅有既有 dead-code 警告）。
 - `android/./gradlew test`（工作目录 `android/`）：通过，Gradle `BUILD SUCCESSFUL`。
