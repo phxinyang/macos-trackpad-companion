@@ -207,17 +207,22 @@ class TouchPadView(context: Context) : View(context) {
                 if (cidByPointer.isEmpty()) echoLift() else sendCurrentSurvivors(event)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                val duration = System.currentTimeMillis() - touchDownTimeMs
-                // Only vibrate on actual tap-to-click (short press with minimal movement)
-                if (duration <= TAP_MAX_TIME_MS) {
-                    val (cx, cy) = getCentroidMm(event)
-                    val dx = Math.abs(cx - initialCentroidX)
-                    val dy = Math.abs(cy - initialCentroidY)
-                    if (dx < TAP_MAX_TRAVEL_MM && dy < TAP_MAX_TRAVEL_MM) {
-                        if (maxFingersInSession == 2) {
-                            haptics.heavyClick(this) // 2-finger right click press
-                        } else if (maxFingersInSession == 1) {
-                            haptics.click(this) // 1-finger click press
+                // ACTION_CANCEL is a transport/lifecycle abort, not a user
+                // tap. Never emit click feedback on cancellation; still send
+                // the lift frame so the Mac cannot retain stale contacts.
+                if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    val duration = System.currentTimeMillis() - touchDownTimeMs
+                    // Only vibrate on actual tap-to-click (short press with minimal movement)
+                    if (duration <= TAP_MAX_TIME_MS) {
+                        val (cx, cy) = getCentroidMm(event)
+                        val dx = Math.abs(cx - initialCentroidX)
+                        val dy = Math.abs(cy - initialCentroidY)
+                        if (dx < TAP_MAX_TRAVEL_MM && dy < TAP_MAX_TRAVEL_MM) {
+                            if (maxFingersInSession == 2) {
+                                haptics.heavyClick(this) // 2-finger right click press
+                            } else if (maxFingersInSession == 1) {
+                                haptics.click(this) // 1-finger click press
+                            }
                         }
                     }
                 }

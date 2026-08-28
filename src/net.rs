@@ -63,6 +63,9 @@ enum Incoming {
     },
     /// Loss telemetry from the UDP path, only for logging.
     Gap { peer: PeerId, lost: u32 },
+    /// The sender restarted its sequence space on an endpoint that is still
+    /// active. Its scan clock and touch session no longer share a timeline.
+    Restart { peer: PeerId },
 }
 
 /// A transport endpoint is part of the gesture session identity.  UDP and
@@ -283,6 +286,17 @@ fn pump(rx: mpsc::Receiver<Incoming>, stats: &Stats, sink: &mut dyn InputSink) -
                 }
                 log::warn!("[net] seq gap: {lost} frame(s) lost mid-stream");
             }
+            Ok(Incoming::Restart { peer }) => {
+                if peers.active != Some(peer) {
+                    continue;
+                }
+                log::info!("[net] sender restarted on {peer:?}; canceling touch and resetting scan clock");
+                if contacts_down {
+                    sink.on_link_timeout(Timestamp::now());
+                    contacts_down = false;
+                }
+                scan_clock = ScanTimeClock::new();
+            }
             Ok(Incoming::Frame { peer, frame: wire }) => {
                 let now = Instant::now();
                 let switched_from = match peers.observe(peer, now) {
@@ -381,11 +395,17 @@ struct UdpIngest {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Admit {
-    /// New seq (or an old one outside the replay window — treat alike).
-    Fresh { lost_since_last: Option<u32> },
+    /// New forward seq (including a normal serial-number wrap).
+    Fresh {
+        lost_since_last: Option<u32>,
+        sender_restarted: bool,
+    },
     /// Same seq seen inside [`REPLAY_WINDOW`] — safety copy; pass only
     /// if it's an all-lifted frame (handled by the caller).
     Replay,
+    /// An unseen packet older than the current high-water mark. Processing it
+    /// would make the 16-bit scan clock look as if it wrapped by 6.5 seconds.
+    Stale,
 }
 
 impl UdpIngest {
@@ -402,29 +422,36 @@ impl UdpIngest {
         flow.seen.insert(seq, now);
 
         let mut lost_since_last = None;
+        let mut sender_restarted = false;
         if let Some((last_seq, last_at)) = flow.last {
-            if now.duration_since(last_at) < GAP_LOG_WINDOW {
-                // Interpret the wrapping subtraction as a signed serial
-                // distance. Casting directly to i64 would turn a packet
-                // one step behind into +4_294_967_295 and report a bogus
-                // multi-billion-frame gap.
-                let dist = seq.wrapping_sub(last_seq) as i32 as i64;
-                // Only a forward jump indicates loss. An unseen packet
-                // arriving late must not move the high-water mark or make
-                // a later in-order packet look like another gap.
-                if dist > 1 {
-                    lost_since_last = Some((dist - 1) as u32);
-                }
-                if !(-SEQ_RESTART_DISTANCE..=0).contains(&dist) {
+            // Interpret the wrapping subtraction as a signed serial distance.
+            // A small negative distance is an out-of-order packet and must not
+            // reach ScanTimeClock: the scan timestamp belongs to an older
+            // sample and would otherwise be mistaken for a u16 wrap.
+            let dist = seq.wrapping_sub(last_seq) as i32 as i64;
+            if dist < 0 {
+                if dist <= -SEQ_RESTART_DISTANCE {
+                    // The endpoint reused its source port but restarted its
+                    // sender state. Admit the new frame after telling the pump
+                    // to cancel the old touch session and rebase its clock.
+                    sender_restarted = true;
                     flow.last = Some((seq, now));
+                } else {
+                    return Admit::Stale;
                 }
             } else {
+                if now.duration_since(last_at) < GAP_LOG_WINDOW && dist > 1 {
+                    lost_since_last = Some((dist - 1) as u32);
+                }
                 flow.last = Some((seq, now));
             }
         } else {
             flow.last = Some((seq, now));
         }
-        Admit::Fresh { lost_since_last }
+        Admit::Fresh {
+            lost_since_last,
+            sender_restarted,
+        }
     }
 }
 
@@ -464,17 +491,27 @@ fn udp_reader(
                     }
                 };
                 match ingest.admit(peer, frame.seq) {
-                    Admit::Fresh { lost_since_last } => {
-                        if let Some(lost) = lost_since_last {
-                            let _ = tx.send(Incoming::Gap { peer: PeerId { transport: PeerTransport::Udp, addr: peer }, lost });
+                    Admit::Fresh {
+                        lost_since_last,
+                        sender_restarted,
+                    } => {
+                        let peer_id = PeerId {
+                            transport: PeerTransport::Udp,
+                            addr: peer,
+                        };
+                        if sender_restarted {
+                            let _ = tx.send(Incoming::Restart { peer: peer_id });
                         }
-                        let _ = tx.send(Incoming::Frame { peer: PeerId { transport: PeerTransport::Udp, addr: peer }, frame });
+                        if let Some(lost) = lost_since_last {
+                            let _ = tx.send(Incoming::Gap { peer: peer_id, lost });
+                        }
+                        let _ = tx.send(Incoming::Frame { peer: peer_id, frame });
                     }
                     Admit::Replay if frame.contacts.is_empty() => {
                         // Retransmitted lift — intentional safety copy.
                         let _ = tx.send(Incoming::Frame { peer: PeerId { transport: PeerTransport::Udp, addr: peer }, frame });
                     }
-                    Admit::Replay => {} // superseded motion frame
+                    Admit::Replay | Admit::Stale => {} // superseded motion frame
                 }
             }
             Err(e) => {
@@ -897,37 +934,73 @@ mod tests {
         assert_eq!(
             ingest.admit(a, 10),
             Admit::Fresh {
-                lost_since_last: None
+                lost_since_last: None,
+                sender_restarted: false,
             }
         );
         // A second sender starts at an unrelated sequence number.
         assert_eq!(
             ingest.admit(b, 900_000),
             Admit::Fresh {
-                lost_since_last: None
+                lost_since_last: None,
+                sender_restarted: false,
             }
         );
         assert_eq!(
             ingest.admit(a, 12),
             Admit::Fresh {
-                lost_since_last: Some(1)
+                lost_since_last: Some(1),
+                sender_restarted: false,
             }
         );
-        // A late packet is still accepted, but does not rewind the
-        // high-water mark or create a false gap for seq 13.
-        assert_eq!(
-            ingest.admit(a, 11),
-            Admit::Fresh {
-                lost_since_last: None
-            }
-        );
+        // A late packet is rejected before it can corrupt the scan-time
+        // clock, and the following in-order packet still has no false gap.
+        assert_eq!(ingest.admit(a, 11), Admit::Stale);
         assert_eq!(
             ingest.admit(a, 13),
             Admit::Fresh {
-                lost_since_last: None
+                lost_since_last: None,
+                sender_restarted: false,
             }
         );
         assert_eq!(ingest.admit(a, 13), Admit::Replay);
+    }
+
+    #[test]
+    fn large_backward_jump_is_reported_as_sender_restart() {
+        let mut ingest = UdpIngest::default();
+        let a = peer(1001);
+        assert_eq!(
+            ingest.admit(a, 2_000_000),
+            Admit::Fresh {
+                lost_since_last: None,
+                sender_restarted: false,
+            }
+        );
+        assert_eq!(
+            ingest.admit(a, 1),
+            Admit::Fresh {
+                lost_since_last: None,
+                sender_restarted: true,
+            }
+        );
+    }
+
+    #[test]
+    fn stale_udp_frame_is_dropped_before_scan_clock() {
+        let mut ingest = UdpIngest::default();
+        let a = peer(1001);
+        let t0 = Timestamp::from_nanos(1_000_000_000_000);
+        assert!(matches!(ingest.admit(a, 10), Admit::Fresh { .. }));
+
+        let mut clock = ScanTimeClock::new();
+        let _ = clock.observe(1_000, t0);
+        assert_eq!(ingest.admit(a, 9), Admit::Stale);
+
+        // Because the stale packet never reaches the clock, the next frame
+        // advances by 8 ms instead of being interpreted as a 6.5 s wrap.
+        let aligned = clock.observe(1_080, t0 + Duration::from_millis(8));
+        assert_eq!(aligned, t0 + Duration::from_millis(8));
     }
 
     #[test]

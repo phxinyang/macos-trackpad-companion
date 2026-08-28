@@ -20,6 +20,10 @@ use core_foundation_sys::runloop::{
 };
 use core_graphics::display::CGDisplay;
 use core_graphics::geometry::{CGPoint, CGRect};
+use objc2_app_kit::{
+    NSHapticFeedbackManager, NSHapticFeedbackPattern, NSHapticFeedbackPerformanceTime,
+    NSHapticFeedbackPerformer,
+};
 use std::cell::Cell;
 use std::ffi::c_void;
 use std::time::Duration;
@@ -793,6 +797,15 @@ pub struct Config {
     /// "wheel" convention where finger-down moves the scrollbar down /
     /// the content up.
     pub natural_scroll: bool,
+    /// Preserve horizontal scroll deltas when true. macOS exposes this as
+    /// `TrackpadHorizScroll`; vertical deltas remain available either way.
+    pub horizontal_scroll: bool,
+    /// Start a momentum-phase coast after a fast two-finger lift.
+    pub momentum_scroll: bool,
+    /// Quartz modifier mask that redirects a scroll session to magnification.
+    pub modifier_zoom_mask: u64,
+    /// Whether semantic haptic cues are enabled for this emitter.
+    pub haptic_feedback: bool,
     /// Emit private CGEvent pinch events. Per-gesture gate evaluated at
     /// `Phase::Began` against the bundle ID under the cursor; the
     /// decision is held for the duration of the touch. Independent of
@@ -880,6 +893,18 @@ pub enum Phase {
     Cancelled,
 }
 
+/// Semantic haptic cues. The macOS emitter maps these to Apple's system
+/// performer; portable emitters intentionally treat them as no-ops.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HapticKind {
+    /// A discrete click or secondary click.
+    Click,
+    /// The moment a drag crosses its engage threshold.
+    DragEngaged,
+    /// A gesture reached a committed system action.
+    GestureCommitted,
+}
+
 /// Axis along which a multi-finger swipe is accumulating progress.
 /// Selected by the gesture engine on first significant motion (whichever
 /// of horizontal/vertical dominates) and held for the rest of the
@@ -905,6 +930,9 @@ pub trait Output {
     /// so test fakes that don't care about timestamps don't have to
     /// implement it.
     fn set_event_time(&self, _ts: Timestamp) {}
+    /// Request a system haptic cue. Implementations may suppress it when the
+    /// current device has no haptic engine or the user has disabled feedback.
+    fn haptic(&self, _kind: HapticKind) {}
     /// Whether pinch / rotate / per-axis swipe are currently admissible
     /// under the active output's policy. The gesture engine consults
     /// these once at gesture start (when it stages the per-gesture
@@ -1030,6 +1058,9 @@ impl<O: Output> Output for OverlayOutput<O> {
     fn set_event_time(&self, ts: Timestamp) {
         self.inner.set_event_time(ts);
     }
+    fn haptic(&self, kind: HapticKind) {
+        self.inner.haptic(kind);
+    }
     fn pinch_admissible_now(&self) -> bool {
         self.inner.pinch_admissible_now()
     }
@@ -1146,6 +1177,11 @@ pub struct Emitter {
     /// (mm/s) rather than raw per-frame mm — keeps feel consistent
     /// across pad frame rates.
     scroll_last_time: Cell<Option<Timestamp>>,
+    /// Modifier-zoom decision captured at `scroll(Began)` and held until the
+    /// corresponding Ended/Cancelled frame. This prevents a scroll stream
+    /// from changing event families when the physical modifier is released
+    /// just before the fingers lift.
+    scroll_redirected: Cell<bool>,
     /// Inertia state plus its CFRunLoopTimer. Boxed for a stable address
     /// — the timer's C context holds a raw pointer back here. Allocated
     /// once at `new()`; the timer ref inside is None except while a
@@ -1227,6 +1263,7 @@ impl Emitter {
             scroll_carry_x_px: Cell::new(0.0),
             scroll_carry_y_px: Cell::new(0.0),
             scroll_last_time: Cell::new(None),
+            scroll_redirected: Cell::new(false),
             momentum: Box::new(Momentum {
                 scroll_accel,
                 event_source,
@@ -1251,6 +1288,29 @@ impl Emitter {
     /// for out-of-band emits (inertia ticks, Drop cleanup).
     fn event_timestamp(&self) -> Timestamp {
         self.event_time.get().unwrap_or_else(Timestamp::now)
+    }
+
+    /// Use Apple's device-aware haptic performer. Unlike a Force Touch event,
+    /// this API does not claim a pressure value or inject private HID data;
+    /// macOS decides whether the current input device can provide feedback.
+    fn perform_haptic(&self, kind: HapticKind) {
+        if !self.cfg.haptic_feedback {
+            return;
+        }
+        if objc2::MainThreadMarker::new().is_none() {
+            log::debug!("haptic feedback skipped off the AppKit main thread");
+            return;
+        }
+        let pattern = match kind {
+            HapticKind::Click => NSHapticFeedbackPattern::Generic,
+            HapticKind::DragEngaged => NSHapticFeedbackPattern::Alignment,
+            HapticKind::GestureCommitted => NSHapticFeedbackPattern::LevelChange,
+        };
+        let performer = NSHapticFeedbackManager::defaultPerformer();
+        performer.performFeedbackPattern_performanceTime(
+            pattern,
+            NSHapticFeedbackPerformanceTime::Now,
+        );
     }
 
     pub fn cursor(&self) -> CGPoint {
@@ -1456,21 +1516,28 @@ impl Emitter {
     /// acceleration curve runs on a frame-rate-independent velocity.
     pub fn scroll(&self, dx_mm: f64, dy_mm: f64, phase: Phase) {
         let sign = if self.cfg.natural_scroll { 1.0 } else { -1.0 };
+        let dx_mm = if self.cfg.horizontal_scroll { dx_mm } else { 0.0 };
         let now = self.event_timestamp();
+        let mods = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
+        const MOD_SHIFT: u64 = 0x0002_0000;
+
         if matches!(phase, Phase::Began) {
             self.scroll_carry_x_px.set(0.0);
             self.scroll_carry_y_px.set(0.0);
             self.scroll_last_time.set(None);
+            self.scroll_redirected
+                .set(crate::scroll_policy::modifier_zoom_session_with_mask(
+                    true,
+                    mods,
+                    self.scroll_redirected.get(),
+                    self.cfg.modifier_zoom_mask,
+                ));
         }
 
-        let mods = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
-        const MOD_CMD: u64 = 0x0010_0000;
-        const MOD_CTRL: u64 = 0x0004_0000;
-        const MOD_SHIFT: u64 = 0x0002_0000;
-
-        if (mods & (MOD_CMD | MOD_CTRL)) != 0 {
-            // Command/Control + 2F slide: Convert to native pinch-to-zoom (magnification) stream,
-            // matching Mac Mouse Fix and native trackpad zoom in all macOS apps.
+        if self.scroll_redirected.get() {
+            // Command/Control + 2F slide: Convert the whole session to a
+            // magnification stream, including Ended when the key was released
+            // just before the fingers lifted.
             let mag_delta = -sign * dy_mm * 0.035;
             self.pinch(mag_delta, phase);
             return;
@@ -1517,6 +1584,19 @@ impl Emitter {
     /// Seed inertia from the just-ended pan. Cancels any in-flight coast
     /// and starts a new one driven by a CFRunLoopTimer.
     pub fn scroll_inertia(&self, vx_mm_per_sec: f64, vy_mm_per_sec: f64) {
+        if !self.cfg.momentum_scroll {
+            log::debug!("scroll: momentum disabled by system/config policy");
+            return;
+        }
+        if self.scroll_redirected.replace(false) {
+            log::debug!("scroll: inertia suppressed for modifier-zoom session");
+            return;
+        }
+        let vx_mm_per_sec = if self.cfg.horizontal_scroll {
+            vx_mm_per_sec
+        } else {
+            0.0
+        };
         let sign = if self.cfg.natural_scroll { 1.0 } else { -1.0 };
         // Apply direction sign here so the Momentum struct doesn't have
         // to know about natural_scroll — it just integrates a velocity.
@@ -2537,6 +2617,9 @@ pub enum MouseButton {
 impl Output for Emitter {
     fn set_event_time(&self, ts: Timestamp) {
         self.event_time.set(Some(ts));
+    }
+    fn haptic(&self, kind: HapticKind) {
+        self.perform_haptic(kind);
     }
     fn pinch_admissible_now(&self) -> bool {
         let admit = self

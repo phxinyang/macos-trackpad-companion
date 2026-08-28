@@ -96,6 +96,16 @@ fn main() -> Result<()> {
     }
     log_builder.init();
 
+    let sync_report = companion::macos_preferences::apply(&mut cfg);
+    log::debug!(
+        "macOS settings sync enabled={} raw={} applied={} overrides={} unsupported={}",
+        sync_report.enabled,
+        sync_report.raw_values,
+        sync_report.applied.len(),
+        sync_report.explicit_overrides.len(),
+        sync_report.unsupported.len(),
+    );
+
     // CGEventPost silently drops synthetic events without this grant,
     // which would look exactly like "the pipeline works but nothing
     // happens". Check after argument/config handling so --help and

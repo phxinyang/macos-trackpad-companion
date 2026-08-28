@@ -1,8 +1,9 @@
 # macos-trackpad-companion
 
 Userspace bridge from a PTP (Microsoft Precision Touchpad / Windows
-Precision Touchpad) HID device to native macOS gesture events. Reads
-touch frames from any matched PTP digitizer, runs them through a gesture
+Precision Touchpad) HID device to native macOS gesture events. Reads the
+project's canonical 6-byte/contact PTP profile from a matched digitizer, runs
+touch frames through a gesture
 state machine, and posts CGEvents — cursor, click, phased smooth scroll,
 and (via private CGEvent gesture types) pinch, rotate, 3-finger swipe.
 
@@ -104,6 +105,14 @@ accel_ref     = 70.0        # mm/s — velocity at which sensitivity is the line
 [scroll]
 sensitivity = 20.0          # px per mm
 natural     = true          # finger-down → content-down (macOS default since 10.7)
+enable      = true          # two-finger translation emits scroll events
+horizontal  = true          # keep horizontal component of a scroll
+momentum    = true          # seed momentum-phase coast after a fast lift
+# modifier_zoom_mask = 262144  # optional HIDScrollZoomModifierMask override
+
+[macos]
+sync_system_settings = true # read System Settings at startup; TOML fields win
+haptic_feedback = "auto"    # auto | on | off; auto follows ActuateDetents
 
 # Each gesture has an `enable` key with three forms:
 #   enable = "on"                                  # always
@@ -125,6 +134,16 @@ natural     = true          # finger-down → content-down (macOS default since 
 #   mdls -name kMDItemCFBundleIdentifier -r /Applications/Safari.app
 #   lsappinfo info -only bundleid -app Safari               # currently running
 #   lsappinfo info -only bundleid `lsappinfo front`         # whatever is frontmost now
+
+# These switches mirror the corresponding macOS System Settings when
+# `[macos].sync_system_settings = true` (the default). A value written here
+# is an explicit override and wins over System Settings:
+[gestures]
+tap_to_click = "on"       # Point & Click -> Tap to click
+secondary_click = "on"    # two-finger secondary click
+smart_zoom = "on"         # two-finger double-tap Smart Zoom
+dictionary_lookup = "on"  # three-finger tap Look Up
+right_edge_swipe = "on"   # two-finger right-edge Notification Center
 
 [gestures.pinch]
 enable = "on"
@@ -148,7 +167,24 @@ release_delay_ms = 500        # 500 = 500ms 换把悬停延续 (0 = 抬手即松
 
 [gestures.one_finger_tap_drag] # double-tap, hold, then drag
 enable = "on"
+
+[gestures.press_and_hold_drag] # optional accessibility-style drag
+enable = "off"                # stationary 1F hold; off matches stock default
 ```
+
+On macOS, the process reads `com.apple.AppleMultitouchTrackpad` at startup,
+falls back to `com.apple.driver.AppleBluetoothMultitouch.trackpad` for missing
+keys, and reads natural scrolling from `.GlobalPreferences`. This uses the
+Core Foundation preferences API rather than spawning `defaults`. Set
+`[macos] sync_system_settings = false` to keep the TOML defaults entirely
+self-contained. Settings that belong to hardware or WindowServer (pressure
+thresholds, palm rejection, Force Touch, five-finger gestures and USB-mouse
+device management) are reported as unsupported and are not faked. For
+feedback, macOS builds use Apple's `NSHapticFeedbackManager.defaultPerformer()`
+for device-aware generic, alignment and level-change cues; this is a haptic
+confirmation, not a synthetic Force Touch or pressure event. Devices without
+a Taptic Engine silently ignore the cue.
+The sync is startup-only; restart the process after changing System Settings.
 
 Three-finger drag is on by default. Three fingers must move past a small
 jitter guard before the engine posts `LeftMouseDown`; movement is then
@@ -247,6 +283,12 @@ field set, update both ends.
 The Microsoft "PTPHQA" feature report is needed for Windows certification
 but ignored by macOS, so it's optional from the companion's perspective.
 
+The HID decoder is currently profile-scoped: descriptor discovery finds the
+project's 6-byte contact layout, but `report.rs` still decodes contact fields
+at that layout rather than handling every descriptor-defined bit-packed or
+hybrid PTP report. Broader device compatibility is tracked in the execution
+plan's Phase C.
+
 ## Reference firmware
 
 A working PTP firmware lives at commit `7f3ee1c:firmware/src/main.rs` in
@@ -300,12 +342,14 @@ separate driver-level project and is outside this userspace bridge.
 
 - **Private CGEvent gesture types are reverse-engineered.** Pinch,
   rotate, and swipe injection use undocumented CGEvent types (18, 19,
-  20, 30, 31) and field IDs (110, 113, 115, 132). These are stable on
-  recent macOS versions and used by BetterTouchTool, Karabiner-Elements,
-  and similar tools — but they're not in any public Apple header and
-  could break on a future macOS update. Pass `--no-private-gestures` to
-  disable them; cursor / click / phased scroll all use public CGEvent
-  APIs and won't be affected.
+  20, 30, 31) and field IDs (110, 113, 115, 132). Some of these shapes have
+  worked across recent macOS releases and are used by tools such as
+  BetterTouchTool and Karabiner-Elements, but they are not in any public
+  Apple header and have already changed for DockSwipe on macOS 27. Use the
+  per-gesture `enable`
+  policies in the configuration to disable them; there is no
+  `--no-private-gestures` CLI flag. Cursor / click / phased scroll all use
+  public CGEvent APIs and won't be affected.
 - **Two-finger ambiguity is resolved by first-significant-motion lock.**
   Once the centroid moves, the distance changes by 4%, or the angle
   changes by 6°, that mode wins for the duration of the touch. The

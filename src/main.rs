@@ -31,6 +31,8 @@ mod hid;
 #[cfg(target_os = "macos")]
 mod instance_lock;
 #[cfg(target_os = "macos")]
+mod macos_preferences;
+#[cfg(target_os = "macos")]
 mod output;
 #[cfg(target_os = "macos")]
 mod overlay;
@@ -38,6 +40,8 @@ mod overlay;
 mod report;
 #[cfg(target_os = "macos")]
 mod scan_clock;
+#[cfg(target_os = "macos")]
+mod scroll_policy;
 #[cfg(target_os = "macos")]
 mod time;
 
@@ -78,7 +82,7 @@ fn main() -> Result<()> {
     hid::block_shutdown_signals();
 
     let args = Args::parse();
-    let (cfg, cfg_path) = config::load(args.config.as_deref())?;
+    let (mut cfg, cfg_path) = config::load(args.config.as_deref())?;
 
     let level = if args.verbose > 0 {
         match args.verbose {
@@ -106,6 +110,16 @@ fn main() -> Result<()> {
         log_builder.target(env_logger::Target::Pipe(Box::new(file)));
     }
     log_builder.init();
+
+    let sync_report = macos_preferences::apply(&mut cfg);
+    log::debug!(
+        "macOS settings sync enabled={} raw={} applied={} overrides={} unsupported={}",
+        sync_report.enabled,
+        sync_report.raw_values,
+        sync_report.applied.len(),
+        sync_report.explicit_overrides.len(),
+        sync_report.unsupported.len(),
+    );
 
     if cfg_path.exists() {
         log::info!(
