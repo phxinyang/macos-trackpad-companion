@@ -2148,27 +2148,6 @@ impl<O: Output> State<O> {
             base.frames_observed = base.frames_observed.saturating_add(1);
             let max_move = self.max_move_sq.sqrt();
             let dur = now - self.started_at;
-            let ang_delta_from_init = angle_delta(ang, base.initial_angle).abs();
-            let pinch_ratio_from_init = (dist / base.initial_distance - 1.0).abs();
-            let is_active_pinch_or_rot = (base.rotate_admitted && ang_delta_from_init >= ROTATE_LOCK_RAD)
-                || (base.pinch_admitted && pinch_ratio_from_init >= PINCH_LOCK_RATIO);
-            let could_still_tap = !is_active_pinch_or_rot && max_move < TAP_MAX_MOVE_MM && dur < TAP_MAX_DURATION;
-            // The landing frame (and, with the default of 2, only the
-            // landing frame) is observation-only: one contact is fresh
-            // and the other is mid-glide, so any decomposition of their
-            // motion describes the landing, not the user's intent.
-            let within_grace = base.frames_observed < TWO_FINGER_MIN_FRAMES;
-            if (could_still_tap || within_grace) && !is_active_pinch_or_rot {
-                base.last_centroid = centroid;
-                // Track scale and angle pre-lock so the first Changed
-                // emit after lock is a one-frame delta, not a cumulative
-                // pre-lock chunk.
-                base.prev_scale = dist / base.initial_distance;
-                base.prev_angle = ang;
-                base.prev_transform_at = Some(now);
-                self.two_baseline = Some(base);
-                return;
-            }
             // Decompose per-finger motion into common (centroid drift,
             // a.k.a. pan) and differential (relative-motion, the
             // pinch+rotate signal) components, looked up by contact ID
@@ -2225,6 +2204,38 @@ impl<O: Output> State<O> {
             let db_mag = (db.0.powi(2) + db.1.powi(2)).sqrt();
             let min_per_finger = da_mag.min(db_mag);
             let max_per_finger = da_mag.max(db_mag);
+            let ang_delta_from_init = angle_delta(ang, base.initial_angle).abs();
+            let pinch_ratio_from_init = (dist / base.initial_distance - 1.0).abs();
+            // A geometric threshold alone is too eager on a short lever arm:
+            // 4% of a 15 mm finger span is only 0.6 mm. Require a deliberate
+            // amount of per-finger travel before bypassing the tap grace
+            // window. The anchored-finger form remains responsive when one
+            // finger is effectively still and the other clearly moves.
+            let pinch_rot_motion_ready = max_per_finger >= TAP_MAX_MOVE_MM
+                && (min_per_finger >= TAP_MAX_MOVE_MM
+                    || min_per_finger <= ANCHORED_FINGER_FLOOR_MM);
+            let is_active_pinch_or_rot = pinch_rot_motion_ready
+                && ((base.rotate_admitted && ang_delta_from_init >= ROTATE_LOCK_RAD)
+                    || (base.pinch_admitted && pinch_ratio_from_init >= PINCH_LOCK_RATIO));
+            let could_still_tap = !is_active_pinch_or_rot
+                && max_move < TAP_MAX_MOVE_MM
+                && dur < TAP_MAX_DURATION;
+            // The landing frame (and, with the default of 2, only the
+            // landing frame) is observation-only: one contact is fresh
+            // and the other is mid-glide, so any decomposition of their
+            // motion describes the landing, not the user's intent.
+            let within_grace = base.frames_observed < TWO_FINGER_MIN_FRAMES;
+            if (could_still_tap || within_grace) && !is_active_pinch_or_rot {
+                base.last_centroid = centroid;
+                // Track scale and angle pre-lock so the first Changed
+                // emit after lock is a one-frame delta, not a cumulative
+                // pre-lock chunk.
+                base.prev_scale = dist / base.initial_distance;
+                base.prev_angle = ang;
+                base.prev_transform_at = Some(now);
+                self.two_baseline = Some(base);
+                return;
+            }
             // Cosine of the angle between the two motion vectors.
             // Undefined when either is zero — fall through to balance.
             let alignment = if da_mag > 0.0 && db_mag > 0.0 {
@@ -3189,6 +3200,32 @@ mod tests {
             log.iter()
                 .any(|l| l.starts_with("pinch") && l.contains("Began")),
             "{log:?}"
+        );
+    }
+
+    #[test]
+    fn small_two_finger_spread_stays_unclassified_until_intent_is_clear() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+        // 15 mm starting span; a 0.6 mm relative spread is already 4% and
+        // used to open a pinch stream on the second frame. This is within
+        // finger settling noise and must remain tap/ambiguous instead.
+        s.on_frame_at(frame(&[(1, 0.40, 0.60), (2, 0.70, 0.60)]), t0);
+        s.on_frame_at(
+            frame(&[(1, 0.394, 0.60), (2, 0.706, 0.60)]),
+            at(t0, 16),
+        );
+        s.on_frame_at(frame(&[]), at(t0, 80));
+        s.tick(at(t0, 400));
+        let log = r.pop();
+        assert!(
+            !log.iter().any(|l| l.starts_with("pinch") || l.starts_with("rotate")),
+            "sub-mm spread must not lock a transform stream: {log:?}"
+        );
+        assert!(
+            log.iter().any(|l| l.contains("click Right")),
+            "ambiguous short touch should retain secondary-click behavior: {log:?}"
         );
     }
 

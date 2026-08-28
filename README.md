@@ -186,6 +186,30 @@ confirmation, not a synthetic Force Touch or pressure event. Devices without
 a Taptic Engine silently ignore the cue.
 The sync is startup-only; restart the process after changing System Settings.
 
+The legacy global `com.apple.trackpad.scaling` and
+`com.apple.scrollwheel.scaling` values are converted to bounded compatibility
+scalars for `cursor.sensitivity` and `scroll.sensitivity`; Apple does not
+publish a stable px/mm transfer function, so these values are not claimed to
+be a physical calibration. `com.apple.trackpad.scaling = -1` is represented as
+the linear cursor curve (`cursor.accel_exponent = 1.0`). Explicit TOML values
+still win.
+
+If macOS reports `Clicking = 0`, the companion follows that setting and a
+phone tap does not become a left click. Enable **Tap to click** in System
+Settings or add an explicit override:
+
+```toml
+[gestures]
+tap_to_click = "on"
+```
+
+Missing Trackpad settings are normal on Macs without an internal pad or when
+only an external device is present. The process logs the missing domain and
+continues with TOML/default values. `DragLock` is reported for diagnostics but
+does not change the companion's three-finger re-grip timeout; configure
+`[gestures.three_finger_drag].release_delay_ms` directly (the default is
+500 ms).
+
 Three-finger drag is on by default. Three fingers must move past a small
 jitter guard before the engine posts `LeftMouseDown`; movement is then
 emitted as standard Quartz `LeftMouseDragged` events and the final finger
