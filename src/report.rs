@@ -5,6 +5,7 @@
 //! works in physical units and is firmware-agnostic.
 
 use crate::descriptor::{BitField, Layout};
+use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
@@ -26,7 +27,97 @@ pub struct Frame {
     pub button: bool,
 }
 
+#[allow(dead_code)]
+pub(crate) struct DecodedReport {
+    pub frame: Frame,
+    pub all_contacts: Vec<Contact>,
+    pub reported_contact_count: usize,
+}
+
+#[derive(Default)]
+#[allow(dead_code)]
+pub(crate) struct HybridAssembler {
+    pending: Option<PendingFrame>,
+    ready: VecDeque<Frame>,
+}
+
+#[allow(dead_code)]
+struct PendingFrame {
+    scan_time_100us: u16,
+    expected_contacts: usize,
+    contacts: Vec<Contact>,
+    button: bool,
+}
+
+#[allow(dead_code)]
+impl HybridAssembler {
+    pub(crate) fn push(&mut self, decoded: DecodedReport) -> Option<Frame> {
+        let scan = decoded.frame.scan_time_100us;
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|pending| pending.scan_time_100us != scan)
+        {
+            self.finish_pending();
+        }
+
+        if decoded.reported_contact_count == 0 {
+            if let Some(pending) = self.pending.as_mut() {
+                pending.button |= decoded.frame.button;
+                for contact in decoded.all_contacts {
+                    if !pending.contacts.iter().any(|existing| existing.id == contact.id) {
+                        pending.contacts.push(contact);
+                    }
+                }
+                if pending.contacts.len() >= pending.expected_contacts {
+                    self.finish_pending();
+                }
+            } else {
+                self.ready.push_back(decoded.frame);
+            }
+        } else {
+            let expected = decoded.reported_contact_count;
+            let mut pending = PendingFrame {
+                scan_time_100us: scan,
+                expected_contacts: expected,
+                contacts: decoded
+                    .all_contacts
+                    .into_iter()
+                    .take(expected)
+                    .collect(),
+                button: decoded.frame.button,
+            };
+            pending.contacts.truncate(expected);
+            if pending.contacts.len() >= expected {
+                self.ready.push_back(Frame {
+                    contacts: pending.contacts,
+                    scan_time_100us: pending.scan_time_100us,
+                    button: pending.button,
+                });
+            } else {
+                self.pending = Some(pending);
+            }
+        }
+        self.ready.pop_front()
+    }
+
+    fn finish_pending(&mut self) {
+        let Some(pending) = self.pending.take() else { return };
+        if pending.contacts.len() == pending.expected_contacts {
+            self.ready.push_back(Frame {
+                contacts: pending.contacts,
+                scan_time_100us: pending.scan_time_100us,
+                button: pending.button,
+            });
+        }
+    }
+}
+
 pub fn decode(layout: &Layout, report: &[u8]) -> Option<Frame> {
+    decode_parts(layout, report).map(|decoded| decoded.frame)
+}
+
+pub(crate) fn decode_parts(layout: &Layout, report: &[u8]) -> Option<DecodedReport> {
     if report.len() < layout.total_payload_bytes {
         return None;
     }
@@ -39,12 +130,13 @@ pub fn decode(layout: &Layout, report: &[u8]) -> Option<Frame> {
         .map(|field| read_bits(report, field).unwrap_or(0) as usize)
         .unwrap_or_else(|| report[layout.contact_count_offset] as usize);
     let n = contact_count.min(layout.contact_slots);
+    let slot_count = layout.contact_slots;
 
     let mm_per_px_x = layout.mm_per_logical_px_x();
     let mm_per_px_y = layout.mm_per_logical_px_y();
 
-    let mut contacts = Vec::with_capacity(n);
-    for i in 0..n {
+    let mut all_contacts = Vec::with_capacity(slot_count);
+    for i in 0..slot_count {
         let fields = layout.contact_fields;
         let (id, x, y, confidence, tip) = if let Some(fields) = fields {
             let base = layout.fingers_bit_offset + i * fields.stride_bits;
@@ -65,7 +157,7 @@ pub fn decode(layout: &Layout, report: &[u8]) -> Option<Frame> {
             (id, x, y, (flags & 0x01) != 0, (flags & 0x02) != 0)
         };
 
-        contacts.push(Contact {
+        all_contacts.push(Contact {
             id,
             x: (x as f64) * mm_per_px_x,
             y: (y as f64) * mm_per_px_y,
@@ -87,10 +179,19 @@ pub fn decode(layout: &Layout, report: &[u8]) -> Option<Frame> {
         .map(|value| value != 0)
         .unwrap_or_else(|| (report[layout.button_offset] & (1 << layout.button_bit)) != 0);
 
-    Some(Frame {
-        contacts,
-        scan_time_100us: scan_time,
-        button,
+    let contacts = if contact_count == 0 {
+        Vec::new()
+    } else {
+        all_contacts.iter().copied().take(n).collect()
+    };
+    Some(DecodedReport {
+        frame: Frame {
+            contacts,
+            scan_time_100us: scan_time,
+            button,
+        },
+        all_contacts,
+        reported_contact_count: contact_count,
     })
 }
 
@@ -235,5 +336,135 @@ mod tests {
         assert!(frame.contacts[1].tip && !frame.contacts[1].confidence);
         assert_eq!(frame.scan_time_100us, 0x1234);
         assert!(frame.button);
+    }
+
+    #[test]
+    fn hybrid_assembler_joins_zero_count_reports_with_same_scan_time() {
+        let contact = |id: u8, tip: bool| Contact {
+            id,
+            x: f64::from(id),
+            y: 1.0,
+            tip,
+            confidence: true,
+        };
+        let mut assembler = HybridAssembler::default();
+        assert!(assembler
+            .push(DecodedReport {
+                frame: Frame {
+                    contacts: vec![contact(1, true)],
+                    scan_time_100us: 42,
+                    button: false,
+                },
+                all_contacts: vec![contact(1, true)],
+                reported_contact_count: 2,
+            })
+            .is_none());
+        let frame = assembler
+            .push(DecodedReport {
+                frame: Frame {
+                    contacts: Vec::new(),
+                    scan_time_100us: 42,
+                    button: true,
+                },
+                all_contacts: vec![contact(2, true)],
+                reported_contact_count: 0,
+            })
+            .expect("complete hybrid frame");
+        assert_eq!(frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(), vec![1, 2]);
+        assert!(frame.button);
+    }
+
+    #[test]
+    fn hybrid_assembler_drops_incomplete_frame_when_scan_time_changes() {
+        let contact = |id: u8| Contact {
+            id,
+            x: 0.0,
+            y: 0.0,
+            tip: true,
+            confidence: true,
+        };
+        let mut assembler = HybridAssembler::default();
+        assert!(assembler
+            .push(DecodedReport {
+                frame: Frame {
+                    contacts: vec![contact(1)],
+                    scan_time_100us: 1,
+                    button: false,
+                },
+                all_contacts: vec![contact(1)],
+                reported_contact_count: 2,
+            })
+            .is_none());
+        let frame = assembler
+            .push(DecodedReport {
+                frame: Frame {
+                    contacts: vec![contact(3)],
+                    scan_time_100us: 2,
+                    button: false,
+                },
+                all_contacts: vec![contact(3)],
+                reported_contact_count: 1,
+            })
+            .expect("new frame");
+        assert_eq!(frame.contacts[0].id, 3);
+    }
+
+    #[test]
+    fn hybrid_assembler_covers_parallel_single_and_two_finger_shapes() {
+        let contact = |id: u8| Contact {
+            id,
+            x: f64::from(id),
+            y: 0.0,
+            tip: true,
+            confidence: true,
+        };
+
+        // Parallel: one report carries every contact and completes directly.
+        let mut parallel = HybridAssembler::default();
+        let frame = parallel
+            .push(DecodedReport {
+                frame: Frame { contacts: vec![contact(1), contact(2)], scan_time_100us: 10, button: false },
+                all_contacts: vec![contact(1), contact(2)],
+                reported_contact_count: 2,
+            })
+            .expect("parallel frame");
+        assert_eq!(frame.contacts.len(), 2);
+
+        // Single-finger hybrid: one contact per report, then a zero-count
+        // continuation with the same scan time.
+        let mut single = HybridAssembler::default();
+        assert!(single
+            .push(DecodedReport {
+                frame: Frame { contacts: vec![contact(3)], scan_time_100us: 20, button: false },
+                all_contacts: vec![contact(3)],
+                reported_contact_count: 2,
+            })
+            .is_none());
+        let frame = single
+            .push(DecodedReport {
+                frame: Frame { contacts: vec![], scan_time_100us: 20, button: false },
+                all_contacts: vec![contact(4)],
+                reported_contact_count: 0,
+            })
+            .expect("single-finger hybrid frame");
+        assert_eq!(frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(), vec![3, 4]);
+
+        // Two-finger hybrid: two contacts in each serial report.
+        let mut two = HybridAssembler::default();
+        assert!(two
+            .push(DecodedReport {
+                frame: Frame { contacts: vec![contact(5), contact(6)], scan_time_100us: 30, button: false },
+                all_contacts: vec![contact(5), contact(6)],
+                reported_contact_count: 4,
+            })
+            .is_none());
+        let frame = two
+            .push(DecodedReport {
+                frame: Frame { contacts: vec![], scan_time_100us: 30, button: false },
+                all_contacts: vec![contact(7), contact(8)],
+                reported_contact_count: 0,
+            })
+            .expect("two-finger hybrid frame");
+        assert_eq!(frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(), vec![5, 6, 7, 8]);
     }
 }

@@ -674,9 +674,9 @@ mod tests {
     /// Reproduces the descriptor the firmware at commit 7f3ee1c emits
     /// for the PTP digitizer interface (5 contacts, 65×40 mm, logical
     /// 3936×2424).
-    fn wpt_descriptor_5_contacts() -> Vec<u8> {
+    fn wpt_descriptor_contacts(count: usize) -> Vec<u8> {
         let mut d = vec![0x05, 0x0D, 0x09, 0x05, 0xA1, 0x01, 0x85, 0x01];
-        for _ in 0..5 {
+        for _ in 0..count {
             d.extend_from_slice(&[
                 0x05, 0x0D, 0x09, 0x22, 0xA1, 0x02, 0x09, 0x47, 0x09, 0x42, 0x15, 0x00, 0x25, 0x01,
                 0x75, 0x01, 0x95, 0x02, 0x81, 0x02, 0x95, 0x06, 0x81, 0x03, 0x75, 0x08, 0x09, 0x51,
@@ -692,6 +692,10 @@ mod tests {
             0x01, 0x95, 0x01, 0x81, 0x02, 0x95, 0x07, 0x81, 0x03, 0xC0,
         ]);
         d
+    }
+
+    fn wpt_descriptor_5_contacts() -> Vec<u8> {
+        wpt_descriptor_contacts(5)
     }
 
     #[test]
@@ -730,6 +734,18 @@ mod tests {
         ]);
         let layout = parse(&desc).expect("parse");
         assert_eq!(layout.input_mode_report_id, Some(0x07));
+    }
+
+    #[test]
+    fn parses_parallel_and_hybrid_contact_slot_shapes() {
+        let parallel = parse(&wpt_descriptor_contacts(5)).expect("parallel descriptor");
+        assert_eq!(parallel.contact_slots, 5);
+        let single_hybrid = parse(&wpt_descriptor_contacts(1)).expect("single hybrid descriptor");
+        assert_eq!(single_hybrid.contact_slots, 1);
+        let two_hybrid = parse(&wpt_descriptor_contacts(2)).expect("two hybrid descriptor");
+        assert_eq!(two_hybrid.contact_slots, 2);
+        assert_eq!(single_hybrid.bytes_per_contact, 6);
+        assert_eq!(two_hybrid.bytes_per_contact, 6);
     }
 
     /// RMK's PTP firmware emits a sibling Mouse TLC (Report ID 0x01)

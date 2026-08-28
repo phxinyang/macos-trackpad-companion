@@ -186,6 +186,9 @@ struct DeviceState {
     /// Per-device scan-time → host-time estimator. Each device has its
     /// own free-running scan_time counter, so each gets its own clock.
     scan_clock: ScanTimeClock,
+    /// Reassembles serial reports that share one scan time in PTP hybrid
+    /// reporting mode before handing a logical frame to the gesture engine.
+    hybrid: report::HybridAssembler,
     control_path: ControlPath,
 }
 
@@ -483,6 +486,7 @@ unsafe extern "C" fn on_device_matched(
         buf: vec![0u8; buf_len],
         bridge: bridge as *mut Bridge,
         scan_clock: ScanTimeClock::new(),
+        hybrid: report::HybridAssembler::default(),
         control_path,
     });
 
@@ -650,8 +654,12 @@ unsafe extern "C" fn on_input_report(
     if log::log_enabled!(log::Level::Trace) {
         log::trace!("input report ({} bytes): {}", bytes.len(), hex(bytes));
     }
-    let Some(frame) = report::decode(&state.layout, bytes) else {
+    let Some(decoded) = report::decode_parts(&state.layout, bytes) else {
         log::debug!("decode failed for {}-byte report", bytes.len());
+        return;
+    };
+    let Some(frame) = state.hybrid.push(decoded) else {
+        log::trace!("holding partial PTP hybrid frame until all reports share a scan time");
         return;
     };
     if log::log_enabled!(log::Level::Trace) {
