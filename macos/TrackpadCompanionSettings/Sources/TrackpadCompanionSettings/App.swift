@@ -685,6 +685,7 @@ struct SettingsView: View {
                     Spacer()
                     Button {
                         model.reload()
+                        supervisor.refreshConnectionSettings()
                     } label: {
                         Image(systemName: "arrow.clockwise")
                     }
@@ -737,7 +738,10 @@ struct SettingsView: View {
                     StatusBadge(state: supervisor.state, language: model.language)
                 }
                 ToolbarItem(placement: .automatic) {
-                    Button(model.language.text("Reload", "重载"), systemImage: "arrow.clockwise") { model.reload() }
+                    Button(model.language.text("Reload", "重载"), systemImage: "arrow.clockwise") {
+                        model.reload()
+                        supervisor.refreshConnectionSettings()
+                    }
                         .disabled(model.isSaving)
                         .help(model.language.text("Reload configuration from disk", "从磁盘重新加载配置"))
                 }
