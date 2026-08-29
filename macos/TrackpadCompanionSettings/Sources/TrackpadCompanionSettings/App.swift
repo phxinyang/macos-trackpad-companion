@@ -188,6 +188,7 @@ final class ServiceSupervisor: ObservableObject {
         // stale child answer cannot create a repeating system dialog.
         child.environment = ProcessInfo.processInfo.environment.merging([
             "MTC_ACCESSIBILITY_PROMPT": "0",
+            "MTC_ACCESSIBILITY_HOST_TRUSTED": accessibilityGranted ? "1" : "0",
         ]) { _, new in new }
         let pipe = Pipe()
         child.standardOutput = pipe

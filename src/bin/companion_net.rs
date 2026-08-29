@@ -172,10 +172,20 @@ fn ensure_accessibility() -> Result<()> {
     let prompt = std::env::var("MTC_ACCESSIBILITY_PROMPT")
         .map(|value| value != "0")
         .unwrap_or(true);
+    let host_trusted = std::env::var("MTC_ACCESSIBILITY_HOST_TRUSTED")
+        .map(|value| value == "1")
+        .unwrap_or(false);
     if ax_trusted(prompt) {
         return Ok(());
     }
     if !prompt {
+        if host_trusted {
+            log::warn!(
+                "embedded helper could not verify its own Accessibility identity; "
+                    "continuing because the host app already has Accessibility permission"
+            );
+            return Ok(());
+        }
         anyhow::bail!(
             "Accessibility permission is not available to companion-net. \
              Grant Trackpad Companion.app in System Settings -> Privacy & Security -> Accessibility, then click Restart."
