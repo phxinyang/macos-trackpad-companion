@@ -1,0 +1,38 @@
+name: macOS release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Build and package DMG
+        run: |
+          ./packaging/macos/build-app.sh
+          ./packaging/macos/package-dmg.sh
+          shasum -a 256 dist/macos/*.dmg dist/macos/*.zip
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trackpad-companion-macos
+          path: dist/macos/*
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/macos/*.dmg
+            dist/macos/*.zip

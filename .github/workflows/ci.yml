@@ -54,13 +54,16 @@ jobs:
         with:
           toolchain: stable
       - name: Build unsigned app bundle
-        run: ./packaging/macos/build-app.sh
+        run: |
+          ./packaging/macos/build-app.sh
+          ./packaging/macos/package-dmg.sh
       - name: Verify bundle contents
         run: |
           test -x "dist/macos/Trackpad Companion.app/Contents/MacOS/TrackpadCompanion"
           test -x "dist/macos/Trackpad Companion.app/Contents/Resources/companion-net"
           test -x "dist/macos/Trackpad Companion.app/Contents/Resources/companion-config"
           unzip -t dist/macos/*-macos.zip
+          test -s dist/macos/*-macos.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: trackpad-companion-macos-unsigned

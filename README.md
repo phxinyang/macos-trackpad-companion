@@ -31,7 +31,7 @@ between Linux and macOS (for example on a mounted volume), build the helpers
 on the Mac before running them; do not copy a Linux `ELF` binary to macOS.
 
 ```sh
-cd companion
+cd macos-trackpad-companion
 cargo build --release
 ./target/release/companion -v
 ```
@@ -372,10 +372,21 @@ COMPANION_CONFIG_BIN="$repo/target/release/companion-config" swift build -c rele
 ```
 
 For a bundled app, use `./packaging/macos/build-app.sh`; it places both Rust
-helpers under `Contents/Resources` and emits a ZIP. SwiftUI is intentionally
-kept in a macOS-only package; Linux CI validates the Rust helper and
-configuration contract, while final window, dark-mode, permission, Bonjour,
-and accessibility checks belong on a Mac host.
+helpers under `Contents/Resources` and emits a ZIP. Then run
+`./packaging/macos/package-dmg.sh` to create a drag-to-Applications DMG. SwiftUI
+is intentionally kept in a macOS-only package; Linux CI validates the Rust
+helper and configuration contract, while final window, dark-mode, permission,
+Bonjour, and accessibility checks belong on a Mac host. See
+[`docs/architecture.md`](docs/architecture.md) for ownership boundaries.
+
+### GitHub release artifacts
+
+Push a version tag such as `v0.2.0` to run the macOS release workflow. Without
+signing secrets it produces an explicitly unsigned development DMG. For a
+trusted distribution build, run the same scripts on a Mac with
+`CODESIGN_IDENTITY` set, then submit the DMG with Apple's `notarytool` and
+staple the ticket before publishing. Never commit certificates, notarization
+profiles, or local diagnostic captures.
 
 The TUI writes the same `config.toml` used by `companion-net`. Save the changes
 and restart `companion-net`; explicit TOML values take precedence over any
