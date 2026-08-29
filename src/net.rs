@@ -524,6 +524,18 @@ fn udp_reader(
         match socket.recv_from(&mut buf) {
             Ok((n, peer)) => {
                 stats.udp_datagrams.fetch_add(1, Ordering::Relaxed);
+                if buf[..n].starts_with(&UDP_PROBE_MAGIC) {
+                    let probe_payload = &buf[UDP_PROBE_MAGIC.len()..n];
+                    let authorized = if token.is_some() {
+                        authenticated_udp_payload(probe_payload, token) == Some(&[][..])
+                    } else {
+                        probe_payload.is_empty()
+                    };
+                    if authorized {
+                        let _ = socket.send_to(&UDP_PROBE_ACK, peer);
+                    }
+                    continue;
+                }
                 let payload = match authenticated_udp_payload(&buf[..n], token) {
                     Some(payload) => payload,
                     None => {
