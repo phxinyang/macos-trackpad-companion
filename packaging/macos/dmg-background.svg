@@ -14,23 +14,8 @@
   <path d="M0 111h900" stroke="#d9e3f0"/>
   <text x="52" y="58" fill="#1d1d1f" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="26" font-weight="600">Trackpad Companion</text>
   <text x="52" y="88" fill="#6e7890" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="15">Drag the app to Applications to install</text>
-  <g transform="translate(136 198)">
-    <rect width="180" height="180" rx="45" fill="url(#accent)"/>
-    <rect x="28" y="28" width="124" height="124" rx="28" fill="#fff"/>
-    <rect x="36" y="36" width="108" height="102" rx="21" fill="#e8f4ff" stroke="#b5ddff" stroke-width="4"/>
-    <circle cx="90" cy="91" r="11" fill="#0a84ff"/>
-    <path d="M65 91c0-15 9-25 21-30M65 110c0-25 15-43 38-49" fill="none" stroke="#0a84ff" stroke-width="7" stroke-linecap="round"/>
-    <path d="M64 124h52" fill="none" stroke="#8bc6f7" stroke-width="5" stroke-linecap="round"/>
-  </g>
-  <g transform="translate(584 214)">
-    <path d="M12 28c0-12 10-22 22-22h102l38 38v104c0 12-10 22-22 22H34c-12 0-22-10-22-22z" fill="#f3c64e"/>
-    <path d="M12 28c0-12 10-22 22-22h47l25 26H12z" fill="#ffe28a"/>
-    <path d="M34 6h102l38 38H72z" fill="#f8d66a"/>
-    <path d="M39 97h108" stroke="#d9a72f" stroke-width="8" stroke-linecap="round" opacity="0.7"/>
-  </g>
-  <path d="M346 288c61-39 126-39 187 0" fill="none" stroke="#477eb9" stroke-width="8" stroke-linecap="round" stroke-dasharray="2 18"/>
-  <path d="m516 267 25 21-28 17" fill="none" stroke="#477eb9" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="142" y="419" fill="#1d1d1f" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="18" font-weight="600">Trackpad Companion</text>
-  <text x="607" y="419" fill="#1d1d1f" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="18" font-weight="600">Applications</text>
+  <path d="M300 288c86-54 184-54 270 0" fill="none" stroke="#477eb9" stroke-width="8" stroke-linecap="round" stroke-dasharray="2 18"/>
+  <path d="m544 266 27 22-30 18" fill="none" stroke="#477eb9" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="450" y="424" text-anchor="middle" fill="#1d1d1f" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="18" font-weight="600">Drag to Applications to install</text>
   <text x="450" y="508" text-anchor="middle" fill="#7b879b" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="14">Your Mac, touch-ready</text>
 </svg>
