@@ -1,19 +1,25 @@
 import Foundation
+import PermissionFlow
 import SwiftUI
 #if os(macOS)
 import AppKit
-import ApplicationServices
 #endif
 
 @main
 @MainActor
 struct TrackpadCompanionSettingsApp: App {
     @StateObject private var supervisor = ServiceSupervisor()
+    @AppStorage("TrackpadCompanion.language") private var languageRaw = AppLanguage.preferred.rawValue
+
+    private var language: AppLanguage {
+        AppLanguage(rawValue: languageRaw) ?? .preferred
+    }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "settings") {
             SettingsView()
                 .environmentObject(supervisor)
+                .environment(\.locale, Locale(identifier: language.localeIdentifier))
                 .frame(minWidth: 820, minHeight: 580)
                 .onOpenURL { url in supervisor.handlePairingURL(url) }
         }
@@ -21,7 +27,7 @@ struct TrackpadCompanionSettingsApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .appSettings) {
-                Button("Toggle Language") { NotificationCenter.default.post(name: .toggleLanguage, object: nil) }
+                Button(language.text("Toggle Language", "切换语言")) { NotificationCenter.default.post(name: .toggleLanguage, object: nil) }
                     .keyboardShortcut("l", modifiers: [.command, .option])
             }
         }
@@ -30,629 +36,6 @@ struct TrackpadCompanionSettingsApp: App {
         } label: {
             Label("Trackpad Companion", systemImage: supervisor.state.symbol)
         }
-    }
-}
-
-extension Notification.Name {
-    static let toggleLanguage = Notification.Name("TrackpadCompanionSettings.toggleLanguage")
-}
-
-enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
-    case english = "English"
-    case chinese = "中文"
-    var id: String { rawValue }
-
-    static var preferred: AppLanguage {
-        if let saved = UserDefaults.standard.string(forKey: "TrackpadCompanion.language"),
-           let language = AppLanguage(rawValue: saved) {
-            return language
-        }
-        return Locale.current.language.languageCode?.identifier.lowercased().hasPrefix("zh") == true ? .chinese : .english
-    }
-
-    func text(_ english: String, _ chinese: String) -> String {
-        self == .english ? english : chinese
-    }
-}
-
-enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case overview, connections, pointAndClick, scrollAndZoom, moreGestures, companion
-    var id: String { rawValue }
-
-    func title(_ language: AppLanguage) -> String {
-        switch self {
-        case .overview: return language.text("Overview", "总览")
-        case .connections: return language.text("Connections", "连接")
-        case .pointAndClick: return language.text("Point & Click", "点按与点击")
-        case .scrollAndZoom: return language.text("Scroll & Zoom", "滚动与缩放")
-        case .moreGestures: return language.text("More Gestures", "更多手势")
-        case .companion: return language.text("Companion", "Companion 扩展")
-        }
-    }
-
-    func subtitle(_ language: AppLanguage) -> String {
-        switch self {
-        case .overview: return language.text("Service status, pairing, and permissions", "服务状态、配对与权限")
-        case .connections: return language.text("Choose which local services are available", "选择要开放的本地服务")
-        case .pointAndClick: return language.text("Pointer tracking, clicking, lookup, and haptic feedback", "指针跟踪、点击、查词与触觉反馈")
-        case .scrollAndZoom: return language.text("Natural scrolling, zooming, rotation, and momentum", "自然滚动、缩放、旋转与惯性")
-        case .moreGestures: return language.text("Pages, Spaces, Mission Control, and Notification Center", "页面、Space、调度中心与通知中心")
-        case .companion: return language.text("Virtual-input controls not present in macOS Trackpad settings", "虚拟输入专属控制，不冒充 macOS 原生选项")
-        }
-    }
-}
-
-enum ServiceState: String {
-    case stopped, starting, waitingForPermission, running, degraded, failed
-
-    var symbol: String {
-        switch self {
-        case .stopped: return "circle"
-        case .starting: return "arrow.triangle.2.circlepath"
-        case .waitingForPermission: return "hand.raised"
-        case .running: return "checkmark.circle.fill"
-        case .degraded: return "bolt.horizontal.circle"
-        case .failed: return "exclamationmark.triangle.fill"
-        }
-    }
-}
-
-final class BonjourAdvertiser: NSObject, NetServiceDelegate {
-    private var service: NetService?
-
-    func publish(port: Int, serviceID: String, authenticated: Bool, webEnabled: Bool, phoneEnabled: Bool) {
-        stop()
-        let name = "Trackpad Companion - \(Host.current().localizedName ?? ProcessInfo.processInfo.hostName)"
-        let service = NetService(domain: "local.", type: "_mtc-trackpad._tcp.", name: name, port: Int32(port))
-        service.delegate = self
-        service.setTXTRecord(NetService.data(fromTXTRecord: [
-            "v": Data("1".utf8),
-            "proto": Data("atp1".utf8),
-            "auth": Data((authenticated ? "token" : "none").utf8),
-            "id": Data(serviceID.utf8),
-            "web": Data((webEnabled ? "1" : "0").utf8),
-            "phone": Data((phoneEnabled ? "1" : "0").utf8),
-        ]))
-        service.publish(options: [.listenForConnections])
-        self.service = service
-    }
-
-    func stop() {
-        service?.stop()
-        service = nil
-    }
-
-    func netService(_ sender: NetService, didNotPublish errorDict: [String : NSNumber]) {
-        NSLog("Bonjour publish failed: %@", errorDict)
-    }
-}
-
-@MainActor
-final class ServiceSupervisor: ObservableObject {
-    @Published private(set) var state: ServiceState = .stopped
-    @Published private(set) var message = ""
-    @Published private(set) var endpoint = ""
-    @Published private(set) var pairingURI = ""
-    @Published private(set) var webEnabled = true
-    @Published private(set) var phoneEnabled = true
-    @Published private(set) var boundPort: Int?
-    @Published private(set) var accessibilityGranted = false
-    @Published private(set) var tokenConfigured = false
-    @Published private(set) var diagnostics = ""
-    private var process: Process?
-    private var outputPipe: Pipe?
-    private var lastServiceOutput = ""
-    private var didRequestAccessibility = false
-    private let bonjour = BonjourAdvertiser()
-    private let serviceID: String
-    private var terminationObserver: NSObjectProtocol?
-
-    init() {
-        let defaults = UserDefaults.standard
-        serviceID = defaults.string(forKey: "TrackpadCompanion.serviceID") ?? {
-            let value = UUID().uuidString.lowercased()
-            defaults.set(value, forKey: "TrackpadCompanion.serviceID")
-            return value
-        }()
-        terminationObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.willTerminateNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.stop()
-            }
-        }
-    }
-
-    deinit {
-        outputPipe?.fileHandleForReading.readabilityHandler = nil
-        process?.terminate()
-        bonjour.stop()
-        if let terminationObserver {
-            NotificationCenter.default.removeObserver(terminationObserver)
-        }
-    }
-
-    func start() {
-        guard process?.isRunning != true else { return }
-        preparePairing()
-        guard webEnabled || phoneEnabled else {
-            bonjour.stop()
-            endpoint = ""
-            pairingURI = ""
-            state = .stopped
-            message = "No connections are enabled."
-            return
-        }
-        refreshPermissions()
-        guard accessibilityGranted else {
-            state = .waitingForPermission
-            message = "Accessibility permission is required."
-            requestAccessibility()
-            return
-        }
-        guard let executable = locate("COMPANION_NET_BIN", bundledName: "companion-net") else {
-            state = .failed
-            message = "companion-net was not found. Build the Rust daemon or set COMPANION_NET_BIN."
-            return
-        }
-        let child = Process()
-        child.executableURL = URL(fileURLWithPath: executable)
-        // The host owns the TCC prompt. Keep the embedded helper silent so a
-        // stale child answer cannot create a repeating system dialog.
-        child.environment = ProcessInfo.processInfo.environment.merging([
-            "MTC_ACCESSIBILITY_PROMPT": "0",
-            "MTC_ACCESSIBILITY_HOST_TRUSTED": accessibilityGranted ? "1" : "0",
-        ]) { _, new in new }
-        let pipe = Pipe()
-        child.standardOutput = pipe
-        child.standardError = pipe
-        outputPipe = pipe
-        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else {
-                // A closed child pipe can repeatedly report readability.
-                // Remove the handler at EOF or the host app spins forever.
-                handle.readabilityHandler = nil
-                return
-            }
-            let text = String(data: data, encoding: .utf8) ?? ""
-            Task { @MainActor in
-                guard let self else { return }
-                let status = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !status.isEmpty {
-                    self.lastServiceOutput = String(status.suffix(2000))
-                    self.message = status
-                }
-                if let port = self.port(from: status) {
-                    self.boundPort = port
-                    self.updateEndpoint(port: port)
-                    if self.phoneEnabled {
-                        self.publishBonjour(port: port)
-                    } else {
-                        self.bonjour.stop()
-                        self.pairingURI = ""
-                    }
-                }
-                if text.localizedCaseInsensitiveContains("accessibility permission required") {
-                    self.state = .waitingForPermission
-                } else if text.contains("listening on") || text.contains("[net] ready web=") {
-                    self.state = .running
-                }
-            }
-        }
-        child.terminationHandler = { [weak self] process in
-            Task { @MainActor in
-                guard let self else { return }
-                self.process = nil
-                self.outputPipe?.fileHandleForReading.readabilityHandler = nil
-                self.outputPipe = nil
-                self.boundPort = nil
-                self.endpoint = ""
-                self.pairingURI = ""
-                self.bonjour.stop()
-                if process.terminationStatus == 0 || self.state == .stopped {
-                    self.state = .stopped
-                } else {
-                    let detail = self.lastServiceOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if detail.localizedCaseInsensitiveContains("Accessibility permission") {
-                        self.state = .waitingForPermission
-                    } else {
-                        self.state = .failed
-                    }
-                    self.message = detail.isEmpty
-                        ? "companion-net exited with status \(process.terminationStatus)."
-                        : detail
-                }
-            }
-        }
-        do {
-            lastServiceOutput = ""
-            try child.run()
-            process = child
-            state = .starting
-            message = "Starting companion-net…"
-        } catch {
-            state = .failed
-            message = error.localizedDescription
-        }
-    }
-
-    func stop() {
-        outputPipe?.fileHandleForReading.readabilityHandler = nil
-        outputPipe = nil
-        guard let process, process.isRunning else {
-            bonjour.stop()
-            boundPort = nil
-            endpoint = ""
-            pairingURI = ""
-            state = .stopped
-            return
-        }
-        state = .stopped
-        message = "Service stopped"
-        bonjour.stop()
-        boundPort = nil
-        endpoint = ""
-        pairingURI = ""
-        process.terminate()
-        self.process = nil
-    }
-
-    func restart() {
-        stop()
-        // Process termination is asynchronous. Give the instance lock a
-        // short handoff window before starting the replacement helper.
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120)) { [weak self] in
-            self?.start()
-        }
-    }
-
-    func openAccessibilitySettings() {
-        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-        NSWorkspace.shared.open(url)
-    }
-
-    func refreshPermissions() {
-        accessibilityGranted = AXIsProcessTrusted()
-    }
-
-    private func requestAccessibility() {
-        guard !accessibilityGranted, !didRequestAccessibility else { return }
-        didRequestAccessibility = true
-        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        let options = [promptKey: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
-    }
-
-    func copyPairingURI() {
-        guard !pairingURI.isEmpty else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(pairingURI, forType: .string)
-    }
-
-    func copyWebURL() {
-        guard !endpoint.isEmpty else { return }
-        var value = endpoint
-        if let token = pairingToken, tokenConfigured,
-           var components = URLComponents(string: endpoint) {
-            components.queryItems = [URLQueryItem(name: "token", value: token)]
-            value = components.string ?? endpoint
-        }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-    }
-
-    /// Apply a changed net.* switch without starting a service that the user
-    /// had stopped. A running helper is restarted so the socket boundary is
-    /// updated immediately.
-    func applyConnectionConfiguration() {
-        let wasRunning = process?.isRunning == true
-        if wasRunning {
-            restart()
-        } else {
-            refreshConnectionSettings()
-        }
-    }
-
-    func refreshConnectionSettings() {
-        preparePairing()
-    }
-
-    func handlePairingURL(_ url: URL) {
-        guard url.scheme == "mtc", url.host == "pair" else { return }
-        message = "Pairing link received. Use it in the Android client on the same LAN."
-    }
-
-    func refreshDiagnostics() {
-        guard let executable = locate("COMPANION_CONFIG_BIN", bundledName: "companion-config") else {
-            diagnostics = "companion-config was not found."
-            return
-        }
-        do {
-            diagnostics = String(data: try run(executable: executable, arguments: ["doctor"]), encoding: .utf8) ?? "No diagnostics returned."
-        } catch {
-            diagnostics = error.localizedDescription
-        }
-    }
-
-    func openLogs() {
-        let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Logs/macos-trackpad-companion", isDirectory: true)
-        NSWorkspace.shared.open(url)
-    }
-
-    private func publishBonjour(port: Int) {
-        guard phoneEnabled else {
-            bonjour.stop()
-            pairingURI = ""
-            return
-        }
-        bonjour.publish(port: port, serviceID: serviceID, authenticated: tokenConfigured, webEnabled: webEnabled, phoneEnabled: phoneEnabled)
-        var components = URLComponents()
-        components.scheme = "mtc"
-        components.host = "pair"
-        components.queryItems = [
-            URLQueryItem(name: "host", value: ProcessInfo.processInfo.hostName),
-            URLQueryItem(name: "port", value: String(port)),
-            URLQueryItem(name: "web", value: webEnabled ? "1" : "0"),
-            URLQueryItem(name: "phone", value: phoneEnabled ? "1" : "0"),
-        ]
-        if let token = pairingToken {
-            components.queryItems?.append(URLQueryItem(name: "token", value: token))
-        }
-        pairingURI = components.string ?? ""
-    }
-
-    private var pairingToken: String?
-
-    private func updateEndpoint(port: Int) {
-        guard webEnabled else {
-            endpoint = ""
-            return
-        }
-        endpoint = "http://\(ProcessInfo.processInfo.hostName):\(port)/"
-    }
-
-    private func preparePairing() {
-        guard let executable = locate("COMPANION_CONFIG_BIN", bundledName: "companion-config") else {
-            webEnabled = true
-            phoneEnabled = true
-            tokenConfigured = false
-            pairingToken = nil
-            return
-        }
-        do {
-            let data = try run(executable: executable, arguments: ["dump"])
-            guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let config = root["config"] as? [String: Any],
-                  let net = config["net"] as? [String: Any] else {
-                webEnabled = true
-                phoneEnabled = true
-                tokenConfigured = false
-                pairingToken = nil
-                return
-            }
-            webEnabled = net["web_enabled"] as? Bool ?? true
-            phoneEnabled = net["phone_enabled"] as? Bool ?? true
-            guard webEnabled || phoneEnabled else {
-                tokenConfigured = false
-                pairingToken = nil
-                return
-            }
-            _ = try run(executable: executable, arguments: ["ensure-token"])
-            let refreshed = try run(executable: executable, arguments: ["dump"])
-            let refreshedRoot = try JSONSerialization.jsonObject(with: refreshed) as? [String: Any]
-            let refreshedConfig = refreshedRoot?["config"] as? [String: Any]
-            let refreshedNet = refreshedConfig?["net"] as? [String: Any]
-            guard let token = refreshedNet?["token"] as? String, !token.isEmpty else {
-                tokenConfigured = false
-                pairingToken = nil
-                return
-            }
-            pairingToken = token
-            tokenConfigured = true
-        } catch {
-            message = "Pairing setup unavailable: \(error.localizedDescription)"
-            tokenConfigured = false
-            pairingToken = nil
-        }
-    }
-
-    private func port(from status: String) -> Int? {
-        if let marker = status.range(of: "port=") {
-            let digits = status[marker.upperBound...].prefix { $0.isNumber }
-            if let value = Int(digits), value > 0 { return value }
-        }
-        let marker = status.contains("phone input at ") ? "phone input at " : "touchpad page at "
-        guard let start = status.range(of: marker)?.upperBound else { return nil }
-        let suffix = status[start...]
-        guard let colon = suffix.lastIndex(of: ":") else { return nil }
-        let digits = suffix[suffix.index(after: colon)...].prefix { $0.isNumber }
-        return Int(digits)
-    }
-
-    private func run(executable: String, arguments: [String]) throws -> Data {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw NSError(domain: "TrackpadCompanionSettings", code: Int(process.terminationStatus), userInfo: [NSLocalizedDescriptionKey: String(data: data, encoding: .utf8) ?? "helper failed"])
-        }
-        return data
-    }
-
-    private func locate(_ environmentKey: String, bundledName: String) -> String? {
-        let candidates = [
-            ProcessInfo.processInfo.environment[environmentKey],
-            Bundle.main.url(forResource: bundledName, withExtension: nil)?.path,
-            "/opt/homebrew/bin/\(bundledName)",
-            "/usr/local/bin/\(bundledName)",
-            NSHomeDirectory() + "/.cargo/bin/\(bundledName)",
-        ].compactMap { $0 }
-        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
-    }
-}
-
-struct MenuBarView: View {
-    @ObservedObject var supervisor: ServiceSupervisor
-
-    var body: some View {
-        Text("Trackpad Companion")
-            .font(.headline)
-        Label(statusText, systemImage: supervisor.state.symbol)
-            .foregroundStyle(supervisor.state == .running ? .green : supervisor.state == .failed ? .red : .secondary)
-        Divider()
-        Button("Start Service", systemImage: "play.fill") { supervisor.start() }
-            .disabled(supervisor.state == .running || supervisor.state == .starting)
-        Button("Stop Service", systemImage: "stop.fill") { supervisor.stop() }
-            .disabled(supervisor.state == .stopped)
-        Button("Open Settings", systemImage: "gearshape") {
-            NSApp.activate(ignoringOtherApps: true)
-            NSApp.sendAction(#selector(NSWindow.makeKeyAndOrderFront(_:)), to: nil, from: nil)
-        }
-        if !supervisor.endpoint.isEmpty {
-            Button("Copy Web URL", systemImage: "safari") { supervisor.copyWebURL() }
-        }
-        Button("Copy Pairing Link", systemImage: "doc.on.doc") { supervisor.copyPairingURI() }
-            .disabled(supervisor.pairingURI.isEmpty)
-        Divider()
-        Button("Quit", systemImage: "power") { NSApp.terminate(nil) }
-    }
-
-    private var statusText: String {
-        switch supervisor.state {
-        case .stopped: return "Stopped"
-        case .starting: return "Starting"
-        case .waitingForPermission: return "Waiting for permission"
-        case .running: return "Ready"
-        case .degraded: return "Degraded"
-        case .failed: return "Needs attention"
-        }
-    }
-}
-
-@MainActor
-final class SettingsModel: ObservableObject {
-    @Published var language: AppLanguage = .preferred {
-        didSet { UserDefaults.standard.set(language.rawValue, forKey: "TrackpadCompanion.language") }
-    }
-    @Published var selectedSection: SettingsSection = .pointAndClick
-    @Published var selectedPath: String?
-    @Published var error: String?
-    @Published var isSaving = false
-    @Published private(set) var values: [String: Any] = [:]
-    var configPath: String = ""
-    private var languageObserver: NSObjectProtocol?
-
-    init() {
-        languageObserver = NotificationCenter.default.addObserver(forName: .toggleLanguage, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                self.language = self.language == .english ? .chinese : .english
-            }
-        }
-    }
-
-    deinit { if let languageObserver { NotificationCenter.default.removeObserver(languageObserver) } }
-
-    func reload() {
-        do {
-            let json = try runHelper(["dump"])
-            guard let root = try JSONSerialization.jsonObject(with: json) as? [String: Any],
-                  let config = root["config"] as? [String: Any] else { throw HelperError.invalidOutput }
-            values = flatten(config)
-            configPath = root["path"] as? String ?? ""
-            error = nil
-        } catch { self.error = error.localizedDescription }
-    }
-
-    func bool(_ path: String, default fallback: Bool = false) -> Bool { values[path] as? Bool ?? fallback }
-    func toggle(_ path: String, default fallback: Bool = false) -> Bool {
-        if let value = values[path] as? Bool { return value }
-        if let value = values[path] as? String { return value == "on" || value == "true" }
-        return fallback
-    }
-    func number(_ path: String, default fallback: Double = 0) -> Double {
-        if let value = values[path] as? NSNumber { return value.doubleValue }
-        return fallback
-    }
-    func string(_ path: String, default fallback: String = "") -> String {
-        if let value = values[path] as? String { return value }
-        if let value = values[path] as? NSNumber { return String(value.intValue) }
-        return fallback
-    }
-
-    @discardableResult
-    func set(_ path: String, value: String) -> Bool {
-        isSaving = true
-        do {
-            _ = try runHelper(["set", "--path", path, "--value", value])
-            values[path] = scalar(value)
-            error = nil
-            isSaving = false
-            return true
-        } catch { self.error = error.localizedDescription }
-        isSaving = false
-        return false
-    }
-
-    private func scalar(_ value: String) -> Any {
-        if value == "true" { return true }
-        if value == "false" { return false }
-        if let number = Double(value) { return number }
-        return value
-    }
-
-    private func flatten(_ value: [String: Any], prefix: String = "") -> [String: Any] {
-        var result: [String: Any] = [:]
-        for (key, child) in value {
-            let path = prefix.isEmpty ? key : "\(prefix).\(key)"
-            if let table = child as? [String: Any] { result.merge(flatten(table, prefix: path)) { _, new in new } }
-            else { result[path] = child }
-        }
-        return result
-    }
-
-    private enum HelperError: LocalizedError {
-        case unavailable, invalidOutput, failed(String)
-        var errorDescription: String? {
-            switch self {
-            case .unavailable: return "companion-config was not found. Build the Rust helper or set COMPANION_CONFIG_BIN."
-            case .invalidOutput: return "The companion-config response was invalid."
-            case .failed(let message): return message
-            }
-        }
-    }
-
-    private func runHelper(_ arguments: [String]) throws -> Data {
-        let process = Process()
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        process.arguments = arguments
-        let candidates = [
-            ProcessInfo.processInfo.environment["COMPANION_CONFIG_BIN"],
-            Bundle.main.url(forResource: "companion-config", withExtension: nil)?.path,
-            "/opt/homebrew/bin/companion-config",
-            "/usr/local/bin/companion-config",
-            NSHomeDirectory() + "/.cargo/bin/companion-config",
-        ].compactMap { $0 }
-        guard let executable = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { throw HelperError.unavailable }
-        process.executableURL = URL(fileURLWithPath: executable)
-        try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw HelperError.failed(String(data: data, encoding: .utf8) ?? "companion-config failed")
-        }
-        return data
     }
 }
 
@@ -748,9 +131,17 @@ struct SettingsView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        .environment(\.locale, Locale(identifier: model.language.localeIdentifier))
         .onAppear {
             supervisor.refreshPermissions()
-            supervisor.start()
+            supervisor.refreshLaunchAtLogin()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            supervisor.refreshPermissions()
+            supervisor.refreshLaunchAtLogin()
+            if supervisor.state == .waitingForPermission && supervisor.accessibilityGranted {
+                supervisor.start()
+            }
         }
         .task {
             // Load after StateObject installation. Mutating @Published values
@@ -829,6 +220,15 @@ struct SettingsView: View {
                     Label(model.language.text(supervisor.state == .running ? "Running" : supervisor.state.rawValue.capitalized, supervisor.state == .running ? "运行中" : supervisor.state.rawValue), systemImage: supervisor.state.symbol)
                         .foregroundStyle(supervisor.state == .failed ? .red : supervisor.state == .running ? .green : .secondary)
                 }
+                LabeledContent(model.language.text("Network", "网络")) {
+                    Label(
+                        supervisor.networkAvailable
+                            ? (supervisor.networkInterface.isEmpty ? model.language.text("Available", "可用") : supervisor.networkInterface)
+                            : model.language.text("Unavailable", "不可用"),
+                        systemImage: supervisor.networkAvailable ? "wifi" : "wifi.exclamationmark"
+                    )
+                    .foregroundStyle(supervisor.networkAvailable ? .secondary : .orange)
+                }
                 LabeledContent(model.language.text("Web", "Web")) {
                     if supervisor.webEnabled && !supervisor.endpoint.isEmpty {
                         Text(supervisor.endpoint).font(.caption.monospaced()).textSelection(.enabled)
@@ -839,6 +239,17 @@ struct SettingsView: View {
                 if supervisor.phoneEnabled && !supervisor.pairingURI.isEmpty {
                     LabeledContent(model.language.text("Pairing link", "配对链接")) {
                         Text(supervisor.pairingURI).font(.caption.monospaced()).textSelection(.enabled)
+                    }
+                }
+                if let recent = supervisor.recentConnection {
+                    LabeledContent(model.language.text("Last connection", "最近连接")) {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(recent.host):\(recent.port)")
+                                .font(.caption.monospaced())
+                            Text(model.language.text("Used \(relativeTime(recent.lastConnectedAt))", "使用于 \(relativeTime(recent.lastConnectedAt))"))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -856,7 +267,37 @@ struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(supervisor.accessibilityGranted ? .green : .primary)
                 if !supervisor.accessibilityGranted {
-                    Button(model.language.text("Open Accessibility Settings", "打开辅助功能设置"), systemImage: "arrow.up.forward.app") { supervisor.openAccessibilitySettings() }
+                    PermissionFlowButton(
+                        pane: .accessibility,
+                        suggestedAppURLs: [Bundle.main.bundleURL],
+                        configuration: PermissionFlowConfiguration(
+                            promptForAccessibilityTrust: false,
+                            localeIdentifier: model.language.localeIdentifier
+                        )
+                    ) { state in
+                        Label(
+                            model.language.text("Open Accessibility Settings", "打开辅助功能设置"),
+                            systemImage: state.isGranted ? "checkmark.circle.fill" : "arrow.up.forward.app"
+                        )
+                    }
+                }
+            }
+            Section(model.language.text("Login item", "登录项")) {
+                LabeledContent(model.language.text("Start with macOS", "随 macOS 启动")) {
+                    Label(
+                        supervisor.launchAtLogin
+                            ? model.language.text("Enabled", "已启用")
+                            : supervisor.launchAtLoginRequiresApproval
+                                ? model.language.text("Needs approval", "待批准")
+                                : model.language.text("Off", "已关闭"),
+                        systemImage: supervisor.launchAtLogin ? "checkmark.circle.fill" : supervisor.launchAtLoginRequiresApproval ? "exclamationmark.circle" : "circle"
+                    )
+                    .foregroundStyle(supervisor.launchAtLogin ? .green : supervisor.launchAtLoginRequiresApproval ? .orange : .secondary)
+                }
+                if supervisor.launchAtLoginRequiresApproval {
+                    Text(model.language.text("Approve this app in System Settings → General → Login Items.", "请在系统设置 → 通用 → 登录项中批准此应用。"))
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
             }
             if !supervisor.pairingURI.isEmpty {
@@ -868,12 +309,40 @@ struct SettingsView: View {
             Section(model.language.text("Diagnostics", "诊断")) {
                 HStack {
                     Button(model.language.text("Refresh", "刷新"), systemImage: "arrow.clockwise") { supervisor.refreshDiagnostics() }
+                    Button(model.language.text("Copy report", "复制报告"), systemImage: "doc.on.doc") { supervisor.copyDiagnostics() }
                     Button(model.language.text("Open logs", "打开日志"), systemImage: "folder") { supervisor.openLogs() }
                 }
                 if !supervisor.diagnostics.isEmpty {
                     Text(supervisor.diagnostics)
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
+                }
+            }
+            Section(model.language.text("Live activity", "实时活动")) {
+                LabeledContent(model.language.text("UDP datagrams", "UDP 数据报")) {
+                    Text(supervisor.metrics.udpDatagrams.formatted(.number))
+                        .monospacedDigit()
+                }
+                LabeledContent(model.language.text("WebSocket frames", "WebSocket 帧")) {
+                    Text(supervisor.metrics.websocketFrames.formatted(.number))
+                        .monospacedDigit()
+                }
+                LabeledContent(model.language.text("Frames to engine", "送入引擎的帧")) {
+                    Text(supervisor.metrics.engineFrames.formatted(.number))
+                        .monospacedDigit()
+                }
+                LabeledContent(model.language.text("Decode errors", "解码错误")) {
+                    Text(supervisor.metrics.decodeErrors.formatted(.number))
+                        .monospacedDigit()
+                        .foregroundStyle(supervisor.metrics.decodeErrors == 0 ? .secondary : .orange)
+                }
+                if let updatedAt = supervisor.metrics.updatedAt {
+                    Text(model.language.text(
+                        "Updated \(relativeTime(updatedAt))",
+                        "更新于 \(relativeTime(updatedAt))"
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
             if !supervisor.message.isEmpty {
@@ -1018,6 +487,12 @@ struct SettingsView: View {
         }
     }
 
+    private func relativeTime(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = Locale(identifier: model.language.localeIdentifier)
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
     private var pointAndClick: some View {
         Group {
             SliderRow(title: "Tracking speed", titleCN: "跟踪速度", value: Binding(get: { model.number("cursor.sensitivity", default: 28) }, set: { model.set("cursor.sensitivity", value: String(format: "%.1f", $0)) }), range: 5...80, language: model.language)
@@ -1062,6 +537,28 @@ struct SettingsView: View {
             SliderRow(title: "Acceleration reference", titleCN: "加速度参考速度", value: Binding(get: { model.number("cursor.accel_ref", default: 70) }, set: { model.set("cursor.accel_ref", value: String(format: "%.1f", $0)) }), range: 20...200, language: model.language, unit: "mm/s")
             ToggleRow(path: "scroll.shift_scroll_horizontal", title: "Shift scroll compatibility", titleCN: "Shift 滚动兼容", description: "Optional remap; native mode keeps the original axis.", descriptionCN: "可选兼容转换；原生模式保留原始滚动轴。", model: model)
             ToggleRow(path: "macos.sync_system_settings", title: "Sync macOS settings", titleCN: "同步 macOS 设置", description: "Use available macOS preferences as startup defaults.", descriptionCN: "启动时读取可用的 macOS 偏好作为默认值。", model: model)
+            Toggle(isOn: Binding(
+                get: { supervisor.launchAtLogin },
+                set: { supervisor.setLaunchAtLogin($0) }
+            )) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.language.text("Launch at login", "登录时启动"))
+                    Text(model.language.text(
+                        "Start the menu-bar companion when you sign in.",
+                        "登录 Mac 后自动启动菜单栏伴侣。"
+                    ))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            if supervisor.launchAtLoginRequiresApproval {
+                Text(model.language.text(
+                    "Approve this app in System Settings > General > Login Items.",
+                    "请在系统设置 > 通用 > 登录项中批准此应用。"
+                ))
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
         }
     }
 

@@ -26,9 +26,12 @@ Android / browser / USB PTP
 - `src/`: Rust daemon, gesture recognizer, macOS output, network listener, and
   command-line tools.
 - `crates/touchpad-proto/`: versioned ATP1 wire-format crate shared by clients.
-- `macos/TrackpadCompanionSettings/`: macOS 13+ SwiftUI settings app. The
-  package keeps `App.swift` with the app entry point and service/config models, while
-  reusable settings rows and overview components live under `Views/`.
+- `macos/TrackpadCompanionSettings/`: macOS 13+ SwiftUI settings app. `App.swift`
+  composes the scenes and settings view; `ServiceSupervisor.swift` owns helper
+  lifecycle, permissions, network recovery, login-item state, and Bonjour
+  publication; `AppModels.swift` owns shared state, `SettingsModel.swift` owns
+  the `companion-config` bridge, and the menu-bar/setting rows/overview
+  components live under `Views/`.
 - `packaging/macos/`: reproducible app bundle and DMG scripts. Helpers are
   embedded in `Contents/Resources`; no Homebrew dependency is required at
   runtime.
@@ -51,9 +54,13 @@ disabled transport, and exits without opening a port when both are false.
 
 The Swift app owns the user-facing lifecycle: it starts/stops the network
 helper, publishes Bonjour metadata for the phone transport, checks Accessibility
-permission, and shows diagnostics. The Rust helper owns all high-rate input and
-event synthesis. A future login-item helper can reuse the same Rust binary
-without changing the gesture protocol.
+permission, shows diagnostics, and registers the optional macOS login item through
+`SMAppService`. `NWPathMonitor` drives a controlled restart when the active
+network interface changes, while an unexpected helper exit gets one automatic
+retry before entering a visible failed state. The app refreshes permission and
+service state after system wake. The Rust helper owns all high-rate input and
+event synthesis; its existing periodic stats are parsed into UI metrics without
+adding protocol fields.
 
 ## Release boundary
 

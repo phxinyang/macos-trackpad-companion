@@ -34,7 +34,7 @@ macOS 应用和 TUI 都通过同一个 `companion-config` helper 读写配置，
 
 ## macOS 安装
 
-从 GitHub Release 下载 DMG，打开后把 `Trackpad Companion` 拖到“应用程序”。第一次启动时，按 macOS 提示允许辅助功能权限。应用支持 macOS 13 或更高版本，并把 Rust 网络 helper 和配置 helper 放在应用包内。
+从 GitHub Release 下载 DMG，打开后把 `Trackpad Companion` 拖到“应用程序”。第一次启动时，打开“总览”>“权限”并点击辅助功能操作；PermissionFlow 会打开正确的“隐私与安全性”页面，并引导你把应用拖进授权列表。应用支持 macOS 13 或更高版本，并把 Rust 网络 helper 和配置 helper 放在应用包内。
 
 没有配置发布签名时，构建结果会明确标记为开发用 unsigned 包。要在开发机之外分发，需要使用 Developer ID 签名并完成公证。
 
@@ -62,13 +62,17 @@ cargo build --release
 
 在 macOS 上构建原生设置应用和 DMG：
 
+当前 PermissionFlow 依赖需要 Swift 6.2（Xcode 26 或更高版本）才能构建 macOS 设置目标。
+
 ```sh
 ./packaging/macos/build-app.sh
 ./packaging/macos/package-dmg.sh
 open dist/macos/Trackpad-Companion-*-macos.dmg
 ```
 
-应用包会把 `companion-net` 和 `companion-config` 放到 `Contents/Resources`，用户运行时不需要另外安装 Homebrew。
+应用包会把 `companion-net`、`companion-config` 和 PermissionFlow 本地化资源放到 `Contents/Resources`，用户运行时不需要另外安装 Homebrew。
+菜单栏提供 Web/手机入口开关、登录时启动、服务重试、实时帧统计和复制操作，不需要每次打开完整设置窗口。
+应用会监视当前 Wi-Fi/以太网接口，网络切换后自动重新绑定并发布 Bonjour；helper 意外退出时自动重试一次，连续失败会保留明确的诊断状态。最近使用的本地端点会保存在 Mac 上，但配对 Token 不会写入 macOS 偏好。
 
 ## 连接手机或浏览器
 
@@ -243,4 +247,4 @@ macOS 打包会在 GitHub Actions 的 macOS runner 上验证。推送 `v0.2.0` �
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。第三方调研来源和资源来源记录在 `docs/` 及 `static/assets/` 下对应的文档中。
+本项目使用 MIT，见 [LICENSE](LICENSE)。第三方调研来源和资源来源记录在 `docs/` 及 `static/assets/` 下对应的文档中。macOS 设置应用通过 SwiftPM 引入 [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow)，使用其 [MIT 许可证](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE)。
