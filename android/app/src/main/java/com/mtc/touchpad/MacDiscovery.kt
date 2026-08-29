@@ -19,6 +19,8 @@ class MacDiscovery(context: Context, private val listener: Listener) {
         val port: Int,
         val authentication: String,
         val serviceId: String,
+        val webEnabled: Boolean = true,
+        val phoneEnabled: Boolean = true,
     )
 
     interface Listener {
@@ -70,6 +72,8 @@ class MacDiscovery(context: Context, private val listener: Listener) {
                 port = serviceInfo.port,
                 authentication = attrs["auth"]?.toString(Charsets.UTF_8) ?: "none",
                 serviceId = attrs["id"]?.toString(Charsets.UTF_8) ?: "",
+                webEnabled = attrs["web"]?.toString(Charsets.UTF_8) != "0",
+                phoneEnabled = attrs["phone"]?.toString(Charsets.UTF_8) != "0",
             )
             endpoints.removeAll { it.name == endpoint.name }
             endpoints += endpoint

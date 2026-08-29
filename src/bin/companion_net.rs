@@ -3,8 +3,9 @@
 //! Instead of opening a PTP HID device, it accepts touch frames from
 //! the network (Android phone: UDP from the native app, WebSocket from
 //! the browser touchpad page) and feeds the identical gesture→CGEvent
-//! pipeline. The web page is served at `http://<this-mac>:<port>/` so
-//! a browser alone can drive the Mac; wire format in
+//! pipeline. `[net].phone_enabled` and `[net].web_enabled` independently
+//! control those listeners. When Web is enabled, the page is served at
+//! `http://<this-mac>:<port>/`; wire format in
 //! docs/wire-protocol.md.
 //!
 //! Permissions: needs **Accessibility** only — no Input Monitoring,
@@ -108,6 +109,11 @@ fn main() -> Result<()> {
         sync_report.explicit_overrides.len(),
         sync_report.unsupported.len(),
     );
+
+    if !cfg.net.web_enabled && !cfg.net.phone_enabled {
+        log::info!("no network transports enabled; companion-net is idle");
+        return Ok(());
+    }
 
     // CGEventPost silently drops synthetic events without this grant,
     // which would look exactly like "the pipeline works but nothing

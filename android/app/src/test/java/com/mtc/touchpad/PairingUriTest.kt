@@ -19,4 +19,12 @@ class PairingUriTest {
         assertNull(PairingUri.parse("mtc://pair?host=macbook.local&port=70000"))
         assertNull(PairingUri.parse("mtc://pair?host=mac%20book&port=4242"))
     }
+
+    @Test
+    fun parsesTransportCapabilities() {
+        assertEquals(
+            PairingTarget("macmini.local", 4311, "secret", webEnabled = false, phoneEnabled = true),
+            PairingUri.parse("mtc://pair?host=macmini.local&port=4311&web=0&phone=1&token=secret"),
+        )
+    }
 }

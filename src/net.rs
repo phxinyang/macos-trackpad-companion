@@ -46,6 +46,8 @@ const STATS_EVERY: Duration = Duration::from_secs(30);
 const AUTH_MAGIC: [u8; 4] = *b"ATK1";
 const AUTH_HEADER_LEN: usize = 6;
 const AUTH_TOKEN_MAX_BYTES: usize = 256;
+const UDP_PROBE_MAGIC: [u8; 4] = *b"ATQ1";
+const UDP_PROBE_ACK: [u8; 4] = *b"ATA1";
 
 #[derive(Default)]
 struct Stats {
@@ -167,10 +169,16 @@ impl Server {
         Self { cfg }
     }
 
-    /// Binds UDP+TCP on `[net].port` and pumps decoded frames into
-    /// `sink` until the process exits (Ctrl+C kills us outright —
-    /// unlike the HID path there is no hardware to reset).
+    /// Binds the enabled transports on `[net].port` and pumps decoded frames
+    /// into `sink` until the process exits. Web and phone listeners are
+    /// independent: disabling one means its socket is never created.
     pub fn run(&mut self, sink: &mut dyn InputSink) -> Result<()> {
+        let web_enabled = self.cfg.web_enabled;
+        let phone_enabled = self.cfg.phone_enabled;
+        if !web_enabled && !phone_enabled {
+            log::info!("[net] no transports enabled; nothing is listening");
+            return Ok(());
+        }
         let token = self
             .cfg
             .token
@@ -195,53 +203,98 @@ impl Server {
             .unwrap_or_else(|| "0.0.0.0".into());
         let requested_port = self.cfg.port;
 
-        let udp = UdpSocket::bind((bind_ip.as_str(), requested_port))
-            .with_context(|| format!("bind UDP {bind_ip}:{requested_port}"))?;
-        // Port 0 asks the kernel for an ephemeral port. Resolve it from
-        // the UDP socket, then use that same number for TCP so the page
-        // and frame endpoint still share one advertised port.
+        // Both transports deliberately share one port number for discovery.
+        // With port 0, bind whichever transport is enabled first and reuse
+        // the assigned number for the other socket.
+        let udp = if phone_enabled {
+            Some(
+                UdpSocket::bind((bind_ip.as_str(), requested_port))
+                    .with_context(|| format!("bind UDP {bind_ip}:{requested_port}"))?,
+            )
+        } else {
+            None
+        };
         let port = if requested_port == 0 {
-            udp.local_addr().context("read assigned UDP port")?.port()
+            if let Some(ref socket) = udp {
+                socket.local_addr().context("read assigned UDP port")?.port()
+            } else {
+                0
+            }
         } else {
             requested_port
         };
-        let tcp = TcpListener::bind((bind_ip.as_str(), port))
-            .with_context(|| format!("bind TCP {bind_ip}:{port}"))?;
+        let tcp = if web_enabled {
+            Some(
+                TcpListener::bind((bind_ip.as_str(), port))
+                    .with_context(|| format!("bind TCP {bind_ip}:{port}"))?,
+            )
+        } else {
+            None
+        };
+        let port = if port == 0 {
+            tcp.as_ref()
+                .expect("web listener exists when no UDP listener assigned a port")
+                .local_addr()
+                .context("read assigned TCP port")?
+                .port()
+        } else {
+            port
+        };
         log::info!(
-            "[net] listening on udp+tcp {bind_ip}:{port} — touchpad page at http://<this-mac>:{port}/"
+            "[net] ready web={} phone={} bind={} port={}",
+            if web_enabled { "on" } else { "off" },
+            if phone_enabled { "on" } else { "off" },
+            bind_ip,
+            port
         );
+        match (web_enabled, phone_enabled) {
+            (true, true) => log::info!(
+                "[net] listening on udp+tcp {bind_ip}:{port} — touchpad page at http://<this-mac>:{port}/"
+            ),
+            (true, false) => log::info!(
+                "[net] listening on tcp {bind_ip}:{port} — touchpad page at http://<this-mac>:{port}/"
+            ),
+            (false, true) => log::info!(
+                "[net] listening on udp {bind_ip}:{port} — phone input at udp://<this-mac>:{port}"
+            ),
+            (false, false) => unreachable!(),
+        }
 
         let (tx, rx) = mpsc::channel::<Incoming>();
         let stats = Arc::new(Stats::default());
 
-        std::thread::Builder::new()
-            .name("net-udp".into())
-            .spawn({
-                let tx = tx.clone();
-                let stats = Arc::clone(&stats);
-                let token = token.clone();
-                move || udp_reader(udp, tx, stats, token.as_deref())
-            })
-            .context("spawn udp reader")?;
+        if let Some(udp) = udp {
+            std::thread::Builder::new()
+                .name("net-udp".into())
+                .spawn({
+                    let tx = tx.clone();
+                    let stats = Arc::clone(&stats);
+                    let token = token.clone();
+                    move || udp_reader(udp, tx, stats, token.as_deref())
+                })
+                .context("spawn udp reader")?;
+        }
 
-        let static_page =
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/static/touchpad.html"));
-        let tester_page =
-            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/static/tester.html"));
-        let page_ctx = WebPageContext {
-            html: static_page.to_string(),
-            tester_html: tester_page.to_string(),
-            port,
-        };
-        std::thread::Builder::new()
-            .name("net-tcp".into())
-            .spawn({
-                let tx = tx.clone();
-                let stats = Arc::clone(&stats);
-                let token = token.clone();
-                move || tcp_acceptor(tcp, tx, page_ctx, stats, token.as_deref())
-            })
-            .context("spawn tcp acceptor")?;
+        if let Some(tcp) = tcp {
+            let static_page =
+                include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/static/touchpad.html"));
+            let tester_page =
+                include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/static/tester.html"));
+            let page_ctx = WebPageContext {
+                html: static_page.to_string(),
+                tester_html: tester_page.to_string(),
+                port,
+            };
+            std::thread::Builder::new()
+                .name("net-tcp".into())
+                .spawn({
+                    let tx = tx.clone();
+                    let stats = Arc::clone(&stats);
+                    let token = token.clone();
+                    move || tcp_acceptor(tcp, tx, page_ctx, stats, token.as_deref())
+                })
+                .context("spawn tcp acceptor")?;
+        }
 
         std::thread::Builder::new()
             .name("net-stats".into())
@@ -616,9 +669,17 @@ fn handle_conn(
     } else {
         let lower_path = clean_path.to_ascii_lowercase();
         if lower_path.is_empty() || lower_path == "/index.html" || lower_path == "/touchpad.html" || lower_path == "/touchpad" {
+            if !authorized_http_request(&head, raw_path, token) {
+                write_unauthorized(&mut stream)?;
+                return Ok(());
+            }
             write_simple(&mut stream, 200, &page.html)?;
             Ok(())
         } else if lower_path == "/test" || lower_path == "/tester" || lower_path == "/test.html" || lower_path == "/tester.html" {
+            if !authorized_http_request(&head, raw_path, token) {
+                write_unauthorized(&mut stream)?;
+                return Ok(());
+            }
             write_simple(&mut stream, 200, &page.tester_html)?;
             Ok(())
         } else {
@@ -667,6 +728,8 @@ fn write_simple(stream: &mut TcpStream, code: u16, body: &str) -> Result<()> {
     };
     let ctype = if body.starts_with("<!DOCTYPE") || body.starts_with("<html") {
         "text/html; charset=utf-8"
+    } else if body.starts_with('{') || body.starts_with('[') {
+        "application/json; charset=utf-8"
     } else {
         "text/plain"
     };
@@ -706,7 +769,7 @@ fn authenticated_udp_payload<'a>(buf: &'a [u8], token: Option<&str>) -> Option<&
         return None;
     }
     let payload_at = AUTH_HEADER_LEN.checked_add(token_len)?;
-    if payload_at >= buf.len() {
+    if payload_at > buf.len() {
         return None;
     }
     if !constant_time_eq(&buf[AUTH_HEADER_LEN..payload_at], expected.as_bytes()) {

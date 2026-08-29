@@ -3,7 +3,13 @@ package com.mtc.touchpad
 import java.net.URI
 import java.net.URLDecoder
 
-data class PairingTarget(val host: String, val port: Int, val token: String?)
+data class PairingTarget(
+    val host: String,
+    val port: Int,
+    val token: String?,
+    val webEnabled: Boolean = true,
+    val phoneEnabled: Boolean = true,
+)
 
 object PairingUri {
     private const val MAX_TOKEN_BYTES = 256
@@ -29,6 +35,8 @@ object PairingUri {
         if (port !in 1..65535) return null
         val token = params["token"]?.takeIf { it.isNotEmpty() }
         if (token != null && token.toByteArray(Charsets.UTF_8).size > MAX_TOKEN_BYTES) return null
-        return PairingTarget(host, port, token)
+        val webEnabled = params["web"]?.let { it != "0" } ?: true
+        val phoneEnabled = params["phone"]?.let { it != "0" } ?: true
+        return PairingTarget(host, port, token, webEnabled, phoneEnabled)
     }
 }
