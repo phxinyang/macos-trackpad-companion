@@ -214,14 +214,12 @@ enable = "off"                # stationary 1F hold; off matches stock default
 
 When a three-finger drag is already holding a window and a fourth finger joins,
 the gesture engine keeps the left mouse button held while entering the four-finger
-Space-swipe state. macOS 26 rejects third-party DockSwipe events, so the
-`synthetic` backend uses the system SymbolicHotKey registry (Space Left/Right,
-Mission Control or App Exposé) with a short threshold and animation cooldown.
-macOS 27 and later first use SkyLight's `SLEventSetIOHIDEvent` HID payload to
-retain the continuous DockSwipe animation; if that private setter is unavailable,
-the current gesture falls back to the same SymbolicHotKey path. macOS 25 and
-earlier keep the animated legacy payload. Cancelled or broken sessions always
-release the held button.
+Space-swipe state. macOS 26 keeps the animated DockSwipe path. macOS 27 and later
+use the system SymbolicHotKey registry (Space Left/Right, Mission Control or App
+Exposé), because WindowServer drops third-party DockSwipe events there; when
+available, the companion first tries SkyLight's `SLEventSetIOHIDEvent` payload
+and falls back to SymbolicHotKey. Cancelled or broken sessions always release
+the held button.
 
 On macOS, the process reads `com.apple.AppleMultitouchTrackpad` at startup,
 falls back to `com.apple.driver.AppleBluetoothMultitouch.trackpad` for missing
