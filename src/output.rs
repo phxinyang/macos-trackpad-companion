@@ -1046,6 +1046,18 @@ pub trait Output {
     /// — no scaling here.
     fn move_cursor_by(&self, dx_px: i32, dy_px: i32);
     fn click(&self, button: MouseButton);
+    /// Return the currently held Quartz keyboard modifier bits. Portable
+    /// fakes may return zero; macOS emitters sample the combined session
+    /// state. Gesture recognition uses this only when an action is delayed
+    /// past the frame that originally established it.
+    fn current_modifiers(&self) -> u64 {
+        0
+    }
+    /// Emit a click with a modifier snapshot captured at gesture time. The
+    /// default keeps existing output fakes source-compatible.
+    fn click_with_modifiers(&self, button: MouseButton, _modifiers: u64) {
+        self.click(button);
+    }
     /// Latch the integrated touchpad button. Driven by the firmware's
     /// PTP report bit (bit 0 = left), which in turn mirrors keymap-driven
     /// `MouseBtn1` presses. While held, [`Self::move_cursor_by`] should
@@ -1164,6 +1176,12 @@ impl<O: Output> Output for OverlayOutput<O> {
     }
     fn click(&self, button: MouseButton) {
         self.inner.click(button);
+    }
+    fn current_modifiers(&self) -> u64 {
+        self.inner.current_modifiers()
+    }
+    fn click_with_modifiers(&self, button: MouseButton, modifiers: u64) {
+        self.inner.click_with_modifiers(button, modifiers);
     }
     fn set_left_button_held(&self, held: bool) {
         self.inner.set_left_button_held(held);
@@ -1570,10 +1588,14 @@ impl Emitter {
     }
 
     pub fn click(&self, button: MouseButton) {
+        let mods = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
+        self.click_with_modifiers(button, mods);
+    }
+
+    pub fn click_with_modifiers(&self, button: MouseButton, mods: u64) {
         let p = self.cursor();
         let now = self.event_timestamp();
         let count = self.record_click(button, now, p);
-        let mods = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
 
         let (down, up, raw_button) = match button {
             MouseButton::Left => (
@@ -1588,7 +1610,7 @@ impl Emitter {
             ),
         };
         log::debug!(
-            "post: click {:?} count={} at=({:.0},{:.0})",
+            "post: click {:?} count={} mods=0x{mods:x} at=({:.0},{:.0})",
             button,
             count,
             p.x,
@@ -2131,9 +2153,11 @@ impl Emitter {
 }
 
 fn post_ctrl_arrow_key(source: CGEventSourceRef, keycode: u16, ts: Timestamp) {
-    use crate::scroll_policy::{MOD_CTRL, merge_keyboard_modifiers};
-    let live_flags = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
-    let flags = merge_keyboard_modifiers(MOD_CTRL, live_flags);
+    // This is an explicit compatibility shortcut (Control + Arrow), not an
+    // App-facing pointer event. Keep the exact chord stable: adding a
+    // user's unrelated Shift/Option/Command state makes WindowServer reject
+    // the fallback on some macOS releases.
+    const flags: u64 = crate::scroll_policy::MOD_CTRL;
     if let Some(down) =
         Event::from_raw(unsafe { CGEventCreateKeyboardEvent(source, keycode, true) })
     {
@@ -2281,9 +2305,6 @@ fn post_symbolic_hotkey(source: CGEventSourceRef, shk: u32, ts: Timestamp) -> bo
             (vkc_out_of_reach, SHK_MODS, false)
         }
     };
-
-    let live_flags = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
-    let mods_to_send = crate::scroll_policy::merge_keyboard_modifiers(mods_to_send, live_flags);
 
     let post_key = |code: u16, down: bool, offset_ms: u64| -> bool {
         // Pass NULL (std::ptr::null_mut()) so the event is created from the default system source, matching Mac Mouse Fix
@@ -3065,6 +3086,12 @@ impl Output for Emitter {
     }
     fn click(&self, button: MouseButton) {
         Emitter::click(self, button);
+    }
+    fn current_modifiers(&self) -> u64 {
+        unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) }
+    }
+    fn click_with_modifiers(&self, button: MouseButton, modifiers: u64) {
+        Emitter::click_with_modifiers(self, button, modifiers);
     }
     fn set_left_button_held(&self, held: bool) {
         Emitter::set_left_button_held(self, held);
