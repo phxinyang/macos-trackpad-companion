@@ -46,9 +46,14 @@ if [[ -f "$BACKGROUND" ]]; then
 fi
 hdiutil create -volname "Trackpad Companion" -srcfolder "$STAGE" -ov -format UDRW "$RW_DMG"
 MOUNT=$(hdiutil attach "$RW_DMG" -readwrite -nobrowse -noautoopen | awk '/\/Volumes\// {print substr($0, index($0, "/Volumes/")); exit}')
+if [[ -n "$MOUNT" && -d "$MOUNT/.background" ]]; then
+  chflags hidden "$MOUNT/.background" 2>/dev/null || true
+fi
 if [[ -n "$MOUNT" && -x "$(command -v osascript 2>/dev/null || true)" ]]; then
   osascript <<APPLESCRIPT || echo "Warning: Finder DMG layout could not be applied; using the default layout." >&2
 tell application "Finder"
+  set finderWasVisible to visible
+  set visible to false
   tell disk "Trackpad Companion"
     open
     set current view of container window to icon view
@@ -66,8 +71,8 @@ tell application "Finder"
     close
     open
     update without registering applications
-    delay 1
   end tell
+  set visible to finderWasVisible
 end tell
 APPLESCRIPT
 fi
