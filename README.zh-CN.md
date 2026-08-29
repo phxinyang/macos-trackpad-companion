@@ -202,8 +202,20 @@ Apple 没有公开捏合或旋转的灵敏度设置。`gestures.pinch.gain` 和 
 ```sh
 ./target/release/companion-config doctor
 ./target/release/companion-tui
-./scripts/diagnose-mac.sh
+# 只读采集：应用、helper、权限提示、进程、端口和最近日志
+./scripts/diagnose-mac.sh collect
+# 检查本机 4242 端口和浏览器入口
+./scripts/diagnose-mac.sh probe --port 4242
+# 前台 trace 运行，复现后按 Ctrl-C，保留真实退出码
+./scripts/diagnose-mac.sh trace --port 4242
+# 只打开辅助功能设置页，不会自动授予 TCC 权限
+./scripts/diagnose-mac.sh permissions --open
 ```
+
+诊断脚本不使用 `sudo`，不会修改配置、上传数据或开放新的监听端口。报告和
+trace 日志默认写入 `diagnostics/`，权限为 `0600`；提交 issue 前请检查并删除
+配对 token、主机名、完整路径和原始用户数据。完整说明见
+[diagnostics/README.md](diagnostics/README.md)。
 
 提交改动前运行：
 
