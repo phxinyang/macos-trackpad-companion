@@ -19,10 +19,13 @@ VERSION=${VERSION:-$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null
 # CFBundleVersion cannot contain a slash or whitespace. Git descriptions are
 # otherwise kept verbatim so nightly builds remain easy to identify.
 VERSION=$(printf '%s' "$VERSION" | tr '/ ' '--')
-RUST_TARGET_ARGS=()
-if [[ -n "${RUST_TARGET:-}" ]]; then RUST_TARGET_ARGS=(--target "$RUST_TARGET"); fi
-
-(cd "$ROOT" && cargo build --locked --release "${RUST_TARGET_ARGS[@]}" --bin companion-net --bin companion-config)
+if [[ -n "${RUST_TARGET:-}" ]]; then
+  (cd "$ROOT" && cargo build --locked --release --target "$RUST_TARGET" --bin companion-net --bin companion-config)
+else
+  # Do not expand an empty array here. Bash 3.2, still shipped by macOS,
+  # treats an empty "${array[@]}" as unset while `set -u` is active.
+  (cd "$ROOT" && cargo build --locked --release --bin companion-net --bin companion-config)
+fi
 (cd "$ROOT/macos/TrackpadCompanionSettings" && swift build -c "$CONFIG")
 
 SWIFT_BIN="$ROOT/macos/TrackpadCompanionSettings/.build/$CONFIG/TrackpadCompanionSettings"
