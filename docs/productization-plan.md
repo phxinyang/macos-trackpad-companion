@@ -1,7 +1,7 @@
 # Trackpad Companion 产品化重构规划书
 
-状态：执行中，P1 已实现，P2/P3/P4/P5 部分完成（待 macOS 真机与发布环境验收）
-版本：2026-08-29
+状态：执行中，P1 已实现，P2/P3/P4/P5 部分完成；连接服务拆分与 PermissionFlow 权限引导已实现（待 macOS 真机与发布环境验收）
+版本：2026-08-30
 基线提交：`8ed90d6 feat: productize trackpad settings and native macOS client`
 
 ## 1. 产品结论
@@ -74,7 +74,9 @@
         |
 权限向导：Accessibility（网络输入）/ Input Monitoring（实体 HID，可选）
         |
-启动 companion-net -> 生成本地配对令牌 -> 注册 Bonjour 服务
+启动 companion-net -> 按 Connections 开关绑定 Web/手机服务
+        |
+手机服务开启时生成本地配对令牌并注册 Bonjour；Web 开启时显示浏览器 URL
         |
 显示 Mac 名称、状态、二维码和短 URL
         |
@@ -114,8 +116,7 @@
                v
 ┌──────────────────────────────┐
 │ companion-net                 │  Rust network daemon
-│ UDP + HTTP + WebSocket        │
-│ Bonjour advertisement         │
+│ optional UDP / HTTP + WS      │
 │ peer/auth/idle-lift state     │
 └──────────────┬───────────────┘
                v
@@ -137,6 +138,19 @@
 ### 5.2 最脆弱的假设
 
 本计划假设：签名后的 app 及其 bundle 内 `companion-net` 能在用户授予 Accessibility 后稳定发布 CGEvent。如果 macOS 将 TCC 授权严格归属到子进程而非主 app，第一阶段必须把授权检查和提示放在子进程，并在 GUI 显示具体的 helper 条目；若仍不稳定，再评估 Rust 静态库 + Swift FFI 的进程内方案。不能用“事件调用返回成功”代替真机验证。
+
+### 5.3 连接模型决策
+
+连接设置只回答一个产品问题：**哪些设备可以通过哪条入口控制这台 Mac**。两个开关互不隐含，不用“服务已启动”代替“服务已开放”。
+
+| 配置 | TCP Web/WS | UDP 手机 | Bonjour / 配对 | 用户看到的结果 |
+| --- | --- | --- | --- | --- |
+| Web 开、手机开 | 监听 | 监听 | 发布 | 浏览器和手机都可用 |
+| Web 开、手机关 | 监听 | 不监听 | 不发布 | 仅浏览器可用，复制 Web 地址 |
+| Web 关、手机开 | 不监听 | 监听 | 发布，标记 `web=0` | 仅手机可用，Android 走 UDP 探针 |
+| Web 关、手机关 | 不监听 | 不监听 | 不发布 | helper 空闲退出，不占端口 |
+
+端口仍只有一个配置值，便于配对和防火墙规则；TCP 与 UDP 可以安全地共享同一端口号。`port = 0` 时由实际启用的 transport 取得动态端口。token 是服务级保护，不在 UI 中复制出第二份配置；Web 复制 URL 时临时附加 token，手机复制配对链接时携带 token。
 
 ## 6. 分阶段执行
 
@@ -250,9 +264,10 @@
 
 | 表面 | 变更 | 兼容策略 |
 | --- | --- | --- |
-| Bonjour | app supervisor 发布 `_mtc-trackpad._tcp` + TXT schema v1 | 未发现时继续手动 URL |
+| Bonjour | app supervisor 发布 `_mtc-trackpad._tcp` + TXT schema v1（含 `web`/`phone` 能力） | 未发现时继续手动 URL |
 | 配对 URI | `mtc://pair` | 同时接受现有 `http(s)` URL |
-| 配置 | GUI managed mode 的 token/服务设置 | 旧无 token CLI 配置继续可运行 |
+| 健康探针 | `GET /health` | 复用现有 TCP 端口；旧无 token daemon 的 `404` 保持兼容 |
+| 配置 | GUI managed mode 的 token/`net.web_enabled`/`net.phone_enabled` 服务设置 | 旧无 token CLI 配置继续可运行；新字段默认 true |
 | Helper CLI | `companion-config doctor/ensure-token` | 旧 `dump/set` 保留 |
 | macOS 包 | `.app` 内嵌 daemon/helper | 裸 `companion-net`/TUI 不删除 |
 | 日志 | 结构化状态/错误码 | 自然语言日志继续给人看 |
@@ -292,6 +307,89 @@
 6. P6：真机矩阵、发布门槛、回滚演练和文档收尾。
 
 计划批准后，每个阶段单独提交；阶段完成状态写回本文件，并在 GitHub Actions 和真机验收记录中留下证据。
+
+### 阶段 U：壁纸色彩与材质透明度收敛（2026-08-30）
+
+- [x] U1. 将 Web/Android 背景图从主题渐变与材质层中拆出，避免自定义壁纸被重复染色；无壁纸时才使用主题场景渐变。
+- [x] U2. 两端增加背景可见度、背景饱和度、背景亮度和触控面透明度，并持久化到各自本地设置；非液态主题也支持透底但保持稳定的主题 surface。
+- [x] U3. Web 用独立背景伪元素承载裁切和滤镜，固体主题选择壁纸时关闭高强度纹理；Android 使用 `ColorMatrix` 和低强度可读性 scrim，API 31+ GPU 玻璃继续采样同一场景。
+- [x] U4. 完成浏览器实际截图回归、脚本/Kotlin 编译、ARM AAPT2 重打包和 ADB 真机验收；新版 APK 已安装到 `192.168.3.137:44899`，SHA-256 为 `698b56090262b3088c0b3e006bd78496b29d1751020e4706b238a7e709861a7d`，启动截图确认壁纸与 GPU 玻璃生效。
+
+阶段 U：**代码、自动化检查、APK 构建、ADB 安装和真机视觉验收均已完成。**
+
+### 阶段 V：全屏材质连续性与动效收敛（2026-08-30）
+
+- [x] V1. Android 全屏只隐藏顶部 chrome，锁定切换前的居中触控面几何与液态
+  玻璃圆角，不再把表面透明度临时压低，避免进入全屏时出现亮度闪烁。
+- [x] V2. 进入/退出动画统一为可中断的短时 ease-out，表面使用轻微缩放收敛，
+  浮动退出按钮用同步的缩放与淡入动画保持视觉锚点。
+- [x] V3. Web 与 Android 的全屏行为对齐，桌面和窄屏保留边距、圆角、边缘高光
+  与用户壁纸；Web 浮动设置按钮由 `data-visible` 驱动过渡，不再依赖 `display` 硬切。
+- [x] V4. 完成单测、构建、Web 语法检查和 ADB 真机截图回归；最新 APK SHA-256
+  为 `93c35a4b9f2a84d0301ff40ce6be3e81720dd13511241481c4149696559d22c1`。
+
+阶段 V：**已完成开发和真机视觉验收；macOS 主机端的长时稳定性与手势消费继续由既有真机矩阵覆盖。**
+
+### 阶段 W：全屏退出与 Web 兼容回退（2026-08-30）
+
+- [x] W1. Android 全屏响应系统返回键，优先退出全屏而不是关闭应用或丢失连接。
+- [x] W2. Web 在 Fullscreen API 不可用时保留可用的 chrome-only 全屏体验，并提供
+  同一浮动退出入口，覆盖 iOS Safari 与嵌入式 WebView。
+- [x] W3. 完成脚本检查、Android 构建和 ADB 返回键验收。
+- [x] W4. 增加复用现有 TCP 端口的 `GET /health` 探针，Android 只有在服务可达且
+  token 校验通过后才显示“已连接”，并兼容旧版无 token daemon。最新 APK
+  SHA-256：`a51bfe83edf634e25cce7d7547a308390ee90320ff76fb5334d23d9c7a020b90`。
+
+阶段 W：**已完成开发、构建和真机验收。**
+
+### 阶段 X：连接服务产品化拆分（2026-08-30）
+
+- [x] X1. `[net]` 增加 `web_enabled` 与 `phone_enabled`，默认均为 `true`，旧配置无需迁移；关闭项不创建对应 TCP/UDP socket。
+- [x] X2. 统一端口策略：两项同时开启时共享端口；只开一项时从该 transport 获取端口；两项关闭时 helper 直接退出且不暴露端口。
+- [x] X3. Web 页面、WebSocket 和 `/health` 使用同一 token 授权；Web 关闭时不再提供 TCP 探针，手机端通过 Bonjour/配对能力标记跳过 TCP 探测。
+- [x] X4. SwiftUI 新增独立“连接”页：Web 访问、手机连接、监听状态、复制 Web 地址/配对链接和安全提示；运行中的开关修改自动重启 helper，停止状态不被意外拉起。
+- [x] X5. Bonjour TXT 与 `mtc://pair` 增加 `web`/`phone` 能力字段；Android 发现/配对读取字段并支持 UDP-only Mac。
+- [x] X6. `companion-config doctor` 输出两项服务状态；配置文档、协议文档和架构说明同步更新。
+
+阶段 X：**代码与 Rust workspace 测试已完成；SwiftUI/macOS 真机、Bonjour 网络隔离和 Android UDP-only 连接待在 Mac + Android 环境验收。**
+
+### 阶段 Y：PermissionFlow Accessibility 权限引导（2026-08-30）
+
+- [x] Y1. SwiftUI 设置页接入 PermissionFlow `PermissionFlowButton`，使用官方
+  Accessibility 状态检测和跟随 System Settings 的浮动拖拽授权面板；保留
+  `AXIsProcessTrusted()` 作为 helper 启动前的真实门禁。
+- [x] Y2. 移除服务启动时自动触发的重复 TCC 弹窗；用户从权限面板返回应用后，
+  自动重新检测 AX 状态并启动等待中的 `companion-net`。
+- [x] Y3. 将 PermissionFlow SwiftPM 资源包复制进 `.app/Contents/Resources`，
+  并把 `en`/`zh-Hans` 语言环境传给按钮和浮动面板；记录 PermissionFlow MIT
+  许可证来源。
+- [ ] Y4. 在 macOS 13+（含 Mac mini 无实体触控板）完成未授权、拖入授权、
+  回到应用自动启动、中英文面板切换及签名 DMG 验收。
+
+阶段 Y：**代码与打包链路已完成；PermissionFlow 浮动授权、TCC 归属和真机 DMG 验收待 Mac 执行。**
+
+### 阶段 Z：作者产品理念第一批落地（2026-08-30）
+
+- [x] Z1. 菜单栏升级为快速控制中心：直接切换 Web/手机入口，显示服务状态和端口，
+  提供复制地址、权限引导、失败重试、启动/停止和打开设置；详细手势参数仍只在设置窗口维护。
+- [x] Z2. 将 companion-net 已有的 `udp_rx`、`ws`、`decode_err`、`engine_in` 周期统计
+  解析为 SwiftUI 可观察指标，在总览页显示解码错误和最近更新时间，不新增协议字段。
+- [x] Z3. 把语言/服务状态/指标模型、Bonjour 发布器和菜单栏 View 从 `App.swift` 拆出，
+  保持单一配置边界和中英语言同步。
+- [x] Z4a. 使用 macOS 原生 `SMAppService` 提供“登录时启动”，并在系统唤醒后重新检查
+  权限、刷新登录项状态，必要时恢复等待中的 helper。
+- [x] Z4b. 将 `ServiceSupervisor` 移到独立文件，集中管理 helper 生命周期、权限、
+  登录项、唤醒和 Bonjour；`App.swift` 只保留 App/Scene 与设置界面组合。
+- [x] Z4c. 使用 `NWPathMonitor` 监听 Wi-Fi/以太网切换；网络恢复或接口变化时自动
+  重新绑定 helper 并重新发布 Bonjour，网络不可用时显示可恢复的 degraded 状态。
+- [x] Z4d. helper 非预期退出自动恢复一次，连续失败进入 failed 并保留最后日志；
+  用户主动停止不会被后台恢复逻辑重新拉起。
+- [x] Z4e. 保存最近一次本地连接端点（不保存 Token），并在总览页显示；登录项
+  `requiresApproval` 状态明确提示用户到系统设置批准。
+- [ ] Z4f. 将剩余双语文案迁移到独立 `.strings` 资源并加入本地化快照测试。
+
+阶段 Z：**Z1-Z4e 代码已完成并通过静态检查；PermissionFlow、网络切换、登录项和
+helper 恢复仍需在 macOS 真机/签名 DMG 上验收，Z4f 本地化资源化待后续迭代。**
 
 ### 阶段 R：深按条可视化编辑与触点显示拆分（2026-08-29）
 

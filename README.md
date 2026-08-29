@@ -53,8 +53,10 @@ installing Android software.
 ## Install on macOS
 
 Download the DMG from a GitHub Release, open it, and drag `Trackpad Companion`
-to `Applications`. On first launch, allow Accessibility when macOS asks. The
-app runs on macOS 13 or newer and includes the Rust network and configuration
+to `Applications`. On first launch, open Overview > Permissions and click the
+Accessibility action; PermissionFlow opens the correct Privacy & Security page
+and guides you through dragging the app into the authorization list. The app
+runs on macOS 13 or newer and includes the Rust network and configuration
 helpers inside the application bundle.
 
 Unsigned development packages are produced when release signing is not
@@ -86,6 +88,9 @@ Run the network daemon:
 
 Build the native settings app and DMG on macOS:
 
+The current PermissionFlow package requires Swift 6.2 (Xcode 26 or newer) to
+build the macOS settings target.
+
 ```sh
 ./packaging/macos/build-app.sh
 ./packaging/macos/package-dmg.sh
@@ -94,6 +99,11 @@ open dist/macos/Trackpad-Companion-*-macos.dmg
 
 The app bundle contains `companion-net` and `companion-config` under
 `Contents/Resources`, so a user does not need a separate Homebrew install.
+The menu bar provides Web/phone switches, launch-at-login, service recovery,
+live frame counters, and copy actions without reopening the full settings window.
+It also watches the active network interface, rebinds after Wi-Fi/Ethernet
+changes, retries one unexpected helper exit, and keeps the last local endpoint
+for troubleshooting without storing the pairing token in macOS preferences.
 
 ## Connect a phone or browser
 
@@ -314,3 +324,5 @@ See [docs/architecture.md](docs/architecture.md) for runtime ownership and
 
 MIT. See [LICENSE](LICENSE). Third-party research sources and asset origins
 are recorded in the relevant documents under `docs/` and `static/assets/`.
+The macOS settings app also includes [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow)
+via SwiftPM under its [MIT license](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE).
