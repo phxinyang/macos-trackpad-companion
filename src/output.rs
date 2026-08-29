@@ -1789,7 +1789,12 @@ impl Emitter {
         // the private setter is unavailable. The left-button state is
         // untouched in either case, so a three-finger window drag remains
         // attached while Spaces changes.
-        if macos_27_or_later() || self.symbolic_swipe_active.get() {
+        // Keep trying the continuous DockSwipe/HIDEvent path until it
+        // actually fails. On macOS 27+ the first frame must reach
+        // `post_dock_swipe_pair`; only its false return arms the symbolic
+        // fallback for the rest of this gesture. macOS 26 and earlier never
+        // enter this branch unless a previous fallback is still active.
+        if self.symbolic_swipe_active.get() {
             // SymbolicHotKey gestures have no DockSwipe stream to cancel on
             // Drop. Clear any legacy axis left behind by a failed macOS 27
             // HIDEvent attempt before handing the phase to the fallback.
