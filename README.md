@@ -26,6 +26,10 @@ interaction decisions are documented in
 
 ## Build & run
 
+`target/release` binaries are host-specific. If this repository is shared
+between Linux and macOS (for example on a mounted volume), build the helpers
+on the Mac before running them; do not copy a Linux `ELF` binary to macOS.
+
 ```sh
 cd companion
 cargo build --release
@@ -72,12 +76,20 @@ status colors, safe-area insets, keyboard focus rings, and reduced-motion or
 reduced-transparency fallbacks. The Android APK keeps the native View stack so
 the high-rate touch stream does not depend on a second UI runtime.
 
+The control centre contains seven Liquid Glass appearances (including the
+wallpaper-driven `custom-glass` profile), six editor themes, and classic/high-
+contrast surfaces. Android bundles four offline wallpaper presets, including
+the anime red-curtain scene, and accepts a persistent image from the system
+picker. The browser exposes the same presets plus a compressed local-image
+picker. Opening a control centre or settings modal temporarily hides the
+underlying top-right actions so there is only one active command surface.
+
 Android and browser clients encode coordinates in millimeters using one
 isotropic pixel scale. This keeps equal finger motion equally sensitive in X
 and Y; use the `A−` / `A＋` controls for overall calibration. The Android
 client prefers the panel's reported physical DPI and falls back to
-`densityDpi`; browsers use the CSS reference pixel because mobile browsers do
-not expose reliable physical DPI.
+`densityDpi`; browsers map the full touch surface to the configured 65mm
+virtual width because mobile browsers do not expose reliable physical DPI.
 
 The Android client also includes a configurable `深按条` overlay. Holding it
 for the configured duration sends a standard left-button-down edge to the Mac;
@@ -182,6 +194,8 @@ smart_zoom = "on"         # two-finger double-tap Smart Zoom
 dictionary_lookup = "on"  # three-finger tap Look Up
 right_edge_swipe = "on"   # two-finger right-edge Notification Center
 dynamic_transform_compat = false # native scroll lock; legacy transition opt-in
+parameter_profile = "native"      # native | chromium_os (experimental)
+surface_width_mm = 65.0           # virtual surface width used by edge gestures
 
 [gestures.pinch]
 enable = "on"
@@ -190,6 +204,11 @@ gain = 1.0                 # companion-only magnification response (0.25..4.0x)
 [gestures.rotate]
 enable = "on"
 gain = 1.0                 # companion-only rotation response (0.25..4.0x)
+
+# Optional experiment for the concrete ChromiumOS recognizer thresholds:
+# three-frame 2F observation, 2mm pinch guess, 8mm pinch confirmation,
+# 1.5mm scroll lock, and approximately 0.25% pinch update resolution.
+# parameter_profile = "chromium_os"
 
 [gestures.swipe.horizontal]   # left/right 3F/4F → Spaces / Full-Screen Apps
 enable  = "on"
@@ -274,7 +293,21 @@ only an external device is present. The process logs the missing domain and
 continues with TOML/default values. `DragLock` is reported for diagnostics but
 does not change the companion's three-finger re-grip timeout; configure
 `[gestures.three_finger_drag].release_delay_ms` directly (the default is
-500 ms).
+500 ms). A 3F-to-4F Space handoff is only possible while this grace window is
+open; setting it to `0` intentionally releases the dragged item as soon as all
+three fingers leave, so a later 4F swipe is an independent gesture.
+
+For an A/B test with the public ChromiumOS recognizer thresholds, set the
+experimental profile and restart the daemon:
+
+```sh
+./target/release/companion-config set \
+  --path gestures.parameter_profile --value chromium_os
+```
+
+Return to the calibrated Companion baseline with `--value native`. The profile
+does not enable pressure/width palm rejection because phone and browser input
+does not currently provide trustworthy pressure/area fields.
 
 ### Mac mini without a Trackpad pane
 

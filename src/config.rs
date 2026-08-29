@@ -42,6 +42,8 @@
 //!
 //! [gestures]
 //! dynamic_transform_compat = false # allow Pan -> pinch/rotate transition
+//! parameter_profile = "native"      # native | chromium_os (experimental)
+//! surface_width_mm = 65.0           # virtual touch surface width for edge gestures
 //! [gestures.pinch]                 # enable = "on" | "off" |
 //! enable = "on"                    #   { only = ["bundle.id", ..] } |
 //! gain = 1.0                       # companion-only response multiplier
@@ -272,7 +274,7 @@ impl Default for Scroll {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Gestures {
     /// Tap-to-click (the Point & Click "Tap to click" setting).
@@ -290,12 +292,54 @@ pub struct Gestures {
     /// starts; enable this only for legacy input surfaces that need a
     /// mid-gesture transition.
     pub dynamic_transform_compat: bool,
+    /// Recognizer threshold profile. `native` keeps the calibrated Companion
+    /// defaults; `chromium_os` is an experimental profile derived from the
+    /// public ChromiumOS Gestures source and is intended for A/B testing.
+    pub parameter_profile: GestureParameterProfile,
+    /// Width of the sender's virtual touch surface in millimeters. Used to
+    /// express edge gestures as a geometry-relative zone instead of mixing
+    /// absolute millimeters with legacy normalized coordinates.
+    pub surface_width_mm: f64,
     pub pinch: Pinch,
     pub rotate: Rotate,
     pub swipe: Swipe,
     pub three_finger_drag: ThreeFingerDrag,
     pub one_finger_tap_drag: OneFingerTapDrag,
     pub press_and_hold_drag: PressAndHoldDrag,
+}
+
+impl Default for Gestures {
+    fn default() -> Self {
+        Self {
+            tap_to_click: GestureEnable::On,
+            secondary_click: GestureEnable::On,
+            smart_zoom: GestureEnable::On,
+            dictionary_lookup: GestureEnable::On,
+            right_edge_swipe: GestureEnable::On,
+            dynamic_transform_compat: false,
+            parameter_profile: GestureParameterProfile::Native,
+            surface_width_mm: 65.0,
+            pinch: Pinch::default(),
+            rotate: Rotate::default(),
+            swipe: Swipe::default(),
+            three_finger_drag: ThreeFingerDrag::default(),
+            one_finger_tap_drag: OneFingerTapDrag::default(),
+            press_and_hold_drag: PressAndHoldDrag::default(),
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GestureParameterProfile {
+    Native,
+    ChromiumOs,
+}
+
+impl Default for GestureParameterProfile {
+    fn default() -> Self {
+        Self::Native
+    }
 }
 
 /// `[gestures.one_finger_tap_drag]` — companion-net's 拖移样式 = 单指双击拖移.
@@ -589,6 +633,11 @@ mod tests {
         assert_eq!(cfg.gestures.dictionary_lookup, GestureEnable::On);
         assert_eq!(cfg.gestures.right_edge_swipe, GestureEnable::On);
         assert!(!cfg.gestures.dynamic_transform_compat);
+        assert_eq!(
+            cfg.gestures.parameter_profile,
+            GestureParameterProfile::Native
+        );
+        assert_eq!(cfg.gestures.surface_width_mm, 65.0);
         assert_eq!(cfg.gestures.pinch.enable, GestureEnable::On);
         assert_eq!(cfg.gestures.pinch.gain, 1.0);
         assert_eq!(cfg.gestures.rotate.gain, 1.0);
@@ -631,6 +680,21 @@ mod tests {
         assert!(cfg.gestures.dynamic_transform_compat);
         assert_eq!(cfg.gestures.pinch.gain, 1.75);
         assert_eq!(cfg.gestures.rotate.gain, 0.5);
+    }
+
+    #[test]
+    fn chromium_parameter_profile_parses() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [gestures]
+            parameter_profile = "chromium_os"
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.gestures.parameter_profile,
+            GestureParameterProfile::ChromiumOs
+        );
     }
 
     #[test]

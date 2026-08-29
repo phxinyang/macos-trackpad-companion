@@ -54,8 +54,20 @@ class TouchPadView(context: Context) : View(context) {
     }
 
     var sender: UdpSender? = null
+    /** Optional visual-only callback. It never participates in frame encoding. */
+    var onTouchPulse: ((Float, Float) -> Unit)? = null
+    /** Notifies visual hosts when a gesture starts/stops so expensive effects
+     * can run only during interaction instead of while the pad is idle. */
+    var onTouchStateChanged: ((Boolean) -> Unit)? = null
     /** >1 = larger virtual surface, so each screen centimeter moves farther. */
     var scale: Float = 1f
+    /** Controls only the visualizer. Wire frames and gesture semantics remain unchanged. */
+    var visualEffectsEnabled: Boolean = true
+        set(value) {
+            field = value
+            if (!value) releasedVisualTouches.clear()
+            invalidate()
+        }
 
     val haptics = Haptics(context)
 
@@ -150,7 +162,7 @@ class TouchPadView(context: Context) : View(context) {
             }
         }
 
-        if (activeVisualTouches.isNotEmpty() || releasedVisualTouches.isNotEmpty()) {
+        if (visualEffectsEnabled && (activeVisualTouches.isNotEmpty() || releasedVisualTouches.isNotEmpty())) {
             postInvalidateOnAnimation()
         }
     }
@@ -159,7 +171,9 @@ class TouchPadView(context: Context) : View(context) {
         val color = visualColors[Math.floorMod(touch.pointerId, visualColors.size)]
         val speed = hypot(touch.velocityX, touch.velocityY)
         val direction = if (speed > 0.5f) atan2(touch.velocityY, touch.velocityX) else -Math.PI.toFloat() / 2f
-        val pulse = (sin(nowMs * 0.010f + touch.pointerId) * 0.5f + 0.5f) * density
+        val pulse = if (visualEffectsEnabled) {
+            (sin(nowMs * 0.010f + touch.pointerId) * 0.5f + 0.5f) * density
+        } else 0f
         val coreRadius = (5.5f + min(speed * 0.018f, 2.5f)) * density
         val haloRadius = (22f + min(speed * 0.045f, 9f) + pulse * 2f) * density
         val glowRadius = haloRadius * 2.25f
@@ -177,7 +191,7 @@ class TouchPadView(context: Context) : View(context) {
 
         // Velocity ribbon. It is drawn behind the core and fades toward the
         // previous positions, producing a liquid smear instead of a cursor dot.
-        if (touch.trail.isNotEmpty() && speed > 0.8f) {
+        if (visualEffectsEnabled && touch.trail.isNotEmpty() && speed > 0.8f) {
             trailPaint.color = withAlpha(color, (0x34 * alpha).toInt())
             trailPaint.strokeWidth = (4f + min(speed * 0.04f, 7f)) * density
             var previousX = touch.x
@@ -301,8 +315,10 @@ class TouchPadView(context: Context) : View(context) {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
+                onTouchStateChanged?.invoke(true)
                 freeAll()
                 clearVisualTouches()
+                onTouchPulse?.invoke(event.x, event.y)
                 touchDownTimeMs = System.currentTimeMillis()
                 maxFingersInSession = 1
                 dragEngageHapticFired = false
@@ -314,6 +330,7 @@ class TouchPadView(context: Context) : View(context) {
                 sendCurrent(event)
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
+                onTouchStateChanged?.invoke(true)
                 remember(event)
                 val count = event.pointerCount
                 if (count > maxFingersInSession) {
@@ -328,6 +345,7 @@ class TouchPadView(context: Context) : View(context) {
                 sendCurrent(event)
             }
             MotionEvent.ACTION_MOVE -> {
+                onTouchStateChanged?.invoke(true)
                 remember(event)
                 val count = event.pointerCount
                 if (count > maxFingersInSession) {
@@ -361,7 +379,9 @@ class TouchPadView(context: Context) : View(context) {
                 val pid = event.getPointerId(event.actionIndex)
                 freeId(pid)
                 updateVisualTouches(event)
-                if (cidByPointer.isEmpty()) echoLift() else sendCurrentSurvivors(event)
+                val hasSurvivors = cidByPointer.isNotEmpty()
+                onTouchStateChanged?.invoke(hasSurvivors)
+                if (!hasSurvivors) echoLift() else sendCurrentSurvivors(event)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 // ACTION_CANCEL is a transport/lifecycle abort, not a user
@@ -384,6 +404,7 @@ class TouchPadView(context: Context) : View(context) {
                     }
                 }
                 freeAll()
+                onTouchStateChanged?.invoke(false)
                 if (event.actionMasked == MotionEvent.ACTION_UP) {
                     releaseAllVisualTouches(event.eventTime)
                 } else {

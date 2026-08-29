@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.os.SystemClock
 import android.view.MotionEvent
@@ -14,6 +15,14 @@ import android.view.View
  * Mac, and releases it when the finger leaves the bar.
  */
 class DeepPressBarView(context: Context) : View(context) {
+
+    private val density = resources.displayMetrics.density
+
+    init {
+        isClickable = true
+        isFocusable = true
+        contentDescription = "深按，按住发送左键"
+    }
 
     var holdDurationMs: Long = 650L
         set(value) {
@@ -40,12 +49,12 @@ class DeepPressBarView(context: Context) : View(context) {
     }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 1.5f * resources.displayMetrics.density
+        strokeWidth = 1.5f * density
         color = 0x66FFFFFF
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = 14f * resources.displayMetrics.density
+        textSize = 14f * density
         textAlign = Paint.Align.CENTER
         typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
@@ -75,7 +84,9 @@ class DeepPressBarView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val radius = height * 0.32f
+        // Keep the deep-press affordance a control, not a pill. Capping the
+        // radius also keeps the shape stable when users change its height.
+        val radius = minOf(height * 0.25f, 10f * density)
         val bounds = RectF(0.5f, 0.5f, width - 0.5f, height - 0.5f)
         canvas.drawRoundRect(bounds, radius, radius, backgroundPaint)
         if (pressed) {
@@ -85,11 +96,17 @@ class DeepPressBarView(context: Context) : View(context) {
                 ((SystemClock.uptimeMillis() - downAt).toFloat() / holdDurationMs)
                     .coerceIn(0f, 1f)
             }
-            val progressBounds = RectF(0f, 0f, width.toFloat() * progress, height.toFloat())
-            canvas.save()
-            canvas.clipRect(bounds)
-            canvas.drawRoundRect(progressBounds, radius, radius, progressPaint)
-            canvas.restore()
+            if (progress > 0f) {
+                val progressBounds = RectF(0f, 0f, width.toFloat() * progress, height.toFloat())
+                val progressRadius = minOf(radius, progressBounds.width() / 2f)
+                val clipPath = Path().apply {
+                    addRoundRect(bounds, radius, radius, Path.Direction.CW)
+                }
+                canvas.save()
+                canvas.clipPath(clipPath)
+                canvas.drawRoundRect(progressBounds, progressRadius, progressRadius, progressPaint)
+                canvas.restore()
+            }
         }
         canvas.drawRoundRect(bounds, radius, radius, strokePaint)
         val label = if (deepPressed) "按下" else "深按"
@@ -103,6 +120,7 @@ class DeepPressBarView(context: Context) : View(context) {
                 pressed = true
                 deepPressed = false
                 downAt = SystemClock.uptimeMillis()
+                animatePressIn()
                 // Force Click is a two-stage interaction: the first click is
                 // felt immediately, and the deeper confirmation follows only
                 // after the hold threshold is crossed.
@@ -129,11 +147,37 @@ class DeepPressBarView(context: Context) : View(context) {
     }
 
     private fun finishPress() {
+        if (!pressed && !deepPressed) return
         removeCallbacks(tick)
         if (deepPressed) onDeepPress?.invoke(false)
         pressed = false
         deepPressed = false
+        animatePressOut()
         invalidate()
+    }
+
+    private fun animatePressIn() {
+        animate().cancel()
+        animate()
+            .scaleX(InteractionMetrics.PRESS_SCALE)
+            .scaleY(InteractionMetrics.PRESS_SCALE)
+            .translationY(0.5f)
+            .alpha(InteractionMetrics.PRESS_ALPHA)
+            .setDuration(InteractionMetrics.PRESS_DOWN_MS)
+            .setInterpolator(InteractionMetrics.PRESS_DOWN_INTERPOLATOR)
+            .start()
+    }
+
+    private fun animatePressOut() {
+        animate().cancel()
+        animate()
+            .scaleX(1f)
+            .scaleY(1f)
+            .translationY(0f)
+            .alpha(1f)
+            .setDuration(InteractionMetrics.PRESS_UP_MS)
+            .setInterpolator(InteractionMetrics.PRESS_UP_INTERPOLATOR)
+            .start()
     }
 
     fun cancelPress() {

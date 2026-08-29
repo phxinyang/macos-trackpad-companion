@@ -271,13 +271,14 @@ object GestureTestRunner {
 
     /**
      * Simulates a two-finger right-edge swipe to toggle Notification Center.
-     * Both fingers start at x >= 28mm (right edge zone) and sweep left by ~12mm.
+     * Both fingers start in the final 15% of the calibrated 65mm virtual
+     * surface and sweep left by ~12mm.
      */
     fun runNotificationCenter(sender: UdpSender, onDone: (() -> Unit)? = null) {
         executor.execute {
             val c1 = 1; val c2 = 2
-            // Start from the right edge (x >= 28mm triggers right_edge_candidate)
-            val startX1 = 30f; val startX2 = 34f
+            // Receiver edge zone starts at 65mm * 0.85 = 55.25mm.
+            val startX1 = 56f; val startX2 = 60f
             val y1 = 45f; val y2 = 55f
             val steps = 10
             val totalDx = -15f  // sweep left

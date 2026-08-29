@@ -13,10 +13,10 @@
 <title>Mac 触控板</title>
 <svg id="liquid-glass-defs" aria-hidden="true" width="0" height="0" style="position:absolute">
   <defs>
-    <filter id="liquid-glass-filter" x="-12%" y="-24%" width="124%" height="148%" color-interpolation-filters="sRGB">
+    <filter id="liquid-glass-filter" x="-18%" y="-28%" width="136%" height="156%" color-interpolation-filters="sRGB">
       <feImage id="liquid-map" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/5nH8WQAAAABJRU5ErkJggg==" result="liquid-map-source" />
-      <feGaussianBlur in="SourceGraphic" stdDeviation="3.4" result="frosted" />
-      <feDisplacementMap id="liquid-displacement" in="frosted" in2="liquid-map-source" scale="13" xChannelSelector="R" yChannelSelector="G" result="refracted" />
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1.1" result="frosted" />
+      <feDisplacementMap id="liquid-displacement" in="frosted" in2="liquid-map-source" scale="24" xChannelSelector="R" yChannelSelector="G" result="refracted" />
       <feColorMatrix in="refracted" type="matrix" values="1.08 0 0 0 0  0 1.08 0 0 0  0 0 1.08 0 0  0 0 0 1 0" />
     </filter>
   </defs>
@@ -38,13 +38,30 @@
     --warning: #b86a00;
     --danger: #c9342f;
     --glass-edge: rgba(255,255,255,.86);
+    --glass-fill: rgba(255,255,255,.12);
+    --glass-fill-soft: rgba(255,255,255,.035);
+    --glass-caustic: rgba(118,207,255,.13);
+    --glass-fringe-warm: rgba(255,106,151,.13);
+    --glass-fringe-cool: rgba(83,191,255,.20);
+    --glass-saturation: 1.30;
+    --glass-brightness: 1.03;
+    --glass-contrast: 1.03;
+    --pad-shadow: transparent;
+    --pad-texture: none;
+    --backdrop-photo: none;
+    --backdrop-image: linear-gradient(132deg, rgba(34,132,255,.74) 0%, rgba(34,132,255,.22) 34%, transparent 56%), linear-gradient(318deg, rgba(255,126,86,.62) 0%, rgba(255,126,86,.16) 32%, transparent 58%), linear-gradient(148deg, rgba(44,213,205,.30), transparent 46% 62%, rgba(255,93,172,.24));
     --glass-shadow: 0 14px 44px rgba(33, 37, 44, .16), 0 2px 8px rgba(33, 37, 44, .10);
     --pad-glass: rgba(255,255,255,.24);
-    --radius-sm: 10px;
-    --radius-md: 14px;
-    --radius-lg: 20px;
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-deep: 10px;
+    --press-scale: .992;
+    --press-down-ms: 95ms;
+    --press-up-ms: 175ms;
     --shadow-chrome: 0 14px 44px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.22);
     --ease: cubic-bezier(0.2, 0, 0, 1);
+    --spring: linear(0, .18, .46, .78, 1.08, 1.02, 1);
   }
   html[data-theme="dark-glass"], html[data-theme="classic-dark"] {
     color-scheme: dark;
@@ -62,6 +79,17 @@
     --warning: #ff9f0a;
     --danger: #ff453a;
     --glass-edge: rgba(255,255,255,.28);
+    --glass-fill: rgba(22,31,43,.28);
+    --glass-fill-soft: rgba(22,31,43,.12);
+    --glass-caustic: rgba(118,207,255,.22);
+    --glass-fringe-warm: rgba(255,106,151,.18);
+    --glass-fringe-cool: rgba(83,191,255,.26);
+    --glass-saturation: 1.38;
+    --glass-brightness: .96;
+    --glass-contrast: 1.06;
+    --pad-shadow: transparent;
+    --pad-texture: none;
+    --backdrop-image: linear-gradient(132deg, rgba(26,126,218,.66) 0%, rgba(26,126,218,.20) 34%, transparent 56%), linear-gradient(318deg, rgba(255,105,70,.54) 0%, rgba(255,105,70,.14) 32%, transparent 58%), linear-gradient(148deg, rgba(45,205,190,.22), transparent 46% 62%, rgba(96,125,255,.20));
     --glass-shadow: 0 14px 44px rgba(0, 0, 0, .34), 0 2px 8px rgba(0, 0, 0, .24);
     --pad-glass: rgba(18,28,38,.46);
   }
@@ -72,6 +100,9 @@
     --accent: #0071e3; --success: #1e9e5a; --warning: #9a5b00; --danger: #c9342f;
     --glass-edge: rgba(60,60,67,.20); --glass-shadow: 0 5px 18px rgba(0,0,0,.08);
     --pad-glass: #ffffff;
+    --pad-shadow: transparent;
+    --pad-texture: repeating-linear-gradient(90deg, rgba(255,255,255,.24) 0 1px, transparent 1px 8px);
+    --backdrop-image: linear-gradient(180deg, #f7f7fa 0%, #e8e9ee 100%), repeating-linear-gradient(90deg, rgba(255,255,255,.24) 0 1px, transparent 1px 8px);
   }
   html[data-theme="high-contrast"] {
     color-scheme: light;
@@ -81,8 +112,53 @@
     --accent: #000000; --success: #000000; --warning: #000000; --danger: #000000;
     --glass-edge: #000000; --glass-shadow: none;
     --pad-glass: #ffffff;
+    --pad-shadow: transparent;
+    --pad-texture: repeating-linear-gradient(90deg, transparent 0 14px, rgba(0,0,0,.035) 14px 15px);
+    --backdrop-image: linear-gradient(180deg, #ffffff 0%, #f1f1f1 100%), repeating-linear-gradient(90deg, transparent 0 14px, rgba(0,0,0,.035) 14px 15px);
   }
-  html[data-theme^="classic-"] #pad-container, html[data-theme="high-contrast"] #pad-container { background-image: none; }
+  html[data-theme="ocean-glass"] {
+    --canvas: #eaf7ff; --chrome: rgba(244,252,255,.58); --chrome-solid: #f4fcff; --accent: #007aff;
+    --glass-fill: rgba(224,247,255,.16); --glass-fill-soft: rgba(232,251,255,.035); --glass-caustic: rgba(0,170,255,.24);
+    --glass-fringe-warm: rgba(54,110,255,.16); --glass-fringe-cool: rgba(0,221,255,.30); --glass-saturation: 1.48; --glass-brightness: 1.06; --glass-contrast: 1.04;
+    --backdrop-image: linear-gradient(132deg, rgba(0,142,255,.72) 0%, rgba(0,142,255,.22) 34%, transparent 58%), linear-gradient(318deg, rgba(0,218,192,.62) 0%, rgba(0,218,192,.16) 34%, transparent 60%), linear-gradient(148deg, rgba(80,174,255,.34), transparent 46% 62%, rgba(0,218,192,.24));
+  }
+  html[data-theme="sunset-glass"] {
+    --canvas: #fff2eb; --chrome: rgba(255,249,245,.64); --chrome-solid: #fff9f5; --accent: #ff6b35;
+    --glass-fill: rgba(255,237,224,.16); --glass-fill-soft: rgba(255,244,235,.035); --glass-caustic: rgba(255,168,90,.24);
+    --glass-fringe-warm: rgba(255,96,89,.20); --glass-fringe-cool: rgba(255,196,103,.28); --glass-saturation: 1.42; --glass-brightness: 1.04; --glass-contrast: 1.04;
+    --backdrop-image: linear-gradient(132deg, rgba(255,112,81,.66) 0%, rgba(255,112,81,.18) 34%, transparent 58%), linear-gradient(318deg, rgba(255,190,72,.62) 0%, rgba(255,190,72,.16) 34%, transparent 60%), linear-gradient(148deg, rgba(255,118,167,.26), transparent 46% 62%, rgba(255,203,105,.24));
+  }
+  html[data-theme="aurora-glass"] {
+    --canvas: #eef9f8; --chrome: rgba(242,253,252,.62); --chrome-solid: #f2fdfc; --accent: #00a98f;
+    --glass-fill: rgba(226,252,247,.16); --glass-fill-soft: rgba(237,255,252,.035); --glass-caustic: rgba(0,196,171,.22);
+    --glass-fringe-warm: rgba(126,90,255,.17); --glass-fringe-cool: rgba(0,205,166,.30); --glass-saturation: 1.48; --glass-brightness: 1.05; --glass-contrast: 1.04;
+    --backdrop-image: linear-gradient(132deg, rgba(74,178,255,.56) 0%, rgba(74,178,255,.14) 34%, transparent 58%), linear-gradient(318deg, rgba(0,199,160,.58) 0%, rgba(0,199,160,.14) 34%, transparent 60%), linear-gradient(148deg, rgba(158,103,255,.26), transparent 46% 62%, rgba(0,210,166,.24));
+  }
+  html[data-theme="graphite-glass"] {
+    color-scheme: dark; --canvas: #0f1218; --surface: #171b24; --surface-raised: #202632; --chrome: rgba(28,34,46,.66); --chrome-solid: #1c222e; --separator: rgba(255,255,255,.16);
+    --label: #f4f7fb; --label-secondary: #b3bdcb; --label-tertiary: #7e8998; --accent: #64d2ff; --glass-edge: rgba(255,255,255,.30);
+    --glass-fill: rgba(22,29,40,.30); --glass-fill-soft: rgba(22,29,40,.12); --glass-caustic: rgba(100,210,255,.24); --glass-fringe-warm: rgba(255,118,184,.20); --glass-fringe-cool: rgba(100,210,255,.30);
+    --glass-saturation: 1.34; --glass-brightness: .94; --glass-contrast: 1.08;
+    --backdrop-image: linear-gradient(132deg, rgba(28,112,177,.56) 0%, rgba(28,112,177,.18) 34%, transparent 58%), linear-gradient(318deg, rgba(171,65,93,.50) 0%, rgba(171,65,93,.14) 34%, transparent 60%), linear-gradient(148deg, rgba(56,165,160,.26), transparent 46% 62%, rgba(28,112,177,.22));
+  }
+  html[data-theme="custom-glass"] {
+    color-scheme: dark;
+    --canvas: #11151d; --surface: #1b222e; --surface-raised: #263243;
+    --chrome: rgba(22, 29, 40, .62); --chrome-solid: #1b222e;
+    --separator: rgba(255,255,255,.15); --label: #f5f8ff; --label-secondary: #b6c2d4; --label-tertiary: #7f8da2;
+    --accent: #8ed8ff; --success: #30d158; --warning: #ffb340; --danger: #ff6961;
+    --glass-edge: rgba(255,255,255,.38); --glass-fill: rgba(18,27,40,.24); --glass-fill-soft: rgba(18,27,40,.10);
+    --glass-caustic: rgba(108,210,255,.28); --glass-fringe-warm: rgba(255,108,170,.22); --glass-fringe-cool: rgba(99,214,255,.32);
+    --glass-saturation: 1.48; --glass-brightness: .96; --glass-contrast: 1.09; --pad-shadow: transparent;
+    --backdrop-image: linear-gradient(140deg, rgba(36,79,119,.72), rgba(15,21,31,.34) 45%, rgba(92,39,77,.58)), linear-gradient(28deg, rgba(34,185,178,.28), transparent 45%, rgba(255,95,151,.26));
+  }
+  html[data-theme="tokyo-night"] { color-scheme: dark; --canvas:#16161e; --surface:#1f2335; --surface-raised:#24283b; --chrome:#1f2335; --chrome-solid:#1f2335; --separator:#3b4261; --label:#c0caf5; --label-secondary:#a9b1d6; --label-tertiary:#565f89; --accent:#7aa2f7; --glass-edge:#3b4261; --pad-glass:#1a1b26; --pad-shadow:transparent; --pad-texture: repeating-linear-gradient(90deg, rgba(122,162,247,.055) 0 1px, transparent 1px 48px), repeating-linear-gradient(0deg, rgba(122,162,247,.035) 0 1px, transparent 1px 48px); --backdrop-image: linear-gradient(180deg, #1f2335 0%, #16161e 100%), var(--pad-texture); }
+  html[data-theme="nord"] { color-scheme: dark; --canvas:#2e3440; --surface:#3b4252; --surface-raised:#434c5e; --chrome:#3b4252; --chrome-solid:#3b4252; --separator:#4c566a; --label:#eceff4; --label-secondary:#d8dee9; --label-tertiary:#aeb8c8; --accent:#88c0d0; --glass-edge:#4c566a; --pad-glass:#2e3440; --pad-shadow:transparent; --pad-texture: repeating-linear-gradient(135deg, rgba(136,192,208,.065) 0 1px, transparent 1px 32px); --backdrop-image: linear-gradient(135deg, #3b4252 0%, #2e3440 52%, #242933 100%), var(--pad-texture); }
+  html[data-theme="dracula"] { color-scheme: dark; --canvas:#282a36; --surface:#343746; --surface-raised:#44475a; --chrome:#343746; --chrome-solid:#343746; --separator:#6272a4; --label:#f8f8f2; --label-secondary:#d5d4c8; --label-tertiary:#a6a6a0; --accent:#bd93f9; --glass-edge:#6272a4; --pad-glass:#282a36; --pad-shadow:transparent; --pad-texture: repeating-linear-gradient(0deg, rgba(189,147,249,.065) 0 1px, transparent 1px 42px); --backdrop-image: linear-gradient(145deg, #44475a 0%, #282a36 64%, #201f2b 100%), var(--pad-texture); }
+  html[data-theme="solarized-dark"] { color-scheme: dark; --canvas:#002b36; --surface:#073642; --surface-raised:#0a4050; --chrome:#073642; --chrome-solid:#073642; --separator:#586e75; --label:#fdf6e3; --label-secondary:#93a1a1; --label-tertiary:#657b83; --accent:#2aa198; --glass-edge:#586e75; --pad-glass:#002b36; --pad-shadow:transparent; --pad-texture: repeating-linear-gradient(90deg, rgba(42,161,152,.075) 0 1px, transparent 1px 56px); --backdrop-image: linear-gradient(180deg, #073642 0%, #002b36 100%), var(--pad-texture); }
+  html[data-theme="catppuccin-mocha"] { color-scheme: dark; --canvas:#1e1e2e; --surface:#313244; --surface-raised:#45475a; --chrome:#313244; --chrome-solid:#313244; --separator:#585b70; --label:#cdd6f4; --label-secondary:#bac2de; --label-tertiary:#7f849c; --accent:#89b4fa; --glass-edge:#585b70; --pad-glass:#1e1e2e; --pad-shadow:transparent; --pad-texture: radial-gradient(circle at 14% 20%, rgba(137,180,250,.16) 0 1px, transparent 2px), radial-gradient(circle at 74% 64%, rgba(245,194,231,.12) 0 1px, transparent 2px); --backdrop-image: linear-gradient(160deg, #313244 0%, #1e1e2e 70%), var(--pad-texture); }
+  html[data-theme="monokai"] { color-scheme: dark; --canvas:#272822; --surface:#3e3d32; --surface-raised:#49483e; --chrome:#3e3d32; --chrome-solid:#3e3d32; --separator:#75715e; --label:#f8f8f2; --label-secondary:#cfcfc2; --label-tertiary:#a6a69b; --accent:#a6e22e; --glass-edge:#75715e; --pad-glass:#272822; --pad-shadow:transparent; --pad-texture: repeating-linear-gradient(90deg, rgba(166,226,46,.055) 0 1px, transparent 1px 64px), repeating-linear-gradient(0deg, rgba(249,38,114,.04) 0 1px, transparent 1px 32px); --backdrop-image: linear-gradient(180deg, #3e3d32 0%, #272822 100%), var(--pad-texture); }
+  html[data-material="solid"] #pad-container { background-image: var(--backdrop-photo), var(--backdrop-image); background-size: cover, auto; background-position: center, center; background-repeat: no-repeat, repeat; }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
@@ -95,25 +171,53 @@
   #pad-container {
     position: fixed; inset: 0;
     background-color: var(--canvas);
-    background-image: linear-gradient(115deg, rgba(255,255,255,.18), transparent 28%, transparent 72%, rgba(10,132,255,.05)), linear-gradient(155deg, rgba(72,150,255,.18) 0 18%, transparent 36% 68%, rgba(255,160,92,.16) 82% 100%), repeating-linear-gradient(0deg, rgba(127,127,127,.035) 0 1px, transparent 1px 18px);
+    background-image: var(--backdrop-photo), var(--backdrop-image);
+    background-size: cover, auto;
+    background-position: center, center;
+    background-repeat: no-repeat, repeat;
     cursor: none;
+    contain: layout paint;
+    isolation: isolate;
   }
-  html[data-theme="dark-glass"] #pad-container { background-image: linear-gradient(115deg, rgba(255,255,255,.08), transparent 28%, transparent 72%, rgba(10,132,255,.12)), linear-gradient(155deg, rgba(39,145,216,.32) 0 18%, transparent 36% 68%, rgba(255,112,72,.22) 82% 100%), repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0 1px, transparent 1px 18px); }
   #pad-canvas {
     position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
   }
   #pad-frame {
-    position: absolute; left: 18px; right: 18px; top: 84px; bottom: 92px;
+    position: absolute; left: 18px; right: 18px; top: 72px; bottom: 24px;
     border-radius: var(--radius-lg); border: 1px solid rgba(255, 255, 255, 0.14);
-    background: var(--pad-glass);
-    backdrop-filter: blur(18px) saturate(1.18); -webkit-backdrop-filter: blur(18px) saturate(1.18);
+    background: linear-gradient(120deg, rgba(255,255,255,.055), rgba(255,255,255,.012) 36%, rgba(255,255,255,.04) 70%, rgba(255,255,255,.012));
+    backdrop-filter: blur(10px) saturate(1.48) brightness(.98); -webkit-backdrop-filter: blur(10px) saturate(1.48) brightness(.98);
     box-shadow: inset 0 0 0 1px rgba(255,255,255,.30), inset 0 -30px 64px rgba(0, 0, 0, 0.08), 0 14px 40px rgba(28,37,46,.10);
-    pointer-events: none; --lens-x: 50%; --lens-y: 50%;
+    pointer-events: none; --lens-x: 50%; --lens-y: 50%; transform-origin: 50% 50%;
+    transition-property: transform, opacity, filter, border-radius; transition-duration: 300ms; transition-timing-function: var(--ease);
+    contain: paint;
   }
-  #pad-frame::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(118deg, transparent 12%, rgba(255,255,255,.25) 40%, transparent 58%); background-size: 220% 100%; animation: glass-sheen 9s var(--ease) infinite alternate; }
-  #pad-frame::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: radial-gradient(circle at var(--lens-x) var(--lens-y), rgba(255,255,255,.32), transparent 26%); opacity: .55; mix-blend-mode: screen; }
-  @keyframes glass-sheen { from { background-position: 100% 0; } to { background-position: 0 0; } }
-  html[data-theme^="classic-"] #pad-frame, html[data-theme="high-contrast"] #pad-frame { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--separator); }
+  #pad-frame[data-active="true"] { will-change: transform, filter; }
+  #pad-frame::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(122deg, var(--glass-fringe-warm), transparent 16% 79%, var(--glass-fringe-cool)), linear-gradient(154deg, rgba(255,255,255,.30), transparent 34% 64%, rgba(255,255,255,.08)); mix-blend-mode: screen; opacity: .82; }
+  #pad-frame::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(112deg, transparent 0 42%, var(--glass-caustic) 49%, transparent 56% 100%), linear-gradient(180deg, rgba(255,255,255,.18), transparent 18% 82%, rgba(255,255,255,.12)); opacity: .58; mix-blend-mode: screen; transition: opacity 160ms var(--ease), filter 180ms var(--ease); }
+  #pad-frame[data-active="true"]::after { background: radial-gradient(circle at var(--lens-x) var(--lens-y), rgba(255,255,255,.44), transparent 24%), linear-gradient(112deg, transparent 0 42%, var(--glass-caustic) 49%, transparent 56% 100%), linear-gradient(180deg, rgba(255,255,255,.20), transparent 18% 82%, rgba(255,255,255,.14)); opacity: .94; filter: brightness(1.12) saturate(1.10); }
+  #pad-frame[data-active="true"] { box-shadow: inset 0 0 0 1px rgba(255,255,255,.48), inset 0 -30px 64px rgba(0, 0, 0, 0.08), 0 14px 40px rgba(28,37,46,.10), 0 0 0 3px rgba(255,255,255,.10); }
+  html[data-fullscreen="true"] #pad-frame { inset: 0; border-radius: 0; border: 0; box-shadow: none; }
+  html[data-fullscreen="true"] #pad-frame::before, html[data-fullscreen="true"] #pad-frame::after { border-radius: 0; }
+  html[data-fullscreen-phase="enter"] #pad-frame { transform: scale(.965); opacity: .84; filter: brightness(1.04) saturate(1.06); }
+  html[data-fullscreen-phase="exit"] #pad-frame { transform: scale(.975); opacity: .90; filter: brightness(1.02) saturate(1.04); }
+  html[data-chrome="compact"]:not([data-fullscreen="true"]) #pad-frame { top: 18px; }
+  html[data-theme^="classic-"] #pad-frame, html[data-theme="high-contrast"] #pad-frame { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--separator); background-color: var(--pad-glass); background-image: var(--pad-texture); }
+  html[data-theme="tokyo-night"] #pad-frame,
+  html[data-theme="nord"] #pad-frame,
+  html[data-theme="dracula"] #pad-frame,
+  html[data-theme="solarized-dark"] #pad-frame,
+  html[data-theme="catppuccin-mocha"] #pad-frame,
+  html[data-theme="monokai"] #pad-frame {
+    background-color: var(--pad-glass); background-image: var(--pad-texture); backdrop-filter: none; -webkit-backdrop-filter: none;
+    border-color: var(--separator); box-shadow: inset 0 0 0 1px var(--separator);
+  }
+  html[data-theme="tokyo-night"] #pad-frame::before, html[data-theme="tokyo-night"] #pad-frame::after,
+  html[data-theme="nord"] #pad-frame::before, html[data-theme="nord"] #pad-frame::after,
+  html[data-theme="dracula"] #pad-frame::before, html[data-theme="dracula"] #pad-frame::after,
+  html[data-theme="solarized-dark"] #pad-frame::before, html[data-theme="solarized-dark"] #pad-frame::after,
+  html[data-theme="catppuccin-mocha"] #pad-frame::before, html[data-theme="catppuccin-mocha"] #pad-frame::after,
+  html[data-theme="monokai"] #pad-frame::before, html[data-theme="monokai"] #pad-frame::after { display: none; }
   #bar {
     position: fixed; left: 12px; right: 12px; top: calc(env(safe-area-inset-top) + 10px);
     display: flex; align-items: center; gap: 10px;
@@ -121,12 +225,30 @@
     background: var(--chrome); backdrop-filter: blur(22px) saturate(1.18); -webkit-backdrop-filter: blur(22px) saturate(1.18);
     border: 1px solid var(--separator);
     box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge);
-    color: var(--label); font-size: 13px; z-index: 100; transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+    color: var(--label); font-size: 13px; z-index: 100; transition: opacity 180ms var(--ease), transform 180ms var(--ease), width 180ms var(--ease), padding 180ms var(--ease), background-color 180ms var(--ease);
     --lens-x: 50%; --lens-y: 50%;
   }
-  #bar::after, #action-dock::after { content: ""; position: absolute; inset: 1px; pointer-events: none; border-radius: inherit; background: radial-gradient(circle at var(--lens-x, 50%) var(--lens-y, 50%), rgba(255,255,255,.30), transparent 38%); opacity: .55; mix-blend-mode: screen; }
+  #bar::after { content: ""; position: absolute; inset: 1px; pointer-events: none; border-radius: inherit; background: radial-gradient(circle at var(--lens-x, 50%) var(--lens-y, 50%), rgba(255,255,255,.30), transparent 38%); opacity: .55; mix-blend-mode: screen; }
   #bar > *, #action-dock > * { position: relative; z-index: 1; }
   #bar.hidden { opacity: 0; transform: translateY(-30px); pointer-events: none; }
+  body[data-settings-open="true"] #bar .bar-actions { opacity: 0; pointer-events: none; transform: scale(.96); }
+  #bar[data-collapsed="true"] {
+    left: auto; right: 14px; width: 174px; min-height: 42px; height: 42px;
+    padding: 5px 7px; gap: 7px; border-radius: 999px; overflow: hidden;
+  }
+  #bar[data-collapsed="true"] .brand-mark,
+  #bar[data-collapsed="true"] .sp,
+  #bar[data-collapsed="true"] #host-hint { display: none; }
+  #bar[data-collapsed="true"] .status-stack { min-width: 0; flex: 1 1 auto; }
+  #bar[data-collapsed="true"] .eyebrow { display: none; }
+  #bar[data-collapsed="true"] #settings-btn,
+  #bar[data-collapsed="true"] #fs-btn {
+    display: grid; place-items: center; width: 38px; min-width: 38px; height: 34px; min-height: 34px;
+    padding: 0; border-radius: var(--radius-sm);
+  }
+  #bar[data-collapsed="true"] #settings-btn .btn-label,
+  #bar[data-collapsed="true"] #fs-btn .btn-label { display: none; }
+  #bar[data-collapsed="true"] #dot { width: 8px; height: 8px; margin-left: 4px; }
   .brand-mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; color: var(--accent); background: rgba(10, 132, 255, 0.14); position: relative; }
   .brand-mark::before { content: ""; width: 14px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; position: absolute; top: 8px; left: 7px; }
   .brand-mark::after { content: ""; width: 8px; height: 1.5px; border-radius: 2px; background: currentColor; position: absolute; top: 20px; left: 10px; }
@@ -138,15 +260,25 @@
   #st { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .sp { flex: 1; }
   #host-hint { color: var(--label-tertiary); font-size: 11px; white-space: nowrap; }
+  .bar-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; flex: none; transition-property: opacity, transform; transition-duration: 160ms; transition-timing-function: var(--ease); }
   .btn {
     min-height: 42px; border: 1px solid var(--separator); border-radius: var(--radius-sm);
     background: rgba(255, 255, 255, 0.07); color: var(--label);
     padding: 0 13px; font-size: 13px; font-weight: 600;
     cursor: pointer; display: flex; align-items: center; gap: 4px;
-    text-decoration: none; touch-action: manipulation; transition: background 140ms var(--ease), transform 120ms var(--ease), border-color 140ms var(--ease);
+    text-decoration: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 1px 2px rgba(20,30,45,.12);
+    transition-property: background-color, border-color, box-shadow, transform;
+    transition-duration: var(--press-up-ms);
+    transition-timing-function: var(--ease);
   }
   .btn:hover { background: rgba(255, 255, 255, 0.12); }
-  .btn:active { background: rgba(255, 255, 255, 0.18); transform: scale(0.96); }
+  .btn:active {
+    background: rgba(255, 255, 255, 0.16);
+    transform: translateY(.5px) scale(var(--press-scale));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 0 0 rgba(20,30,45,0);
+    transition-duration: var(--press-down-ms);
+  }
   .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(10, 132, 255, .35); }
   .btn-label { white-space: nowrap; }
   #float-btn {
@@ -154,9 +286,12 @@
     min-height: 42px; border-radius: var(--radius-md); padding: 0 15px; font-size: 12px;
     background: var(--chrome); border: 1px solid var(--separator);
     color: var(--label); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-    z-index: 99; opacity: 0.6; transition: opacity 0.2s;
+    z-index: 99; opacity: 0.6;
+    transition-property: opacity, transform, background-color, box-shadow;
+    transition-duration: 160ms;
+    transition-timing-function: var(--ease);
   }
-  #float-btn:active { opacity: 1; }
+  #float-btn:active { opacity: .92; transform: translateY(.5px) scale(var(--press-scale)); }
   #edge-hint {
     position: absolute; right: 0; top: 28%; bottom: 28%; width: 4px;
     border-radius: 4px 0 0 4px;
@@ -164,52 +299,197 @@
     pointer-events: none;
     opacity: .55;
   }
-  #action-dock {
-    position: fixed; left: 12px; right: 12px; bottom: calc(env(safe-area-inset-bottom) + 12px);
-    min-height: 58px; padding: 8px; display: flex; align-items: center; justify-content: center; gap: 8px;
-    background: var(--chrome); backdrop-filter: blur(22px) saturate(1.18); -webkit-backdrop-filter: blur(22px) saturate(1.18);
-    border: 1px solid var(--separator); border-radius: var(--radius-md); box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge); z-index: 100; --lens-x: 50%; --lens-y: 50%;
+  #deep-press {
+    position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%);
+    min-width: 190px; min-height: 48px; padding: 0 22px;
+    max-width: calc(100vw - 32px);
+    border: 1px solid rgba(255,255,255,.42); border-radius: var(--radius-deep);
+    color: var(--label); background: rgba(255,255,255,.20);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.65), 0 8px 24px rgba(20,30,45,.10);
+    backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent;
+    transition-property: transform, background-color, box-shadow;
+    transition-duration: var(--press-up-ms);
+    transition-timing-function: var(--ease);
+    z-index: 20; overflow: hidden; --deep-progress: 0;
   }
-  html[data-theme^="classic-"] #bar, html[data-theme^="classic-"] #action-dock,
+  @supports (corner-shape: squircle) {
+    #deep-press { corner-shape: squircle; }
+  }
+  #deep-press::before { content: ""; position: absolute; inset: 0; transform: scaleX(var(--deep-progress)); transform-origin: left center; background: linear-gradient(90deg, rgba(10,132,255,.18), rgba(120,210,255,.28)); transition: transform 80ms linear; pointer-events: none; }
+  #deep-press > span { position: relative; z-index: 1; }
+  #deep-press:active, #deep-press[data-pressed="true"] { transform: translateX(-50%) scale(var(--press-scale)); background: rgba(255,255,255,.28); box-shadow: inset 0 1px 0 rgba(255,255,255,.75), 0 4px 16px rgba(20,30,45,.12); }
+  #deep-press[data-pressed="true"] { color: var(--accent); }
+  #deep-press[data-enabled="false"] { display: none; }
+  .deep-editor { margin-top: 10px; padding: 10px; border-top: 1px solid var(--separator); color: var(--label-secondary); font-size: 11px; }
+  .deep-editor[hidden] { display: none; }
+  .deep-editor-canvas { position: relative; height: 150px; margin-top: 8px; overflow: hidden; border: 1px solid var(--separator); border-radius: 10px; background: var(--glass-fill-soft); }
+  #deep-editor-preview { position: absolute; min-width: 0; min-height: 0; height: 48px; padding: 0 18px; border: 1px solid var(--accent); border-radius: var(--radius-deep); background: var(--accent-wash); color: var(--label); cursor: grab; touch-action: none; transform: translate(-50%, 50%); }
+  #deep-editor-preview::after { pointer-events: none; }
+  #deep-editor-preview:active { cursor: grabbing; }
+  .deep-editor-handle { position: absolute; right: 4px; bottom: 4px; z-index: 2; width: 12px; height: 12px; border-radius: 3px; background: var(--accent); cursor: nwse-resize; pointer-events: auto; }
+  html[data-theme^="classic-"] #deep-press, html[data-theme="high-contrast"] #deep-press { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--surface); border-color: var(--separator); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  html[data-theme="dark-glass"] #deep-press { color: var(--label); background: rgba(15,24,37,.40); }
+  #settings-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.18); opacity: 0; pointer-events: none; transition: opacity 180ms cubic-bezier(.2,0,0,1); z-index: 190; }
+  #settings-backdrop[data-open="true"] { opacity: 1; pointer-events: auto; }
+  #settings-sheet { position: fixed; right: 16px; top: calc(env(safe-area-inset-top) + 70px); width: min(360px, calc(100vw - 32px)); max-height: calc(100vh - 100px); overflow: auto; padding: 18px; border: 1px solid var(--separator); border-radius: 18px; background: var(--chrome); color: var(--label); box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge); backdrop-filter: blur(26px) saturate(1.2); -webkit-backdrop-filter: blur(26px) saturate(1.2); transform: translateY(-8px) scale(.98); opacity: 0; pointer-events: none; touch-action: pan-y; transition: transform 420ms var(--spring), opacity 180ms var(--ease); z-index: 200; --sheet-drag: 0px; }
+  #settings-sheet[data-open="true"] { transform: translateY(var(--sheet-drag)) scale(1); opacity: 1; pointer-events: auto; }
+  #settings-sheet[data-open="false"], #command-palette[data-open="false"] { content-visibility: hidden; }
+  #settings-sheet[data-dragging="true"] { transition: none; }
+  #sheet-grabber { display: none; width: 36px; height: 4px; margin: -1px auto 14px; border-radius: 999px; background: currentColor; opacity: .22; }
+  #settings-sheet h2 { margin: 0; font-size: 18px; letter-spacing: -.012em; }
+  #settings-sheet p { margin: 5px 0 16px; color: var(--label-secondary); font-size: 12px; line-height: 1.55; }
+  .sheet-section { margin-top: 16px; }
+  .sheet-section:first-of-type { margin-top: 0; }
+  .sheet-section-heading { margin: 0 0 8px; color: var(--label-tertiary); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .sheet-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+  .sheet-actions .btn { width: 100%; min-width: 0; justify-content: center; padding: 0 8px; }
+  .sheet-actions .btn-label { overflow: hidden; text-overflow: ellipsis; }
+  .setting-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; min-height: 48px; border-top: 1px solid var(--separator); }
+  .setting-row label { font-size: 13px; font-weight: 600; }
+  .setting-row small { display: block; margin-top: 2px; color: var(--label-secondary); font-size: 11px; font-weight: 400; }
+  .setting-row input[type="range"] { width: 132px; accent-color: var(--accent); }
+  .setting-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); }
+  #settings-close { width: 100%; margin-top: 16px; justify-content: center; }
+  html[data-theme^="classic-"] #settings-sheet, html[data-theme="high-contrast"] #settings-sheet { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--chrome-solid); }
+  #action-dock {
+    min-width: 0; min-height: 48px; padding: 8px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px;
+    background: var(--surface); border: 1px solid var(--separator); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.10); --lens-x: 50%; --lens-y: 50%;
+    overflow: visible; overscroll-behavior: contain;
+  }
+  #action-dock .dock-group { flex: 1 1 180px; min-width: 170px; justify-content: flex-start; }
+  #action-dock .dock-divider { display: block; }
+  #action-dock > .dock-btn { flex: 0 1 auto; }
+  html[data-theme^="classic-"] #bar,
   html[data-theme="high-contrast"] #bar, html[data-theme="high-contrast"] #action-dock {
     backdrop-filter: none; -webkit-backdrop-filter: none;
   }
+  html[data-theme="tokyo-night"] #bar,
+  html[data-theme="nord"] #bar,
+  html[data-theme="dracula"] #bar,
+  html[data-theme="solarized-dark"] #bar,
+  html[data-theme="catppuccin-mocha"] #bar,
+  html[data-theme="monokai"] #bar,
+  html[data-theme="tokyo-night"] #float-btn, html[data-theme="nord"] #float-btn,
+  html[data-theme="dracula"] #float-btn, html[data-theme="solarized-dark"] #float-btn,
+  html[data-theme="catppuccin-mocha"] #float-btn, html[data-theme="monokai"] #float-btn {
+    background: var(--chrome-solid); backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,.18);
+  }
   html[data-theme^="classic-"] #bar, html[data-theme^="classic-"] #action-dock,
   html[data-theme="high-contrast"] #bar, html[data-theme="high-contrast"] #action-dock { box-shadow: var(--glass-shadow); }
-  html.has-liquid-filter[data-theme$="glass"] #bar,
-  html.has-liquid-filter[data-theme$="glass"] #action-dock {
-    backdrop-filter: url("#liquid-glass-filter") blur(22px) saturate(1.18);
-    -webkit-backdrop-filter: blur(22px) saturate(1.18);
+  html.has-liquid-filter[data-theme$="glass"] #bar {
+    backdrop-filter: url("#liquid-glass-filter") saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast));
+    -webkit-backdrop-filter: blur(4px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast));
   }
   html.has-liquid-filter[data-theme$="glass"] #pad-frame {
-    backdrop-filter: url("#liquid-glass-filter") blur(18px) saturate(1.18);
-    -webkit-backdrop-filter: blur(18px) saturate(1.18);
+    /* SVG filters are not a reliable backdrop source across Chromium/WebKit;
+       keep the readable live blur path and express lensing in the rim layers. */
+    backdrop-filter: blur(10px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast));
+    -webkit-backdrop-filter: blur(10px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast));
   }
   .dock-group { display: flex; align-items: center; gap: 4px; }
   .dock-divider { width: 1px; height: 26px; background: var(--separator); margin: 0 4px; }
-  .dock-btn { min-width: 42px; min-height: 42px; border: 0; border-radius: 10px; background: transparent; color: var(--label); font: inherit; font-weight: 650; cursor: pointer; touch-action: manipulation; transition: background 140ms var(--ease), transform 120ms var(--ease); }
+  .dock-btn { min-width: 42px; min-height: 42px; flex: none; white-space: nowrap; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--label); font: inherit; font-weight: 650; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition-property: background-color, transform; transition-duration: var(--press-up-ms); transition-timing-function: var(--ease); }
   .dock-btn:hover { background: rgba(255, 255, 255, .08); }
-  .dock-btn:active { background: rgba(255, 255, 255, .14); transform: scale(.94); }
+  .dock-btn:active { background: rgba(255, 255, 255, .14); transform: translateY(.5px) scale(var(--press-scale)); transition-duration: var(--press-down-ms); }
   .dock-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(10, 132, 255, .35); }
   #scale-value { min-width: 62px; text-align: center; color: var(--label-secondary); font-size: 12px; font-variant-numeric: tabular-nums; }
   #haptic-btn[data-on="false"] { color: var(--label-tertiary); }
   .dock-caption { color: var(--label-tertiary); font-size: 11px; padding: 0 5px; white-space: nowrap; }
-  #theme-menu { position: fixed; top: calc(env(safe-area-inset-top) + 76px); right: 14px; z-index: 180; display: grid; gap: 3px; min-width: 178px; padding: 7px; border: 1px solid var(--separator); border-radius: 14px; background: var(--chrome); box-shadow: var(--glass-shadow); backdrop-filter: blur(22px) saturate(1.18); -webkit-backdrop-filter: blur(22px) saturate(1.18); }
+  #theme-menu { position: fixed; top: calc(env(safe-area-inset-top) + 76px); right: 14px; z-index: 230; display: grid; gap: 3px; min-width: 178px; padding: 7px; border: 1px solid var(--separator); border-radius: 14px; background: var(--chrome); box-shadow: var(--glass-shadow); backdrop-filter: blur(22px) saturate(1.18); -webkit-backdrop-filter: blur(22px) saturate(1.18); }
+  #theme-menu { max-height: min(72vh, 560px); overflow-y: auto; overscroll-behavior: contain; }
   #theme-menu[hidden] { display: none; }
-  #theme-menu button { min-height: 40px; padding: 0 11px; border-radius: 9px; border: 0; background: transparent; color: var(--label); text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
+  .theme-group-label { padding: 7px 11px 3px; color: var(--label-tertiary); font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  #theme-menu button { min-height: 40px; padding: 0 11px; border-radius: var(--radius-sm); border: 0; background: transparent; color: var(--label); text-align: left; font: inherit; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 9px; -webkit-tap-highlight-color: transparent; transition-property: background-color, transform; transition-duration: var(--press-up-ms); transition-timing-function: var(--ease); }
+  #theme-menu button[data-theme-choice]::before { content: ""; width: 20px; height: 20px; flex: none; border-radius: 7px; border: 1px solid rgba(127,127,127,.24); box-shadow: inset 0 1px 0 rgba(255,255,255,.48); }
+  #theme-menu button[data-theme-choice="light-glass"]::before { background: linear-gradient(135deg, #8bdcff, #ffffff 54%, #ffd9c1); }
+  #theme-menu button[data-theme-choice="dark-glass"]::before { background: linear-gradient(135deg, #2f75a0, #131923 56%, #8e4c48); }
+  #theme-menu button[data-theme-choice="ocean-glass"]::before { background: linear-gradient(135deg, #00a7ff, #e6fbff 52%, #00d9c4); }
+  #theme-menu button[data-theme-choice="sunset-glass"]::before { background: linear-gradient(135deg, #ff7051, #fff0e8 52%, #ffc05a); }
+  #theme-menu button[data-theme-choice="aurora-glass"]::before { background: linear-gradient(135deg, #55b7ff, #e9fff9 52%, #20c9a1); }
+  #theme-menu button[data-theme-choice="graphite-glass"]::before { background: linear-gradient(135deg, #2c77b4, #151b24 52%, #af4758); }
+  #theme-menu button[data-theme-choice="custom-glass"]::before { background: linear-gradient(135deg, #244f77, #11151d 52%, #a04678); border-color: #8ed8ff; }
+  #theme-menu button[data-theme-choice="tokyo-night"]::before { background: #1f2335; border-color: #3b4261; }
+  #theme-menu button[data-theme-choice="nord"]::before { background: #3b4252; border-color: #88c0d0; }
+  #theme-menu button[data-theme-choice="dracula"]::before { background: #343746; border-color: #bd93f9; }
+  #theme-menu button[data-theme-choice="solarized-dark"]::before { background: #073642; border-color: #2aa198; }
+  #theme-menu button[data-theme-choice="catppuccin-mocha"]::before { background: #313244; border-color: #89b4fa; }
+  #theme-menu button[data-theme-choice="monokai"]::before { background: #3e3d32; border-color: #a6e22e; }
+  #theme-menu button[data-theme-choice="classic-light"]::before { background: #ffffff; }
+  #theme-menu button[data-theme-choice="classic-dark"]::before { background: #1c1c1e; border-color: #636366; }
+  #theme-menu button[data-theme-choice="high-contrast"]::before { background: #ffffff; border: 2px solid #000000; box-shadow: none; }
   #theme-menu button:hover, #theme-menu button[aria-checked="true"] { background: rgba(127,127,127,.14); }
+  #theme-menu button:active { background: rgba(127,127,127,.20); transform: translateY(.5px) scale(var(--press-scale)); transition-duration: var(--press-down-ms); }
+  #command-palette-backdrop { position: fixed; inset: 0; z-index: 240; background: rgba(0,0,0,.18); opacity: 0; pointer-events: none; transition: opacity 180ms var(--ease); }
+  #command-palette-backdrop[data-open="true"] { opacity: 1; pointer-events: auto; }
+  #command-palette { position: fixed; z-index: 250; left: 50%; top: 18%; width: min(520px, calc(100vw - 28px)); max-height: min(520px, 68vh); overflow: auto; transform: translate(-50%, -12px) scale(.98); opacity: 0; pointer-events: none; padding: 10px; border: 1px solid var(--separator); border-radius: 18px; color: var(--label); background: var(--chrome); box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge); backdrop-filter: blur(28px) saturate(1.22); -webkit-backdrop-filter: blur(28px) saturate(1.22); transition: transform 300ms var(--spring), opacity 180ms var(--ease); }
+  html.has-liquid-filter[data-theme$="glass"] #command-palette { backdrop-filter: url("#liquid-glass-filter") saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast)); }
+  #command-palette[data-open="true"] { transform: translate(-50%, 0) scale(1); opacity: 1; pointer-events: auto; }
+  #command-search { width: 100%; min-height: 46px; border: 0; border-bottom: 1px solid var(--separator); outline: 0; background: transparent; color: var(--label); font: inherit; font-size: 15px; padding: 0 10px; }
+  #command-list { display: grid; gap: 3px; padding: 8px 0 2px; }
+  .command-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--label); font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; transition-property: background-color, transform; transition-duration: var(--press-up-ms); transition-timing-function: var(--ease); }
+  .command-item:hover, .command-item[data-active="true"] { background: rgba(127,127,127,.14); }
+  .command-item:active { background: rgba(127,127,127,.20); transform: translateY(.5px) scale(var(--press-scale)); transition-duration: var(--press-down-ms); }
+  .command-item small { margin-left: auto; color: var(--label-tertiary); font-size: 11px; }
   @media (max-width: 620px) {
     #host-hint, #bar .diagnostic { display: none; }
-    #bar { left: 8px; right: 8px; }
-    #pad-frame { left: 10px; right: 10px; top: 78px; bottom: 86px; }
-    #action-dock { left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom) + 8px); justify-content: flex-start; overflow-x: auto; }
+    #bar { left: 8px; right: 8px; min-height: 52px; padding-left: 10px; gap: 7px; overflow: hidden; justify-content: flex-start; }
+    #bar .sp { display: block; }
+    #bar > .brand-mark, #bar > #dot, #bar > .status-stack, #bar > .bar-actions { flex: 0 0 auto; }
+    #bar[data-collapsed="true"] { left: auto; right: 10px; width: 174px; min-height: 40px; height: 40px; }
+    #pad-frame { left: 10px; right: 10px; top: 66px; bottom: 18px; }
+    html[data-chrome="compact"]:not([data-fullscreen="true"]) #pad-frame { top: 12px; }
+    #action-dock { justify-content: flex-start; max-width: none; flex: 0 0 auto; overflow: visible; }
+    #deep-press { bottom: 13%; min-width: 168px; }
     .dock-caption { display: none; }
+    #bar .btn-label { display: none; }
+    #bar .btn { min-width: 42px; width: 42px; padding-left: 0; padding-right: 0; justify-content: center; }
+    #settings-sheet { right: 0; top: auto; bottom: 0; width: 100%; max-height: min(88vh, 680px); border-radius: 22px 22px 0 0; padding: 14px 18px calc(18px + env(safe-area-inset-bottom)); transform: translateY(calc(100% + 18px)); }
+    #sheet-grabber { display: block; }
+    #settings-sheet[data-open="true"] { transform: translateY(var(--sheet-drag)); }
+    #command-palette { top: 10%; max-height: 72vh; }
+    #theme-menu { top: auto; bottom: calc(16px + env(safe-area-inset-bottom)); right: 14px; max-height: 70vh; }
   }
   @media (prefers-reduced-transparency: reduce) {
     #bar, #action-dock, #float-btn, #theme-menu, #pad-frame { background: var(--chrome-solid); backdrop-filter: none; -webkit-backdrop-filter: none; filter: none !important; }
   }
+  html[data-material="solid"] #pad-container { background-image: var(--backdrop-photo); background-size: cover; background-position: center; background-repeat: no-repeat; }
+  html[data-material="solid"] #pad-frame { background-color: var(--pad-glass); background-image: var(--pad-texture); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--separator); }
+  html[data-material="solid"] #pad-frame::before, html[data-material="solid"] #pad-frame::after { display: none; }
+  html[data-material="solid"] #bar, html[data-material="solid"] #action-dock, html[data-material="solid"] #theme-menu, html[data-material="solid"] #command-palette, html[data-material="solid"] #settings-sheet { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  html[data-material="solid"] #theme-menu, html[data-material="solid"] #command-palette, html[data-material="solid"] #settings-sheet { background: var(--chrome-solid); }
+  html[data-material="solid"] #deep-press { background: var(--surface); border-color: var(--separator); box-shadow: 0 1px 3px rgba(0,0,0,.16); }
+  html[data-theme="tokyo-night"] #deep-press, html[data-theme="nord"] #deep-press,
+  html[data-theme="dracula"] #deep-press, html[data-theme="solarized-dark"] #deep-press,
+  html[data-theme="catppuccin-mocha"] #deep-press, html[data-theme="monokai"] #deep-press {
+    background: var(--surface); border-color: var(--separator); box-shadow: 0 1px 3px rgba(0,0,0,.18);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  html[data-theme="tokyo-night"] #settings-sheet, html[data-theme="nord"] #settings-sheet,
+  html[data-theme="dracula"] #settings-sheet, html[data-theme="solarized-dark"] #settings-sheet,
+  html[data-theme="catppuccin-mocha"] #settings-sheet, html[data-theme="monokai"] #settings-sheet,
+  html[data-theme="tokyo-night"] #theme-menu, html[data-theme="nord"] #theme-menu,
+  html[data-theme="dracula"] #theme-menu, html[data-theme="solarized-dark"] #theme-menu,
+  html[data-theme="catppuccin-mocha"] #theme-menu, html[data-theme="monokai"] #theme-menu,
+  html[data-theme="tokyo-night"] #command-palette, html[data-theme="nord"] #command-palette,
+  html[data-theme="dracula"] #command-palette, html[data-theme="solarized-dark"] #command-palette,
+  html[data-theme="catppuccin-mocha"] #command-palette, html[data-theme="monokai"] #command-palette {
+    background: var(--chrome-solid); backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    #deep-press, #settings-sheet { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--chrome-solid); }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 420ms; animation-timing-function: var(--spring); }
+    ::view-transition-old(root) { animation-name: theme-old; }
+    ::view-transition-new(root) { animation-name: theme-new; }
+    @keyframes theme-old { to { opacity: .7; } }
+    @keyframes theme-new { from { clip-path: circle(0 at var(--theme-x, 92%) var(--theme-y, 8%)); } to { clip-path: circle(150vmax at var(--theme-x, 92%) var(--theme-y, 8%)); } }
   }
 </style>
 </head>
@@ -220,33 +500,156 @@
   <canvas id="pad-canvas"></canvas>
 </div>
 
-<div id="bar">
+<div id="bar" data-collapsed="false">
   <div class="brand-mark" aria-hidden="true"></div>
-  <span id="dot"></span>
+  <span id="dot" aria-hidden="true"></span>
   <div class="status-stack"><span class="eyebrow">Mac touchpad</span><span id="st">连接中…</span></div>
   <span class="sp"></span>
   <span id="host-hint"></span>
-  <a class="btn diagnostic" href="/test" aria-label="打开手势诊断测试"><span aria-hidden="true">⌘</span><span class="btn-label">测试</span></a>
-  <button class="btn" id="theme-btn" aria-label="切换主题" aria-expanded="false"><span aria-hidden="true">◐</span><span class="btn-label">主题</span></button>
-  <button class="btn" id="fs-btn" aria-label="进入全屏"><span aria-hidden="true">⛶</span><span class="btn-label">全屏</span></button>
+  <div class="bar-actions">
+    <button class="btn" id="settings-btn" aria-label="打开控制中心" aria-controls="settings-sheet" aria-expanded="false"><span aria-hidden="true">☷</span><span class="btn-label">控制中心</span></button>
+    <button class="btn" id="fs-btn" aria-label="进入全屏"><span aria-hidden="true">⛶</span><span class="btn-label">全屏</span></button>
+  </div>
 </div>
 
-<nav id="action-dock" aria-label="触控板控制">
-  <div class="dock-group" aria-label="灵敏度">
-    <span class="dock-caption">灵敏度</span>
-    <button class="dock-btn" id="smaller" aria-label="降低灵敏度">−</button>
-    <span id="scale-value">100%</span>
-    <button class="dock-btn" id="bigger" aria-label="提高灵敏度">＋</button>
-  </div>
-  <span class="dock-divider" aria-hidden="true"></span>
-  <button class="dock-btn" id="haptic-btn" data-on="true" aria-pressed="true">震动开</button>
-  <button class="dock-btn" id="pad-status-btn" aria-label="查看连接状态">连接状态</button>
-</nav>
-
 <button id="float-btn" style="display:none;" aria-label="退出全屏">设置</button>
+<button id="deep-press" type="button" aria-pressed="false"><span id="deep-press-label">深按</span></button>
+<div id="settings-backdrop" data-open="false"></div>
+<aside id="settings-sheet" role="dialog" aria-modal="true" tabindex="-1" aria-label="触控板控制中心" data-open="false" aria-hidden="true">
+  <div id="sheet-grabber" aria-hidden="true"></div>
+  <h2>控制中心</h2>
+  <p>把手机变成更接近 Mac 的触控板。设置保存在本机，不会上传触摸数据。</p>
+  <section class="sheet-section" aria-labelledby="quick-controls-heading">
+    <h3 class="sheet-section-heading" id="quick-controls-heading">快速控制</h3>
+    <nav id="action-dock" aria-label="触控板快速控制">
+      <div class="dock-group" aria-label="灵敏度">
+        <span class="dock-caption">灵敏度</span>
+        <button class="dock-btn" id="smaller" aria-label="降低灵敏度">−</button>
+        <span id="scale-value">100%</span>
+        <button class="dock-btn" id="bigger" aria-label="提高灵敏度">＋</button>
+      </div>
+      <span class="dock-divider" aria-hidden="true"></span>
+      <button class="dock-btn" id="haptic-btn" data-on="true" aria-pressed="true">震动开</button>
+      <button class="dock-btn" id="pad-status-btn" aria-label="查看连接状态">连接状态</button>
+    </nav>
+  </section>
+  <section class="sheet-section" aria-labelledby="profile-heading">
+    <h3 class="sheet-section-heading" id="profile-heading">触控与按压</h3>
+    <div class="setting-row">
+    <div><label for="profile-select">使用模式</label><small>快速切换一组适合的灵敏度</small></div>
+    <select id="profile-select" aria-label="使用模式">
+      <option value="precise">精准</option><option value="natural">自然</option><option value="presentation">演示</option><option value="custom">自定义</option>
+    </select>
+    </div>
+    <div class="setting-row">
+    <div><label for="sensitivity-range">指针灵敏度</label><small id="sensitivity-label">100%</small></div>
+    <input id="sensitivity-range" type="range" min="55" max="160" step="1" value="100" />
+    </div>
+    <div class="setting-row">
+    <div><label for="touch-points">触点显示</label><small>显示当前手指位置、拖尾和方向高光</small></div>
+    <input id="touch-points" type="checkbox" checked />
+    </div>
+    <div class="setting-row">
+    <div><label for="deep-hold-range">深按确认时长</label><small id="deep-hold-label">650 ms</small></div>
+    <input id="deep-hold-range" type="range" min="250" max="1600" step="10" value="650" />
+    </div>
+    <div class="setting-row">
+    <div><label for="deep-width-range">深按条宽度</label><small id="deep-width-label">190 px</small></div>
+    <input id="deep-width-range" type="range" min="140" max="420" step="2" value="190" />
+    </div>
+    <div class="setting-row">
+    <div><label for="deep-height-range">深按条高度</label><small id="deep-height-label">48 px</small></div>
+    <input id="deep-height-range" type="range" min="36" max="96" step="2" value="48" />
+    </div>
+    <div class="setting-row">
+    <div><label for="deep-position-range">深按条位置</label><small id="deep-position-label">底部 12%</small></div>
+    <input id="deep-position-range" type="range" min="8" max="32" step="1" value="12" />
+    </div>
+    <div class="setting-row">
+    <div><label for="deep-x-range">深按条横向位置</label><small id="deep-x-label">50%</small></div>
+    <input id="deep-x-range" type="range" min="10" max="90" step="1" value="50" />
+    </div>
+    <div class="setting-row">
+    <div><label for="deep-enabled">显示深按条</label><small>按住后发送左键按下，松开时释放</small></div>
+    <input id="deep-enabled" type="checkbox" checked />
+    </div>
+    <button class="btn" id="deep-editor-toggle" type="button" aria-expanded="false">编辑深按条</button>
+    <div class="deep-editor" id="deep-editor" hidden>
+      <small>拖动预览修改位置，拖右下角修改宽高</small>
+      <div class="deep-editor-canvas" id="deep-editor-canvas"><button id="deep-editor-preview" type="button">深按<span class="deep-editor-handle" aria-hidden="true"></span></button></div>
+    </div>
+  </section>
+  <section class="sheet-section" id="custom-glass-settings" aria-labelledby="custom-glass-heading" hidden>
+    <h3 class="sheet-section-heading" id="custom-glass-heading">自定义液态玻璃</h3>
+    <div class="setting-row">
+      <div><label for="glass-refraction">折射强度</label><small id="glass-refraction-label">38</small></div>
+      <input id="glass-refraction" type="range" min="0" max="60" step="1" value="38" />
+    </div>
+    <div class="setting-row">
+      <div><label for="glass-saturation-range">玻璃饱和度</label><small id="glass-saturation-label">148%</small></div>
+      <input id="glass-saturation-range" type="range" min="100" max="180" step="1" value="148" />
+    </div>
+    <div class="setting-row">
+      <div><label for="glass-brightness-range">玻璃亮度</label><small id="glass-brightness-label">96%</small></div>
+      <input id="glass-brightness-range" type="range" min="90" max="120" step="1" value="96" />
+    </div>
+    <div class="setting-row">
+      <div><label for="glass-highlight-range">边缘高光</label><small id="glass-highlight-label">100%</small></div>
+      <input id="glass-highlight-range" type="range" min="40" max="140" step="1" value="100" />
+    </div>
+  </section>
+  <section class="sheet-section" aria-labelledby="background-heading">
+    <h3 class="sheet-section-heading" id="background-heading">背景</h3>
+    <div class="setting-row">
+      <div><label for="background-select">壁纸</label><small>玻璃会根据壁纸自动调整对比度</small></div>
+      <select id="background-select" aria-label="选择背景壁纸">
+        <option value="none">主题背景</option>
+        <option value="mountain">晨光山野</option>
+        <option value="night">霓虹夜城</option>
+        <option value="canyon">荒野公路</option>
+        <option value="anime">二次元红幕</option>
+        <option value="custom">自定义图片</option>
+      </select>
+    </div>
+    <div class="setting-row">
+      <div><label for="background-file">本地图片</label><small id="background-file-label">选择一张图片</small></div>
+      <button class="btn" id="background-file-btn" type="button">选择</button>
+      <input id="background-file" type="file" accept="image/*" hidden />
+    </div>
+    <button class="btn" id="background-reset" type="button">恢复主题背景</button>
+  </section>
+  <section class="sheet-section" aria-labelledby="tools-heading">
+    <h3 class="sheet-section-heading" id="tools-heading">工具</h3>
+    <div class="sheet-actions">
+      <a class="btn diagnostic" href="/test" aria-label="打开手势诊断测试"><span aria-hidden="true">⌘</span><span class="btn-label">测试</span></a>
+      <button class="btn" id="theme-btn" aria-label="切换主题" aria-expanded="false"><span aria-hidden="true">◐</span><span class="btn-label">主题</span></button>
+      <button class="btn" id="command-btn" aria-label="打开命令面板" aria-keyshortcuts="Meta+K Control+K"><span aria-hidden="true">⌘K</span><span class="btn-label">命令</span></button>
+    </div>
+  </section>
+  <button class="btn" id="settings-close" type="button">完成</button>
+</aside>
+<div id="command-palette-backdrop" data-open="false"></div>
+<section id="command-palette" role="dialog" aria-modal="true" aria-label="命令面板" data-open="false" aria-hidden="true">
+  <input id="command-search" type="search" autocomplete="off" spellcheck="false" placeholder="搜索动作…" aria-label="搜索动作" />
+  <div id="command-list" role="menu"></div>
+</section>
 <div id="theme-menu" role="menu" hidden aria-label="外观主题">
-  <button type="button" role="menuitemradio" data-theme-choice="light-glass" aria-checked="true">浅色玻璃</button>
-  <button type="button" role="menuitemradio" data-theme-choice="dark-glass" aria-checked="false">深色玻璃</button>
+  <div class="theme-group-label">液态玻璃</div>
+  <button type="button" role="menuitemradio" data-theme-choice="light-glass" aria-checked="true">晨曦玻璃</button>
+  <button type="button" role="menuitemradio" data-theme-choice="dark-glass" aria-checked="false">夜幕玻璃</button>
+  <button type="button" role="menuitemradio" data-theme-choice="ocean-glass" aria-checked="false">海洋玻璃</button>
+  <button type="button" role="menuitemradio" data-theme-choice="sunset-glass" aria-checked="false">日落玻璃</button>
+  <button type="button" role="menuitemradio" data-theme-choice="aurora-glass" aria-checked="false">极光玻璃</button>
+  <button type="button" role="menuitemradio" data-theme-choice="graphite-glass" aria-checked="false">石墨玻璃</button>
+  <button type="button" role="menuitemradio" data-theme-choice="custom-glass" aria-checked="false">自定义液态玻璃</button>
+  <div class="theme-group-label">编辑器主题</div>
+  <button type="button" role="menuitemradio" data-theme-choice="tokyo-night" aria-checked="false">Tokyo Night</button>
+  <button type="button" role="menuitemradio" data-theme-choice="nord" aria-checked="false">Nord</button>
+  <button type="button" role="menuitemradio" data-theme-choice="dracula" aria-checked="false">Dracula</button>
+  <button type="button" role="menuitemradio" data-theme-choice="solarized-dark" aria-checked="false">Solarized Dark</button>
+  <button type="button" role="menuitemradio" data-theme-choice="catppuccin-mocha" aria-checked="false">Catppuccin Mocha</button>
+  <button type="button" role="menuitemradio" data-theme-choice="monokai" aria-checked="false">Monokai</button>
+  <div class="theme-group-label">经典与辅助</div>
   <button type="button" role="menuitemradio" data-theme-choice="classic-light" aria-checked="false">经典浅色</button>
   <button type="button" role="menuitemradio" data-theme-choice="classic-dark" aria-checked="false">经典深色</button>
   <button type="button" role="menuitemradio" data-theme-choice="high-contrast" aria-checked="false">高对比</button>
@@ -255,21 +658,127 @@
 <script>
 "use strict";
 (() => {
-  const MM_PER_CSS_PX = 25.4 / 96;
+  // The browser surface has no trustworthy physical DPI. Use the same
+  // calibrated virtual width as the receiver so edge gestures remain an
+  // actual edge gesture on every viewport size instead of changing meaning
+  // with the phone's CSS pixel width.
+  const VIRTUAL_SURFACE_WIDTH_MM = 65;
   const $ = id => document.getElementById(id);
   const dot = $("dot"), st = $("st"), bar = $("bar"), dock = $("action-dock"), floatBtn = $("float-btn");
   const hostHint = $("host-hint"), padStatusBtn = $("pad-status-btn"), padFrame = $("pad-frame");
   const canvas = $("pad-canvas"), ctx = canvas.getContext("2d");
   const themeBtn = $("theme-btn"), themeMenu = $("theme-menu");
+  const settingsBtn = $("settings-btn"), settingsSheet = $("settings-sheet");
+  const settingsBackdrop = $("settings-backdrop"), settingsClose = $("settings-close");
+  const commandBtn = $("command-btn"), commandPalette = $("command-palette");
+  const commandBackdrop = $("command-palette-backdrop"), commandSearch = $("command-search");
+  const commandList = $("command-list");
+  const profileSelect = $("profile-select"), sensitivityRange = $("sensitivity-range");
+  const sensitivityLabel = $("sensitivity-label"), touchPointsInput = $("touch-points");
+  const backgroundSelect = $("background-select"), backgroundFile = $("background-file");
+  const backgroundFileBtn = $("background-file-btn"), backgroundFileLabel = $("background-file-label");
+  const backgroundReset = $("background-reset");
+  const deepHoldRange = $("deep-hold-range"), deepHoldLabel = $("deep-hold-label");
+  const deepWidthRange = $("deep-width-range"), deepWidthLabel = $("deep-width-label");
+  const deepPositionRange = $("deep-position-range"), deepPositionLabel = $("deep-position-label");
+  const deepXRange = $("deep-x-range"), deepXLabel = $("deep-x-label");
+  const deepHeightRange = $("deep-height-range"), deepHeightLabel = $("deep-height-label");
+  const deepEnabledInput = $("deep-enabled"), deepPressButton = $("deep-press");
+  const deepPressLabel = $("deep-press-label");
+  const deepEditorToggle = $("deep-editor-toggle"), deepEditor = $("deep-editor");
+  const deepEditorCanvas = $("deep-editor-canvas"), deepEditorPreview = $("deep-editor-preview");
+  const deepEditorHandle = deepEditorPreview.querySelector(".deep-editor-handle");
+  const liquidDisplacement = $("liquid-displacement");
+  const customGlassSettings = $("custom-glass-settings");
+  const glassRefraction = $("glass-refraction"), glassRefractionLabel = $("glass-refraction-label");
+  const glassSaturation = $("glass-saturation-range"), glassSaturationLabel = $("glass-saturation-label");
+  const glassBrightness = $("glass-brightness-range"), glassBrightnessLabel = $("glass-brightness-label");
+  const glassHighlight = $("glass-highlight-range"), glassHighlightLabel = $("glass-highlight-label");
+  const THEME_KEYS = new Set([
+    "light-glass", "dark-glass", "ocean-glass", "sunset-glass", "aurora-glass", "graphite-glass", "custom-glass",
+    "tokyo-night", "nord", "dracula",
+    "solarized-dark", "catppuccin-mocha", "monokai",
+    "classic-light", "classic-dark", "high-contrast",
+  ]);
+  const LIQUID_FILTER_SCALE = Object.freeze({
+    "light-glass": 24, "dark-glass": 30, "ocean-glass": 34, "sunset-glass": 30, "aurora-glass": 34, "graphite-glass": 32, "custom-glass": 38,
+  });
 
-  const theme = localStorage.getItem("atp_theme") || "light-glass";
-  document.documentElement.dataset.theme = theme;
+  const storedTheme = localStorage.getItem("atp_theme");
+  const theme = THEME_KEYS.has(storedTheme) ? storedTheme : "light-glass";
+  function syncGlassControls() {
+    const custom = document.documentElement.dataset.theme === "custom-glass";
+    customGlassSettings.hidden = !custom;
+    if (!custom) return;
+    const refraction = Math.min(60, Math.max(0, Number(localStorage.getItem("atp_custom_glass_refraction") || 38)));
+    const saturation = Math.min(180, Math.max(100, Number(localStorage.getItem("atp_custom_glass_saturation") || 148)));
+    const brightness = Math.min(120, Math.max(90, Number(localStorage.getItem("atp_custom_glass_brightness") || 96)));
+    const highlight = Math.min(140, Math.max(40, Number(localStorage.getItem("atp_custom_glass_highlight") || 100)));
+    glassRefraction.value = String(refraction);
+    glassSaturation.value = String(saturation);
+    glassBrightness.value = String(brightness);
+    glassHighlight.value = String(highlight);
+    glassRefractionLabel.textContent = String(refraction);
+    glassSaturationLabel.textContent = `${saturation}%`;
+    glassBrightnessLabel.textContent = `${brightness}%`;
+    glassHighlightLabel.textContent = `${highlight}%`;
+    document.documentElement.style.setProperty("--glass-saturation", String(saturation / 100));
+    document.documentElement.style.setProperty("--glass-brightness", String(brightness / 100));
+    document.documentElement.style.setProperty("--glass-contrast", String(1 + (highlight - 100) / 500));
+    liquidDisplacement.setAttribute("scale", String(refraction));
+  }
+  function syncThemeRuntime(next) {
+    document.documentElement.dataset.theme = next;
+    document.documentElement.dataset.material = next.endsWith("-glass") ? "glass" : "solid";
+    liquidDisplacement.setAttribute("scale", String(LIQUID_FILTER_SCALE[next] || 24));
+    if (next !== "custom-glass") {
+      ["--glass-saturation", "--glass-brightness", "--glass-contrast"].forEach(name => document.documentElement.style.removeProperty(name));
+    }
+    syncGlassControls();
+  }
+  syncThemeRuntime(theme);
+
+  const BACKGROUND_URLS = Object.freeze({
+    mountain: "/assets/wallpaper_mountain.jpg",
+    night: "/assets/wallpaper_night.jpg",
+    canyon: "/assets/wallpaper_canyon.jpg",
+    anime: "/assets/wallpaper_anime.jpg",
+  });
+  const storedBackground = localStorage.getItem("atp_background") || "none";
+  let customBackground = localStorage.getItem("atp_custom_background") || "";
+  function applyBackground(key, persist = true) {
+    const url = key === "custom" ? customBackground : BACKGROUND_URLS[key];
+    document.documentElement.style.setProperty("--backdrop-photo", url ? `url(\"${url}\")` : "none");
+    if (backgroundSelect) backgroundSelect.value = key === "custom" ? (customBackground ? "custom" : "none") : key;
+    if (backgroundFileLabel) backgroundFileLabel.textContent = customBackground ? "已选择本地图片" : "选择一张图片";
+    if (persist) {
+      localStorage.setItem("atp_background", url ? key : "none");
+      if (key !== "custom" && !url) localStorage.removeItem("atp_custom_background");
+    }
+  }
+  applyBackground(storedBackground, false);
+  if (theme === "custom-glass" && storedBackground === "none" && !customBackground) {
+    applyBackground("anime", false);
+  }
   function syncThemeMenu() {
     themeMenu.querySelectorAll("[data-theme-choice]").forEach(button => {
       button.setAttribute("aria-checked", String(button.dataset.themeChoice === document.documentElement.dataset.theme));
     });
   }
   syncThemeMenu();
+  function applyTheme(next) {
+    const change = () => {
+      syncThemeRuntime(next);
+      localStorage.setItem("atp_theme", next);
+      syncThemeMenu();
+    };
+    if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const rect = themeBtn.getBoundingClientRect();
+      document.documentElement.style.setProperty("--theme-x", `${rect.left + rect.width / 2}px`);
+      document.documentElement.style.setProperty("--theme-y", `${rect.top + rect.height / 2}px`);
+      document.startViewTransition(change);
+    } else change();
+  }
   themeBtn.onclick = () => {
     const open = themeMenu.hidden;
     themeMenu.hidden = !open;
@@ -277,8 +786,7 @@
   };
   themeMenu.querySelectorAll("[data-theme-choice]").forEach(button => button.onclick = () => {
     const next = button.dataset.themeChoice;
-    document.documentElement.dataset.theme = next;
-    localStorage.setItem("atp_theme", next);
+    applyTheme(next);
     themeMenu.hidden = true;
     themeBtn.setAttribute("aria-expanded", "false");
     syncThemeMenu();
@@ -302,19 +810,23 @@
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
       const nx = (x + .5) / size * 2 - 1;
       const ny = (y + .5) / size * 2 - 1;
-      const r = Math.min(1, Math.hypot(nx, ny));
-      const edge = Math.max(0, (r - .52) / .48);
+      // A fourth-power superellipse approximates Apple's continuous squircle
+      // bezel better than a circular field once the surface becomes wide.
+      const r = Math.min(1, Math.pow(Math.pow(Math.abs(nx), 4) + Math.pow(Math.abs(ny), 4), .25));
+      const edge = Math.max(0, (r - .48) / .52);
       const falloff = edge * edge * (3 - 2 * edge);
       const i = (y * size + x) * 4;
-      image.data[i] = 128 + Math.round(nx * 34 * falloff);
-      image.data[i + 1] = 128 + Math.round(ny * 34 * falloff);
+      const rim = .84 + .16 * (1 - r);
+      image.data[i] = 128 + Math.round(nx * 44 * falloff * rim);
+      image.data[i + 1] = 128 + Math.round(ny * 44 * falloff * rim);
       image.data[i + 2] = 196;
       image.data[i + 3] = 255;
     }
     mapCtx.putImageData(image, 0, 0);
     const imageNode = document.getElementById("liquid-map");
-    imageNode.setAttributeNS("http://www.w3.org/1999/xlink", "href", map.toDataURL("image/png"));
-    imageNode.setAttribute("href", map.toDataURL("image/png"));
+    const mapUrl = map.toDataURL("image/png");
+    imageNode.setAttributeNS("http://www.w3.org/1999/xlink", "href", mapUrl);
+    imageNode.setAttribute("href", mapUrl);
     document.documentElement.classList.add("has-liquid-filter");
   }
   // Generate once even when a browser does not expose SVG backdrop filters;
@@ -322,15 +834,109 @@
   // readable blur fallback defined in CSS.
   buildLiquidMap();
 
-  let scale = parseFloat(localStorage.getItem("atp_scale") || "1") || 1;
+  const PROFILE_SCALE = Object.freeze({ precise: .78, natural: 1, presentation: 1.24 });
+  const storedProfile = localStorage.getItem("atp_profile");
+  const storedScale = parseFloat(localStorage.getItem("atp_scale"));
+  const hasStoredProfile = Object.prototype.hasOwnProperty.call(PROFILE_SCALE, storedProfile) || storedProfile === "custom";
+  let profile = hasStoredProfile ? storedProfile : Number.isFinite(storedScale) ? "custom" : "natural";
+  let scale = Number.isFinite(storedScale) ? storedScale : PROFILE_SCALE[profile] || 1;
   let hapticEnabled = localStorage.getItem("atp_haptic") !== "false";
+  let touchPointsVisible = localStorage.getItem("atp_touch_points") !== null
+    ? localStorage.getItem("atp_touch_points") !== "false"
+    : localStorage.getItem("atp_visual_effects") !== "false";
+  let deepEnabled = localStorage.getItem("atp_deep_enabled") !== "false";
+  let deepHoldMs = parseInt(localStorage.getItem("atp_deep_hold_ms") || "650", 10) || 650;
+  let deepWidth = parseInt(localStorage.getItem("atp_deep_width") || "190", 10) || 190;
+  let deepHeight = parseInt(localStorage.getItem("atp_deep_height") || "48", 10) || 48;
+  let deepBottom = parseInt(localStorage.getItem("atp_deep_bottom") || "12", 10) || 12;
+  let deepX = parseInt(localStorage.getItem("atp_deep_x") || "50", 10) || 50;
+  let deepPressed = false, deepPointerId = null, deepTimer = 0;
+  let deepProgressRaf = 0, deepStartedAt = 0;
 
   const clampScale = () => { scale = Math.min(1.6, Math.max(0.55, scale)); };
   const scaleValue = $("scale-value");
-  const updateScale = () => { scaleValue.textContent = `${Math.round(scale * 100)}%`; };
-  $("smaller").onclick = () => { scale /= 1.15; clampScale(); save(); updateScale(); };
-  $("bigger").onclick  = () => { scale *= 1.15; clampScale(); save(); updateScale(); };
+  function persistSettings() {
+    localStorage.setItem("atp_scale", String(scale));
+    localStorage.setItem("atp_profile", profile);
+    localStorage.setItem("atp_haptic", String(hapticEnabled));
+    localStorage.setItem("atp_touch_points", String(touchPointsVisible));
+    localStorage.removeItem("atp_visual_effects");
+    localStorage.setItem("atp_deep_enabled", String(deepEnabled));
+    localStorage.setItem("atp_deep_hold_ms", String(deepHoldMs));
+    localStorage.setItem("atp_deep_width", String(deepWidth));
+    localStorage.setItem("atp_deep_height", String(deepHeight));
+    localStorage.setItem("atp_deep_bottom", String(deepBottom));
+    localStorage.setItem("atp_deep_x", String(deepX));
+  }
+  function updateScale() {
+    clampScale();
+    const percent = Math.round(scale * 100);
+    scaleValue.textContent = `${percent}%`;
+    sensitivityRange.value = String(percent);
+    sensitivityLabel.textContent = `${percent}%`;
+  }
+  function setScale(next, fromProfile = false) {
+    scale = Number(next) || 1;
+    clampScale();
+    if (!fromProfile) profile = "custom";
+    profileSelect.value = profile;
+    updateScale();
+    persistSettings();
+  }
+  profileSelect.value = profile;
   updateScale();
+  sensitivityRange.addEventListener("input", () => setScale(Number(sensitivityRange.value) / 100));
+  profileSelect.addEventListener("change", () => {
+    profile = profileSelect.value;
+    if (PROFILE_SCALE[profile]) setScale(PROFILE_SCALE[profile], true);
+    else { updateScale(); persistSettings(); }
+  });
+  $("smaller").onclick = () => setScale(scale / 1.15);
+  $("bigger").onclick  = () => setScale(scale * 1.15);
+
+  backgroundSelect.addEventListener("change", () => {
+    const key = backgroundSelect.value;
+    if (key === "custom" && !customBackground) {
+      backgroundFile.click();
+      return;
+    }
+    applyBackground(key);
+  });
+  backgroundFileBtn.onclick = () => backgroundFile.click();
+  backgroundFile.addEventListener("change", () => {
+    const file = backgroundFile.files && backgroundFile.files[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    if (file.size > 4 * 1024 * 1024) {
+      backgroundFileLabel.textContent = "图片需小于 4 MB";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => {
+        const max = 1600;
+        const ratio = Math.min(1, max / Math.max(image.naturalWidth, image.naturalHeight));
+        const resized = document.createElement("canvas");
+        resized.width = Math.max(1, Math.round(image.naturalWidth * ratio));
+        resized.height = Math.max(1, Math.round(image.naturalHeight * ratio));
+        resized.getContext("2d").drawImage(image, 0, 0, resized.width, resized.height);
+        customBackground = resized.toDataURL("image/jpeg", .78);
+        try {
+          localStorage.setItem("atp_custom_background", customBackground);
+          applyBackground("custom");
+        } catch (_) {
+          backgroundFileLabel.textContent = "图片太大，无法保存";
+        }
+      };
+      image.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  });
+  backgroundReset.onclick = () => {
+    customBackground = "";
+    localStorage.removeItem("atp_custom_background");
+    applyBackground("none");
+  };
 
   const hapticBtn = $("haptic-btn");
   const updateHapticBtn = () => {
@@ -341,35 +947,324 @@
   updateHapticBtn();
   hapticBtn.onclick = () => {
     hapticEnabled = !hapticEnabled;
-    localStorage.setItem("atp_haptic", String(hapticEnabled));
+    persistSettings();
     updateHapticBtn();
     vibrate(15);
   };
+  touchPointsInput.checked = touchPointsVisible;
+  touchPointsInput.addEventListener("change", () => {
+    touchPointsVisible = touchPointsInput.checked;
+    persistSettings();
+    drawVisualizer();
+    kickVisual();
+  });
+  function persistCustomGlass() {
+    localStorage.setItem("atp_custom_glass_refraction", String(Number(glassRefraction.value)));
+    localStorage.setItem("atp_custom_glass_saturation", String(Number(glassSaturation.value)));
+    localStorage.setItem("atp_custom_glass_brightness", String(Number(glassBrightness.value)));
+    localStorage.setItem("atp_custom_glass_highlight", String(Number(glassHighlight.value)));
+    syncGlassControls();
+  }
+  [glassRefraction, glassSaturation, glassBrightness, glassHighlight].forEach(input => input.addEventListener("input", persistCustomGlass));
+  deepEnabledInput.checked = deepEnabled;
+  deepHoldRange.value = String(Math.min(1600, Math.max(250, deepHoldMs)));
+  deepHoldMs = Number(deepHoldRange.value);
+  deepHoldLabel.textContent = `${deepHoldMs} ms`;
+  deepWidthRange.value = String(Math.min(420, Math.max(140, deepWidth)));
+  deepWidth = Number(deepWidthRange.value);
+  deepHeightRange.value = String(Math.min(96, Math.max(36, deepHeight)));
+  deepHeight = Number(deepHeightRange.value);
+  deepPositionRange.value = String(Math.min(32, Math.max(8, deepBottom)));
+  deepBottom = Number(deepPositionRange.value);
+  deepXRange.value = String(Math.min(90, Math.max(10, deepX)));
+  deepX = Number(deepXRange.value);
+  function renderDeepEditor() {
+    if (!deepEditorPreview || !deepEditorCanvas) return;
+    const width = Math.min(deepWidth, Math.max(110, deepEditorCanvas.clientWidth - 12));
+    deepEditorPreview.style.width = `${width}px`;
+    deepEditorPreview.style.height = `${deepHeight}px`;
+    deepEditorPreview.style.left = `${deepX}%`;
+    deepEditorPreview.style.bottom = `${deepBottom}%`;
+  }
+  function updateDeepGeometry() {
+    deepPressButton.style.width = `${deepWidth}px`;
+    deepPressButton.style.minWidth = `${deepWidth}px`;
+    deepPressButton.style.height = `${deepHeight}px`;
+    deepPressButton.style.minHeight = `${deepHeight}px`;
+    deepPressButton.style.bottom = `${deepBottom}%`;
+    deepPressButton.style.left = `${deepX}%`;
+    deepWidthLabel.textContent = `${deepWidth} px`;
+    deepPositionLabel.textContent = `底部 ${deepBottom}%`;
+    deepXLabel.textContent = `${deepX}%`;
+    deepHeightLabel.textContent = `${deepHeight} px`;
+    renderDeepEditor();
+  }
+  updateDeepGeometry();
+  deepEnabledInput.addEventListener("change", () => {
+    deepEnabled = deepEnabledInput.checked;
+    if (!deepEnabled) cancelDeepPress();
+    updateDeepPressUI();
+    persistSettings();
+  });
+  deepHoldRange.addEventListener("input", () => {
+    deepHoldMs = Number(deepHoldRange.value);
+    deepHoldLabel.textContent = `${deepHoldMs} ms`;
+    persistSettings();
+  });
+  deepWidthRange.addEventListener("input", () => {
+    deepWidth = Number(deepWidthRange.value);
+    updateDeepGeometry();
+    persistSettings();
+  });
+  deepHeightRange.addEventListener("input", () => {
+    deepHeight = Number(deepHeightRange.value);
+    updateDeepGeometry();
+    persistSettings();
+  });
+  deepPositionRange.addEventListener("input", () => {
+    deepBottom = Number(deepPositionRange.value);
+    updateDeepGeometry();
+    persistSettings();
+  });
+  deepXRange.addEventListener("input", () => {
+    deepX = Number(deepXRange.value);
+    updateDeepGeometry();
+    persistSettings();
+  });
+  deepEditorToggle.addEventListener("click", () => {
+    const open = deepEditor.hidden;
+    deepEditor.hidden = !open;
+    deepEditorToggle.setAttribute("aria-expanded", String(open));
+    if (open) requestAnimationFrame(renderDeepEditor);
+  });
+  let deepEditorDrag = null;
+  deepEditorPreview.addEventListener("pointerdown", event => {
+    if (event.target.closest(".deep-editor-handle")) return;
+    event.preventDefault();
+    deepEditorPreview.setPointerCapture(event.pointerId);
+    deepEditorDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, left: deepX, bottom: deepBottom };
+  });
+  deepEditorPreview.addEventListener("pointermove", event => {
+    if (!deepEditorDrag || deepEditorDrag.id !== event.pointerId) return;
+    const rect = deepEditorCanvas.getBoundingClientRect();
+    deepX = Math.max(10, Math.min(90, Math.round(deepEditorDrag.left + (event.clientX - deepEditorDrag.x) / rect.width * 100)));
+    deepBottom = Math.max(8, Math.min(32, Math.round(deepEditorDrag.bottom - (event.clientY - deepEditorDrag.y) / rect.height * 100)));
+    deepXRange.value = String(deepX);
+    deepPositionRange.value = String(deepBottom);
+    updateDeepGeometry();
+  });
+  ["pointerup", "pointercancel"].forEach(type => deepEditorPreview.addEventListener(type, event => {
+    if (!deepEditorDrag || deepEditorDrag.id !== event.pointerId) return;
+    deepEditorDrag = null;
+    persistSettings();
+  }));
+  let deepEditorResize = null;
+  deepEditorHandle.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    deepEditorHandle.setPointerCapture(event.pointerId);
+    deepEditorResize = { id: event.pointerId, x: event.clientX, y: event.clientY, width: deepWidth, height: deepHeight };
+  });
+  deepEditorHandle.addEventListener("pointermove", event => {
+    if (!deepEditorResize || deepEditorResize.id !== event.pointerId) return;
+    const rect = deepEditorCanvas.getBoundingClientRect();
+    deepWidth = Math.max(140, Math.min(420, Math.round(deepEditorResize.width + (event.clientX - deepEditorResize.x) / rect.width * 260)));
+    deepHeight = Math.max(36, Math.min(96, Math.round(deepEditorResize.height + (event.clientY - deepEditorResize.y) / rect.height * 60)));
+    deepWidthRange.value = String(deepWidth);
+    deepHeightRange.value = String(deepHeight);
+    updateDeepGeometry();
+  });
+  ["pointerup", "pointercancel"].forEach(type => deepEditorHandle.addEventListener(type, event => {
+    if (!deepEditorResize || deepEditorResize.id !== event.pointerId) return;
+    deepEditorResize = null;
+    persistSettings();
+  }));
 
-  const save = () => localStorage.setItem("atp_scale", String(scale));
+  let settingsPreviouslyFocused = null;
+  function setSettingsOpen(open) {
+    if (!open) settingsSheet.style.setProperty("--sheet-drag", "0px");
+    document.body.dataset.settingsOpen = String(open);
+    settingsSheet.dataset.open = String(open);
+    settingsBackdrop.dataset.open = String(open);
+    settingsSheet.setAttribute("aria-hidden", String(!open));
+    settingsBtn.setAttribute("aria-expanded", String(open));
+    if (open) {
+      settingsPreviouslyFocused = document.activeElement;
+      requestAnimationFrame(() => settingsSheet.focus());
+    } else if (settingsPreviouslyFocused && typeof settingsPreviouslyFocused.focus === "function") {
+      settingsPreviouslyFocused.focus();
+      settingsPreviouslyFocused = null;
+    }
+  }
+  settingsBtn.onclick = () => setSettingsOpen(settingsSheet.dataset.open !== "true");
+  settingsClose.onclick = () => setSettingsOpen(false);
+  settingsBackdrop.addEventListener("pointerdown", event => {
+    event.preventDefault();
+    setSettingsOpen(false);
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      if (settingsSheet.dataset.open === "true") setSettingsOpen(false);
+      else if (!themeMenu.hidden) { themeMenu.hidden = true; themeBtn.setAttribute("aria-expanded", "false"); }
+      else if (commandPalette.dataset.open === "true") setCommandOpen(false);
+    }
+  });
+  let sheetPointer = null;
+  settingsSheet.addEventListener("pointerdown", event => {
+    if (window.innerWidth > 620 || event.target.closest("input, select, button")) return;
+    sheetPointer = { id: event.pointerId, y: event.clientY };
+    settingsSheet.dataset.dragging = "true";
+    try { settingsSheet.setPointerCapture(event.pointerId); } catch (_) {}
+  }, { passive: true });
+  settingsSheet.addEventListener("pointermove", event => {
+    if (!sheetPointer || sheetPointer.id !== event.pointerId) return;
+    const delta = Math.max(0, event.clientY - sheetPointer.y);
+    settingsSheet.style.setProperty("--sheet-drag", `${delta}px`);
+  }, { passive: true });
+  ["pointerup", "pointercancel"].forEach(type => settingsSheet.addEventListener(type, event => {
+    if (!sheetPointer || sheetPointer.id !== event.pointerId) return;
+    const delta = Math.max(0, event.clientY - sheetPointer.y);
+    settingsSheet.dataset.dragging = "false";
+    try { settingsSheet.releasePointerCapture(event.pointerId); } catch (_) {}
+    sheetPointer = null;
+    if (delta > Math.min(180, window.innerHeight * .22)) setSettingsOpen(false);
+    else settingsSheet.style.setProperty("--sheet-drag", "0px");
+  }, { passive: true }));
 
-  // Fullscreen toggle
+  const commands = [
+    { id: "settings", label: "打开控制中心", hint: "设置", run: () => setSettingsOpen(true) },
+    { id: "connect", label: "重新连接 Mac", hint: "网络", run: () => connect() },
+    { id: "fullscreen", label: "进入全屏触控模式", hint: "显示", run: () => toggleFullscreen(true) },
+    { id: "deep", label: "打开深按设置", hint: "触控", run: () => { setSettingsOpen(true); requestAnimationFrame(() => deepHoldRange.focus()); } },
+    { id: "haptic", label: "切换震动反馈", hint: () => hapticEnabled ? "已开启" : "已关闭", run: () => hapticBtn.click() },
+    { id: "theme", label: "切换到晨曦玻璃", hint: "外观", run: () => applyTheme("light-glass") },
+  ];
+  let commandIndex = 0;
+  let commandPreviouslyFocused = null;
+  function filteredCommands() {
+    const query = commandSearch.value.trim().toLocaleLowerCase();
+    return commands.filter(command => {
+      const hint = typeof command.hint === "function" ? command.hint() : command.hint;
+      return !query || `${command.label} ${hint}`.toLocaleLowerCase().includes(query);
+    });
+  }
+  function renderCommands() {
+    const visible = filteredCommands();
+    commandIndex = Math.max(0, Math.min(commandIndex, visible.length - 1));
+    commandList.replaceChildren();
+    visible.forEach((command, index) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "command-item";
+      item.setAttribute("role", "menuitem");
+      item.dataset.active = String(index === commandIndex);
+      const hint = typeof command.hint === "function" ? command.hint() : command.hint;
+      item.innerHTML = `<span>${command.label}</span><small>${hint}</small>`;
+      item.addEventListener("click", () => { setCommandOpen(false); command.run(); });
+      commandList.appendChild(item);
+    });
+    if (!visible.length) {
+      const empty = document.createElement("div");
+      empty.className = "command-item";
+      empty.setAttribute("aria-disabled", "true");
+      empty.textContent = "没有匹配的动作";
+      commandList.appendChild(empty);
+    }
+  }
+  function setCommandOpen(open) {
+    commandPalette.dataset.open = String(open);
+    commandBackdrop.dataset.open = String(open);
+    commandPalette.setAttribute("aria-hidden", String(!open));
+    commandBtn.setAttribute("aria-expanded", String(open));
+    if (open) {
+      commandPreviouslyFocused = document.activeElement;
+      commandSearch.value = "";
+      commandIndex = 0;
+      renderCommands();
+      requestAnimationFrame(() => commandSearch.focus());
+    } else if (commandPreviouslyFocused && typeof commandPreviouslyFocused.focus === "function") {
+      commandPreviouslyFocused.focus();
+      commandPreviouslyFocused = null;
+    }
+  }
+  commandBtn.onclick = () => setCommandOpen(commandPalette.dataset.open !== "true");
+  commandBackdrop.addEventListener("pointerdown", event => { event.preventDefault(); setCommandOpen(false); });
+  commandSearch.addEventListener("input", () => { commandIndex = 0; renderCommands(); });
+  commandSearch.addEventListener("keydown", event => {
+    const visible = filteredCommands();
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      commandIndex = visible.length ? (commandIndex + (event.key === "ArrowDown" ? 1 : -1) + visible.length) % visible.length : 0;
+      renderCommands();
+    } else if (event.key === "Enter" && visible[commandIndex]) {
+      event.preventDefault();
+      setCommandOpen(false);
+      visible[commandIndex].run();
+    }
+  });
+  document.addEventListener("keydown", event => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      setCommandOpen(commandPalette.dataset.open !== "true");
+    }
+  });
+  persistSettings();
+
+  // Fullscreen toggle. The phase attribute gives the touch plane a short,
+  // interruptible zoom while the browser changes viewport mode.
+  let fullscreenPhaseTimer = 0;
+  function setFullscreenPhase(phase) {
+    clearTimeout(fullscreenPhaseTimer);
+    if (phase) document.documentElement.dataset.fullscreenPhase = phase;
+    else delete document.documentElement.dataset.fullscreenPhase;
+    if (phase) fullscreenPhaseTimer = setTimeout(() => setFullscreenPhase(""), 320);
+  }
   function toggleFullscreen(fs) {
     if (fs) {
+      setFullscreenPhase("enter");
+      document.documentElement.dataset.fullscreen = "true";
       bar.classList.add("hidden");
-      dock.style.display = "none";
       floatBtn.style.display = "block";
-      try { document.documentElement.requestFullscreen(); } catch (_) {}
+      try {
+        const request = document.documentElement.requestFullscreen();
+        if (request && typeof request.catch === "function") request.catch(() => {
+          document.documentElement.dataset.fullscreen = "false";
+          bar.classList.remove("hidden");
+          floatBtn.style.display = "none";
+          setFullscreenPhase("");
+        });
+      } catch (_) {
+        document.documentElement.dataset.fullscreen = "false";
+        bar.classList.remove("hidden");
+        floatBtn.style.display = "none";
+        setFullscreenPhase("");
+      }
     } else {
+      setFullscreenPhase("exit");
       bar.classList.remove("hidden");
-      dock.style.display = "flex";
       floatBtn.style.display = "none";
-      try { if (document.fullscreenElement) document.exitFullscreen(); } catch (_) {}
+      setChromeCollapsed(dot.classList.contains("on"));
+      try {
+        if (document.fullscreenElement) document.exitFullscreen();
+        else {
+          document.documentElement.dataset.fullscreen = "false";
+          setFullscreenPhase("");
+        }
+      } catch (_) {
+        document.documentElement.dataset.fullscreen = "false";
+        setFullscreenPhase("");
+      }
     }
   }
   $("fs-btn").onclick = () => toggleFullscreen(true);
   floatBtn.onclick = () => toggleFullscreen(false);
   document.addEventListener("fullscreenchange", () => {
-    if (!document.fullscreenElement && !bar.classList.contains("hidden")) return;
     const active = Boolean(document.fullscreenElement);
+    document.documentElement.dataset.fullscreen = String(active);
+    setFullscreenPhase(active ? "enter" : "exit");
     bar.classList.toggle("hidden", active);
-    dock.style.display = active ? "none" : "flex";
     floatBtn.style.display = active ? "block" : "none";
+    if (!active) setChromeCollapsed(dot.classList.contains("on"));
   });
 
   function vibrate(pattern) {
@@ -378,54 +1273,161 @@
     }
   }
 
+  function updateDeepPressUI(progress = deepPressed ? 1 : 0) {
+    deepPressButton.dataset.enabled = String(deepEnabled);
+    deepPressButton.dataset.pressed = String(deepPressed);
+    deepPressButton.setAttribute("aria-pressed", String(deepPressed));
+    deepPressButton.style.setProperty("--deep-progress", String(Math.max(0, Math.min(1, progress))));
+    deepPressLabel.textContent = deepPressed ? "按下" : progress > 0 ? "确认中…" : "深按";
+  }
+  function stopDeepProgress() {
+    if (deepProgressRaf) cancelAnimationFrame(deepProgressRaf);
+    deepProgressRaf = 0;
+  }
+  function latchDeepPress() {
+    if (deepPressed || deepPointerId === null || !deepEnabled) return;
+    deepPressed = true;
+    clearTimeout(deepTimer); deepTimer = 0;
+    stopDeepProgress();
+    updateDeepPressUI(1);
+    vibrate([18, 12, 38]);
+    sendRaw(encodeFrame(snapshot(), true));
+    kick();
+  }
+  function trackDeepProgress() {
+    if (deepPointerId === null || deepPressed) return;
+    const progress = Math.min(1, (performance.now() - deepStartedAt) / deepHoldMs);
+    updateDeepPressUI(progress);
+    if (progress < 1) deepProgressRaf = requestAnimationFrame(trackDeepProgress);
+  }
+  function cancelDeepPress() {
+    clearTimeout(deepTimer); deepTimer = 0;
+    stopDeepProgress();
+    const wasPressed = deepPressed;
+    deepPressed = false;
+    deepPointerId = null;
+    updateDeepPressUI();
+    if (wasPressed) {
+      sendRaw(encodeFrame(snapshot(), false));
+      echoLift();
+    }
+  }
+  updateDeepPressUI();
+  deepPressButton.addEventListener("pointerdown", event => {
+    event.preventDefault(); event.stopPropagation();
+    if (!deepEnabled || deepPointerId !== null) return;
+    deepPointerId = event.pointerId;
+    deepStartedAt = performance.now();
+    try { deepPressButton.setPointerCapture(event.pointerId); } catch (_) {}
+    updateDeepPressUI(0);
+    deepTimer = setTimeout(latchDeepPress, deepHoldMs);
+    deepProgressRaf = requestAnimationFrame(trackDeepProgress);
+  }, { passive: false });
+  ["pointerup", "pointercancel"].forEach(type => deepPressButton.addEventListener(type, event => {
+    if (deepPointerId !== event.pointerId) return;
+    event.preventDefault(); event.stopPropagation();
+    try { deepPressButton.releasePointerCapture(event.pointerId); } catch (_) {}
+    cancelDeepPress();
+  }, { passive: false }));
+
   // Canvas resize
+  const MAX_VISUAL_DPR = 1.5;
+  const MAX_VISUAL_PIXELS = 3_000_000;
+  let visualDpr = 1;
   function resizeCanvas() {
-    canvas.width = window.innerWidth * window.devicePixelRatio;
-    canvas.height = window.innerHeight * window.devicePixelRatio;
+    // Touch markers are an auxiliary layer. Capping its backing store keeps
+    // a 3x phone viewport from allocating a 4K canvas while retaining crisp
+    // rings and trails on the screen. The area cap matters on tall tablets.
+    const cssPixels = Math.max(1, window.innerWidth * window.innerHeight);
+    const areaDpr = Math.sqrt(MAX_VISUAL_PIXELS / cssPixels);
+    visualDpr = Math.max(1, Math.min(MAX_VISUAL_DPR, window.devicePixelRatio || 1, areaDpr));
+    canvas.width = Math.max(1, Math.round(window.innerWidth * visualDpr));
+    canvas.height = Math.max(1, Math.round(window.innerHeight * visualDpr));
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    ctx.scale(visualDpr, visualDpr);
+    ctx.imageSmoothingEnabled = true;
   }
   window.addEventListener("resize", resizeCanvas);
   resizeCanvas();
 
   // Multi-touch visualizer
-  const visualTouches = new Map(); // pid -> {x, y, cid}
+  const visualTouches = new Map(); // pid -> {x, y, cid, vx, vy, lastTime, trail}
+  const releasedVisualTouches = [];
+  const visualColors = ["#7DD8FF", "#C1A4FF", "#83E7B2", "#FFC979"];
+  const visualFadeMs = 280;
   function drawVisualizer() {
     ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-    const n = visualTouches.size;
-    if (n === 0) return;
-
-    const colors = {
-      1: { stroke: "#0A84FF", fill: "rgba(10, 132, 255, 0.17)" },
-      2: { stroke: "#BF5AF2", fill: "rgba(191, 90, 242, 0.16)" },
-      3: { stroke: "#30D158", fill: "rgba(48, 209, 88, 0.16)" },
-      4: { stroke: "#FF9F0A", fill: "rgba(255, 159, 10, 0.16)" }
-    };
-    const curColor = colors[Math.min(n, 4)] || colors[4];
-
-    for (const [pid, t] of visualTouches) {
-      // Glowing outer ripple
-      const grad = ctx.createRadialGradient(t.x, t.y, 10, t.x, t.y, 45);
-      grad.addColorStop(0, curColor.fill);
-      grad.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 45, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Halo ring
-      ctx.strokeStyle = curColor.stroke;
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 24, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Center dot
-      ctx.fillStyle = curColor.stroke;
-      ctx.beginPath();
-      ctx.arc(t.x, t.y, 5, 0, Math.PI * 2);
-      ctx.fill();
+    if (!touchPointsVisible) return;
+    const now = performance.now();
+    for (const t of visualTouches.values()) drawVisualTouch(t, 1, now);
+    for (let i = releasedVisualTouches.length - 1; i >= 0; i--) {
+      const t = releasedVisualTouches[i];
+      const progress = Math.min(1, Math.max(0, (now - t.releasedAt) / visualFadeMs));
+      if (progress >= 1) releasedVisualTouches.splice(i, 1);
+      else drawVisualTouch(t, 1 - progress * progress, now);
     }
+  }
+
+  function drawVisualTouch(t, alpha, now) {
+    const color = visualColors[(t.pointerId ?? t.cid ?? 0) % visualColors.length];
+    const speed = Math.hypot(t.vx || 0, t.vy || 0);
+    const angle = speed > 0.5 ? Math.atan2(t.vy, t.vx) : -Math.PI / 2;
+    const pulse = (Math.sin(now * 0.01 + (t.pointerId ?? t.cid ?? 0)) * 0.5 + 0.5);
+    const halo = 22 + Math.min(speed * 0.045, 9) + pulse * 2;
+    const glow = halo * 2.25;
+
+    const grad = ctx.createRadialGradient(t.x, t.y, 0, t.x, t.y, glow);
+    grad.addColorStop(0, hexAlpha(color, 0x38 * alpha));
+    grad.addColorStop(.42, hexAlpha(color, 0x12 * alpha));
+    grad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(t.x, t.y, glow, 0, Math.PI * 2); ctx.fill();
+
+    if (t.trail && t.trail.length > 1 && speed > 0.8) {
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineWidth = 4 + Math.min(speed * .04, 7);
+      for (let i = t.trail.length - 1; i > 0; i--) {
+        const a = (t.trail.length - i) / (t.trail.length + 1);
+        ctx.strokeStyle = hexAlpha(color, 0x50 * alpha * (1 - a));
+        ctx.beginPath();
+        ctx.moveTo(t.trail[i].x, t.trail[i].y);
+        ctx.lineTo(t.trail[i - 1].x, t.trail[i - 1].y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.strokeStyle = hexAlpha(color, 0xB0 * alpha);
+    ctx.lineWidth = 1.35;
+    ctx.beginPath(); ctx.arc(t.x, t.y, halo, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = hexAlpha("#FFFFFF", 0x55 * alpha);
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(t.x, t.y, halo * .72, 0, Math.PI * 2); ctx.stroke();
+
+    const streak = 18 + Math.min(speed * .12, 26);
+    ctx.save();
+    ctx.translate(t.x, t.y);
+    ctx.rotate(angle);
+    const sheen = ctx.createLinearGradient(-streak / 2, 0, streak / 2, 0);
+    sheen.addColorStop(0, "rgba(255,255,255,0)");
+    sheen.addColorStop(.5, hexAlpha("#FFFFFF", 0x7A * alpha));
+    sheen.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = sheen;
+    // Use a plain rect for Safari versions that predate Canvas roundRect.
+    ctx.fillRect(-streak / 2, -1.5, streak, 3);
+    ctx.restore();
+
+    const core = 5.5 + Math.min(speed * .018, 2.5);
+    ctx.fillStyle = hexAlpha(color, 0xD8 * alpha);
+    ctx.beginPath(); ctx.arc(t.x, t.y, core, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = hexAlpha("#FFFFFF", 0xDC * alpha);
+    ctx.beginPath(); ctx.arc(t.x - core * .3, t.y - core * .3, core * .34, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function hexAlpha(hex, alpha) {
+    const value = Math.max(0, Math.min(255, Math.round(alpha)));
+    return `${hex}${value.toString(16).padStart(2, "0")}`;
   }
 
   // ---- Wire Protocol (docs/wire-protocol.md) --------------------------
@@ -433,13 +1435,13 @@
   const MAGIC = [0x41, 0x54, 0x50, 0x31];           // "ATP1"
   const TIP = 1, CONF = 2;
 
-  function encodeFrame(contacts) {                   // [{id,x,y}] mm
+  function encodeFrame(contacts, button = false) {   // [{id,x,y}] mm
     const n = contacts.length;
     const buf = new ArrayBuffer(15 + 10 * n);
     const v = new DataView(buf);
     MAGIC.forEach((b, i) => v.setUint8(i, b));
     v.setUint8(4, 1);                                // version
-    v.setUint8(5, 0);                                // flags: no button
+    v.setUint8(5, button ? 1 : 0);                   // flags: integrated button
     v.setUint8(6, n);
     seq = (seq + 1) >>> 0;                           v.setUint32(7, seq, true);
     const ticks = (performance.now() * 10) >>> 0;    // 100 µs ticks
@@ -462,6 +1464,12 @@
     padStatusBtn.textContent = state === "on" ? "已连接" : state === "off" ? "重试连接" : "连接中";
     padStatusBtn.setAttribute("aria-label", state === "off" ? "重试连接" : "连接状态");
     padStatusBtn.dataset.state = state;
+    setChromeCollapsed(state === "on");
+  }
+  function setChromeCollapsed(collapsed) {
+    const compact = collapsed;
+    bar.dataset.collapsed = String(compact);
+    document.documentElement.dataset.chrome = compact ? "compact" : "expanded";
   }
   function connect() {
     setStatus("wait");
@@ -496,13 +1504,15 @@
   let touchStartTime = 0, initialPos = { x: 0, y: 0 }, maxFingers = 0;
 
   function toMm(ev) {
+    const rect = pad.getBoundingClientRect();
+    const mmPerCssPx = VIRTUAL_SURFACE_WIDTH_MM / Math.max(1, rect.width);
     return {
-      x: ev.clientX * MM_PER_CSS_PX * scale,
-      y: ev.clientY * MM_PER_CSS_PX * scale,
+      x: (ev.clientX - rect.left) * mmPerCssPx * scale,
+      y: (ev.clientY - rect.top) * mmPerCssPx * scale,
     };
   }
 
-  let dirty = false, rafId = 0;
+  let dirty = false, rafId = 0, visualRafId = 0, lastVisualPaint = 0;
   function snapshot() {
     const out = [];
     for (const [pid, cid] of pointers) {
@@ -513,8 +1523,7 @@
   }
   function loop() {
     rafId = 0;
-    drawVisualizer();
-    if (pointers.size > 0) {
+    if (pointers.size > 0 || deepPressed) {
       // Keep reporting every frame while contacts are down, moving or
       // not. A browser stops delivering pointermove for a finger that
       // is held still, and from the receiver's side a stream that goes
@@ -523,16 +1532,33 @@
       // finger into a phantom tap. A real trackpad reports at a fixed
       // rate regardless of motion; so does this now.
       dirty = false;
-      sendRaw(encodeFrame(snapshot()));
+      sendRaw(encodeFrame(snapshot(), deepPressed));
       rafId = requestAnimationFrame(loop);
     } else if (dirty) {
       dirty = false;
       echoLift();
     }
   }
+  function visualLoop(timestamp) {
+    visualRafId = 0;
+    if (!touchPointsVisible) return;
+    if (timestamp - lastVisualPaint < 1000 / 30) {
+      visualRafId = requestAnimationFrame(visualLoop);
+      return;
+    }
+    lastVisualPaint = timestamp;
+    drawVisualizer();
+    if (pointers.size > 0 || releasedVisualTouches.length) {
+      visualRafId = requestAnimationFrame(visualLoop);
+    }
+  }
+  function kickVisual() {
+    if (!visualRafId && touchPointsVisible) visualRafId = requestAnimationFrame(visualLoop);
+  }
   function kick() {
     dirty = true;
     if (!rafId) rafId = requestAnimationFrame(loop);
+    kickVisual();
   }
 
   let liftTimers = [];
@@ -550,6 +1576,7 @@
   pad.addEventListener("pointerdown", e => {
     e.preventDefault(); wake();
     try { pad.setPointerCapture(e.pointerId); } catch (_) {}
+    padFrame.dataset.active = "true";
     if (pointers.size === 0) {
       touchStartTime = performance.now();
       maxFingers = 1;
@@ -559,7 +1586,7 @@
     const cid = acquireCid();
     pointers.set(e.pointerId, cid);
     pos.set(e.pointerId, toMm(e));
-    visualTouches.set(e.pointerId, { x: e.clientX, y: e.clientY, cid });
+    visualTouches.set(e.pointerId, { pointerId: e.pointerId, x: e.clientX, y: e.clientY, cid, vx: 0, vy: 0, lastTime: e.timeStamp, trail: [] });
     const px = `${Math.round((e.clientX / window.innerWidth) * 100)}%`;
     const py = `${Math.round((e.clientY / window.innerHeight) * 100)}%`;
     bar.style.setProperty("--lens-x", px); bar.style.setProperty("--lens-y", py);
@@ -567,7 +1594,7 @@
     padFrame.style.setProperty("--lens-x", px); padFrame.style.setProperty("--lens-y", py);
     if (pointers.size > maxFingers) maxFingers = pointers.size;
 
-    sendRaw(encodeFrame(snapshot()));
+    sendRaw(encodeFrame(snapshot(), deepPressed));
     kick();
   }, { passive: false });
 
@@ -575,7 +1602,15 @@
     e.preventDefault();
     if (!pointers.has(e.pointerId)) return;
     pos.set(e.pointerId, toMm(e));
-    visualTouches.set(e.pointerId, { x: e.clientX, y: e.clientY, cid: pointers.get(e.pointerId) });
+    const visual = visualTouches.get(e.pointerId);
+    if (visual) {
+      const dt = Math.max(1, Math.min(64, e.timeStamp - visual.lastTime));
+      visual.trail.push({ x: visual.x, y: visual.y });
+      if (visual.trail.length > 8) visual.trail.shift();
+      visual.vx = visual.vx * .60 + ((e.clientX - visual.x) / dt * 16) * .40;
+      visual.vy = visual.vy * .60 + ((e.clientY - visual.y) / dt * 16) * .40;
+      visual.x = e.clientX; visual.y = e.clientY; visual.lastTime = e.timeStamp;
+    }
     const px = `${Math.round((e.clientX / window.innerWidth) * 100)}%`;
     const py = `${Math.round((e.clientY / window.innerHeight) * 100)}%`;
     bar.style.setProperty("--lens-x", px); bar.style.setProperty("--lens-y", py);
@@ -591,7 +1626,13 @@
     releaseCid(pointers.get(e.pointerId));
     pointers.delete(e.pointerId);
     pos.delete(e.pointerId);
-    visualTouches.delete(e.pointerId);
+    const visual = visualTouches.get(e.pointerId);
+    if (visual) {
+      visual.releasedAt = performance.now();
+      releasedVisualTouches.push(visual);
+      visualTouches.delete(e.pointerId);
+    }
+    if (pointers.size === 0) padFrame.dataset.active = "false";
     kick();
   }
 
@@ -610,13 +1651,19 @@
   pad.addEventListener("pointercancel", e => releasePointer(e));
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden && pointers.size) {
-      for (const cid of pointers.values()) releaseCid(cid);
-      pointers.clear(); pos.clear(); visualTouches.clear();
-      echoLift();
-      cancelAnimationFrame(rafId); rafId = 0;
-      drawVisualizer();
+    if (!document.hidden) return;
+    const hadPointers = pointers.size > 0;
+    for (const pid of pointers.keys()) {
+      try { pad.releasePointerCapture(pid); } catch (_) {}
     }
+    for (const cid of pointers.values()) releaseCid(cid);
+    pointers.clear(); pos.clear(); visualTouches.clear(); releasedVisualTouches.length = 0;
+    padFrame.dataset.active = "false";
+    cancelDeepPress();
+    if (hadPointers) echoLift();
+    cancelAnimationFrame(rafId); rafId = 0;
+    cancelAnimationFrame(visualRafId); visualRafId = 0;
+    drawVisualizer();
   });
 
   ["contextmenu", "dblclick", "gesturestart"].forEach(t =>

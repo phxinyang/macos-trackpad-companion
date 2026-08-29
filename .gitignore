@@ -10,3 +10,7 @@ __pycache__/
 .playwright-cli/
 /output/
 *.log
+
+# Local-only wallpaper research assets. These may contain third-party artwork
+# and are intentionally excluded from source distributions.
+/static/private-wallpapers/

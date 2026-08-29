@@ -2574,29 +2574,35 @@ fn post_dock_swipe_pair(
     let Some(event) = Event::with_source(source) else {
         return false;
     };
+    let modern = macos_27_or_later();
+
+    // Both generations use the DockControl envelope type. The remaining
+    // fields are generation-specific: macOS 27+ consumes the attached
+    // HIDEvent and should not receive the pre-27 opaque field layout.
     event.set_int(kCGSEventTypeField, kCGSEventDockControl);
-    event.set_int(kCGEventGestureHIDType, kIOHIDEventTypeDockSwipe);
-    event.set_int(kCGEventGesturePhase, phase);
-    event.set_int(kCGEventGesturePhaseDuplicate, phase);
-    event.set_int(
-        kCGEventScrollGestureFlagBits,
-        legacy_progress_bits(progress),
-    );
-    event.set_int(kCGEventGestureSwipeMotion, motion);
-    event.set_int(kCGEventGestureSwipeMotionDuplicate, motion);
-    event.set_int(kCGEventGestureInvertedFromDevice, 0);
-    event.set_int(kCGEventGestureConst138, 3);
-    let axis_marker = legacy_axis_marker(motion);
-    event.set_dbl(kCGEventGestureScrollY, axis_marker);
-    event.set_dbl(kCGEventGestureZoomDeltaX, axis_marker);
-    event.set_dbl(kCGEventGestureMarker, 33231.0);
-    event.set_dbl(kCGEventGestureSwipeProgress, progress);
-    if let Some((vx, vy)) = velocity {
-        event.set_dbl(kCGEventGestureSwipeVelocityX, vx);
-        event.set_dbl(kCGEventGestureSwipeVelocityY, vy);
+    if !modern {
+        event.set_int(kCGEventGestureHIDType, kIOHIDEventTypeDockSwipe);
+        event.set_int(kCGEventGesturePhase, phase);
+        event.set_int(kCGEventGesturePhaseDuplicate, phase);
+        event.set_int(
+            kCGEventScrollGestureFlagBits,
+            legacy_progress_bits(progress),
+        );
+        event.set_int(kCGEventGestureSwipeMotion, motion);
+        event.set_int(kCGEventGestureSwipeMotionDuplicate, motion);
+        event.set_int(kCGEventGestureInvertedFromDevice, 0);
+        event.set_int(kCGEventGestureConst138, 3);
+        let axis_marker = legacy_axis_marker(motion);
+        event.set_dbl(kCGEventGestureScrollY, axis_marker);
+        event.set_dbl(kCGEventGestureZoomDeltaX, axis_marker);
+        event.set_dbl(kCGEventGestureMarker, 33231.0);
+        event.set_dbl(kCGEventGestureSwipeProgress, progress);
+        if let Some((vx, vy)) = velocity {
+            event.set_dbl(kCGEventGestureSwipeVelocityX, vx);
+            event.set_dbl(kCGEventGestureSwipeVelocityY, vy);
+        }
     }
     unsafe { CGEventSetTimestamp(event.0, ts.as_nanos()) };
-    let modern = macos_27_or_later();
     let attached_hid =
         modern && attach_dock_hid_event(event.0, phase, motion, progress, velocity, ts.as_nanos());
     if modern && !attached_hid {

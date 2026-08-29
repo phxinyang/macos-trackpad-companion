@@ -6,7 +6,7 @@
 //! Both `companion` and `companion-net` go through this module so their
 //! gesture behavior stays identical.
 
-use crate::config::{self, GestureEnable, HapticSetting, SwipeAxisCfg};
+use crate::config::{self, GestureEnable, GestureParameterProfile, HapticSetting, SwipeAxisCfg};
 use crate::gesture;
 use crate::output;
 
@@ -53,10 +53,15 @@ pub fn gesture_options(cfg: &config::Config) -> gesture::GestureOptions {
         smart_zoom: !matches!(cfg.gestures.smart_zoom, GestureEnable::Off),
         pinch_gain: gesture::normalize_transform_gain(cfg.gestures.pinch.gain),
         rotate_gain: gesture::normalize_transform_gain(cfg.gestures.rotate.gain),
+        parameter_profile: match cfg.gestures.parameter_profile {
+            GestureParameterProfile::Native => gesture::ParameterProfile::Native,
+            GestureParameterProfile::ChromiumOs => gesture::ParameterProfile::ChromiumOs,
+        },
         dynamic_transform_compat: cfg.gestures.dynamic_transform_compat,
         dictionary_lookup: !matches!(cfg.gestures.dictionary_lookup, GestureEnable::Off),
         scroll_enabled: cfg.scroll.enable,
         right_edge_swipe: !matches!(cfg.gestures.right_edge_swipe, GestureEnable::Off),
+        surface_width_mm: cfg.gestures.surface_width_mm,
         three_finger_drag,
         one_finger_tap_drag,
         release_delay_ms: cfg.gestures.three_finger_drag.release_delay_ms,
@@ -144,6 +149,8 @@ mod tests {
             r#"
             [gestures]
             dynamic_transform_compat = true
+            parameter_profile = "chromium_os"
+            surface_width_mm = 50.0
             [gestures.pinch]
             gain = 2.5
             [gestures.rotate]
@@ -154,6 +161,11 @@ mod tests {
         let options = gesture_options(&cfg);
         assert_eq!(options.pinch_gain, 2.5);
         assert_eq!(options.rotate_gain, 0.25);
+        assert_eq!(
+            options.parameter_profile,
+            gesture::ParameterProfile::ChromiumOs
+        );
         assert!(options.dynamic_transform_compat);
+        assert_eq!(options.surface_width_mm, 50.0);
     }
 }
