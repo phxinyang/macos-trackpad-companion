@@ -190,7 +190,7 @@
 - [x] J3. Accessibility Zoom 的滚动修饰键支持 Control、Option、Command；`HIDScrollZoomModifierMask` 可从系统偏好或 TOML 选择，且在 `Phase::Began` 锁定到整个 scroll session。
 - [x] J4. Shift + 双指滚动默认保持原始轴向（严格原生）；新增 `[scroll].shift_scroll_horizontal` 兼容开关，只有显式 `true` 才把纯纵向输入转成横向。
 - [x] J5. `companion-tui` 增加 Zoom mask 的 Control/Option/Command 循环和 Shift 兼容开关；补充纯逻辑 modifier/轴向回归测试。
-- [x] J7. 合成的 SymbolicHotKey 与 Control+Arrow 现在保留快捷键自身所需修饰位，并合并用户实时 Shift/Command/Control/Option；内部 Cmd+Ctrl+D 查词脉冲仍使用固定组合，避免被用户键盘状态污染。
+- [x] J7. 合成的 SymbolicHotKey 与 Control+Arrow 保留快捷键自身所需修饰位；面向 App 的指针/手势事件才合并用户实时 Shift/Command/Control/Option。内部 Cmd+Ctrl+D 查词脉冲仍使用固定组合，避免被用户键盘状态污染。
 
 #### 不做的推断
 
@@ -423,7 +423,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - `~/.cargo/bin/cargo check --all-targets`：通过。
 - `~/.cargo/bin/cargo check --target aarch64-apple-darwin --all-targets`：通过（交叉检查 macOS binary/module wiring；仅有既有 dead-code 警告）。
 - `~/.cargo/bin/cargo run --bin companion-tui -- --help`：通过，TUI binary 可构建并暴露 `--config` 覆盖入口。
-- 修饰键事件回归审查：点击 down/up 使用同一 modifier 快照；pinch/rotate/swipe/scroll 保留当前四键 flags；Cmd+Ctrl+D 与 Control+Arrow 等合成系统热键使用 raw post，避免被实时 modifier 覆盖逻辑清除。
+- 修饰键事件回归审查：点击 down/up 使用同一 modifier 快照；pinch/rotate/swipe/scroll 保留当前四键 flags；延迟右键保存触控抬起时的快照；Cmd+Ctrl+D、Control+Arrow 与 SymbolicHotKey 系统动作使用固定注册 chord，避免额外实时 modifier 让 WindowServer 拒绝匹配。
 - Shift 兼容边界回归审查：映射在横向总开关之后生效，`[scroll].horizontal = false` 不会被兼容模式绕过。
 - 联合拖拽回归审查：现有 `three_finger_drag_to_four_finger_swipe` 和 `link_timeout_releases_drag_button_carried_into_four_finger_swipe` 通过；输出层新增 SymbolicHotKey 阈值、350ms 冷却、80ms flick 保护和 Drop 时 fallback 状态隔离，macOS 行为仍待真机。
 - 联合拖拽追加回归：配置的拖拽锁定窗口内，3F 全抬起后快速落 4F 会继续保持左键并启动 Space swipe；显式 `release_delay_ms=0` 会立即结束拖拽；五指/掌托接触不会推进四指 Space 手势。
@@ -628,7 +628,8 @@ Apple Mac 触控板的公开实现/规范。
 - [x] T2. 明确解锁与安全边界：静止 1F/2F 触摸解锁，真实 1F/2F 移动立即回到普通输入；加入第四指前未完整抬手时释放 live drag；断链、取消和进程退出始终释放按键。
 - [x] T3. 新增 `persistent_drag_lock` 配置及 TUI 中英双语开关；关闭后保留有限
   `release_delay_ms` 兼容模式，设为 `0` 即严格抬手释放。
-- [x] T4. 修复合成 `SymbolicHotKey` 与 `Control+Arrow` 丢失用户 Shift/Command/Option 的问题；统一合并 Quartz 四个键盘修饰位，固定 Cmd+Ctrl+D 查词脉冲不受污染。
+- [x] T4. 修复快捷键与触控板组合的时序边界：面向 App 的点击/滚动/Pinch/Rotate/拖拽传递实时 Quartz 修饰位；延迟右键保留触控抬起快照；SymbolicHotKey、Control+Arrow 与 Cmd+Ctrl+D 使用各自固定注册 chord，避免 WindowServer 因额外修饰位拒绝系统动作。
+- [x] T4a. 增加 `click_with_modifiers` 输出契约和回归测试，覆盖“按住 Option+Shift 双指点按、抬指后松开键、延迟窗口再确认右键”以及单指双击第二次点按延迟的真实时序。
 - [x] T5. 增加状态机、配置映射、TUI 序列化和纯逻辑修饰键回归测试；Linux workspace 测试与 `aarch64-apple-darwin` 交叉检查通过。
 - [ ] T6. 在 MacBook/Magic Trackpad + Mac mini 目标环境实测 staged 拖拽、快捷键组合及不同 WindowServer 版本的实际消费结果。
 

@@ -95,6 +95,15 @@ pub trait Output {
     }
     fn move_cursor_by(&self, dx_px: i32, dy_px: i32);
     fn click(&self, button: MouseButton);
+    /// Return currently held Quartz modifier bits when a platform can
+    /// observe them. Linux/test emitters intentionally return zero.
+    fn current_modifiers(&self) -> u64 {
+        0
+    }
+    /// Emit a click using a modifier snapshot captured at gesture time.
+    fn click_with_modifiers(&self, button: MouseButton, _modifiers: u64) {
+        self.click(button);
+    }
     fn set_left_button_held(&self, held: bool);
     fn set_drag_button_held(&self, held: bool) {
         self.set_left_button_held(held);

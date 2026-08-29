@@ -623,6 +623,15 @@ struct PendingTwoFingerTap {
     /// [`FAT_FINGER_SPLIT_MM`] the "two fingers" were one fat contact
     /// the panel split, and the pending right-click is bogus.
     initial_distance: f64,
+    /// Modifier state sampled while the two-finger tap was active. The
+    /// eventual right-click may be delayed for smart-zoom disambiguation.
+    modifiers: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PendingRightClick {
+    at: Timestamp,
+    modifiers: u64,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -726,9 +735,12 @@ pub struct State<O: Output> {
     /// gestures (taps/scroll still classify normally while held).
     prev_button: bool,
     last_1f_tap: Option<Timestamp>,
-    pending_right_click: Option<Timestamp>,
+    pending_right_click: Option<PendingRightClick>,
     tap_drag_candidate: bool,
     tap_drag_active: bool,
+    /// Modifier state captured when the second tap lands. Its click is
+    /// delayed while the engine disambiguates double-click from tap-drag.
+    tap_drag_modifiers: Option<u64>,
     /// Set when a second tap lands inside the tap-drag window, and
     /// cleared once that contact commits one way or the other. While it
     /// is set the gesture is genuinely ambiguous — the user is either
@@ -786,19 +798,24 @@ impl<O: Output> State<O> {
             pending_right_click: None,
             tap_drag_candidate: false,
             tap_drag_active: false,
+            tap_drag_modifiers: None,
             tap_drag_pending_since: None,
             hold_latched: false,
         }
     }
 
     fn emit_tap_click(&self, button: MouseButton) {
+        self.emit_tap_click_with_modifiers(button, self.out.current_modifiers());
+    }
+
+    fn emit_tap_click_with_modifiers(&self, button: MouseButton, modifiers: u64) {
         let allowed = match button {
             MouseButton::Left => self.options.tap_to_click,
             MouseButton::Right => self.options.secondary_click,
         };
         if allowed {
             self.out.haptic(HapticKind::Click);
-            self.out.click(button);
+            self.out.click_with_modifiers(button, modifiers);
         } else {
             log::debug!("tap click suppressed by macOS/config policy: {button:?}");
         }
@@ -969,6 +986,7 @@ impl<O: Output> State<O> {
         self.pending_three_finger_tap = None;
         self.tap_drag_pending_since = None;
         self.tap_drag_candidate = false;
+        self.tap_drag_modifiers = None;
         self.last_1f_tap = None;
         self.pending_right_click = None;
         self.out.set_event_time(now);
@@ -1043,14 +1061,15 @@ impl<O: Output> State<O> {
     /// three-finger-drag lock release.
     #[allow(dead_code)]
     pub fn tick(&mut self, now: Timestamp) {
-        if let Some(tap_time) = self.pending_right_click {
-            if now.saturating_duration_since(tap_time) >= TWO_FINGER_DOUBLE_TAP_WINDOW {
+        if let Some(pending) = self.pending_right_click {
+            if now.saturating_duration_since(pending.at) >= TWO_FINGER_DOUBLE_TAP_WINDOW {
                 self.pending_right_click = None;
                 log::debug!(
-                    "2f tap: confirmed after double-tap window ({}ms) -> click Right",
-                    TWO_FINGER_DOUBLE_TAP_WINDOW.as_millis()
+                    "2f tap: confirmed after double-tap window ({}ms) -> click Right mods=0x{:x}",
+                    TWO_FINGER_DOUBLE_TAP_WINDOW.as_millis(),
+                    pending.modifiers,
                 );
-                self.emit_tap_click(MouseButton::Right);
+                self.emit_tap_click_with_modifiers(MouseButton::Right, pending.modifiers);
             }
         }
         if let Some(expires_at) = self.pending_drag_release {
@@ -1106,30 +1125,36 @@ impl<O: Output> State<O> {
     }
 
     fn flush_pending_right_click(&mut self) {
-        if let Some(_) = self.pending_right_click.take() {
+        if let Some(pending) = self.pending_right_click.take() {
             log::debug!("2f tap: flushing pending right-click -> click Right");
-            self.emit_tap_click(MouseButton::Right);
+            self.emit_tap_click_with_modifiers(MouseButton::Right, pending.modifiers);
         }
     }
 
-    fn on_two_finger_tap_lift(&mut self, now: Timestamp) {
+    fn on_two_finger_tap_lift(&mut self, now: Timestamp, modifiers: u64) {
         self.last_1f_tap = None;
         self.tap_drag_candidate = false;
+        self.tap_drag_modifiers = None;
         if let Some(prev) = self.pending_right_click.take() {
-            if now.saturating_duration_since(prev) <= TWO_FINGER_DOUBLE_TAP_WINDOW {
+            if now.saturating_duration_since(prev.at) <= TWO_FINGER_DOUBLE_TAP_WINDOW {
                 log::debug!(
                     "2f double tap: smart zoom / smart magnify (interval={}ms)",
-                    now.saturating_duration_since(prev).as_millis()
+                    now.saturating_duration_since(prev.at).as_millis()
                 );
                 self.emit_smart_zoom();
                 return;
             } else {
                 log::debug!("2f tap: previous right-click expired, flushing");
-                self.emit_tap_click(MouseButton::Right);
+                self.emit_tap_click_with_modifiers(MouseButton::Right, prev.modifiers);
             }
         }
-        log::debug!("2f tap: pending right-click (debouncing for double tap smart zoom)");
-        self.pending_right_click = Some(now);
+        log::debug!(
+            "2f tap: pending right-click (debouncing for double tap smart zoom) mods=0x{modifiers:x}"
+        );
+        self.pending_right_click = Some(PendingRightClick {
+            at: now,
+            modifiers,
+        });
     }
 
     fn classify(&self, n: usize) -> GestureKind {
@@ -1267,18 +1292,22 @@ impl<O: Output> State<O> {
                         // that does come lands on the intended target.
                         self.tap_drag_candidate = true;
                         self.tap_drag_pending_since = Some(now);
+                        self.tap_drag_modifiers = Some(self.out.current_modifiers());
                         log::debug!(
                             "1f tap-drag: second tap down (elapsed={}ms) — press deferred pending hold or motion",
                             elapsed.as_millis(),
                         );
                     } else {
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                     }
                 } else {
                     self.tap_drag_candidate = false;
+                    self.tap_drag_modifiers = None;
                 }
             } else {
                 self.tap_drag_candidate = false;
+                self.tap_drag_modifiers = None;
             }
         }
         // Snapshot before the close-out potentially clears it. We want
@@ -1324,6 +1353,7 @@ impl<O: Output> State<O> {
                         self.hold_latched = false;
                         self.tap_drag_active = false;
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                         self.tap_drag_pending_since = None;
                         self.last_1f_tap = None;
                     } else if self.tap_drag_active {
@@ -1334,6 +1364,7 @@ impl<O: Output> State<O> {
                         }
                         self.tap_drag_active = false;
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                         self.tap_drag_pending_since = None;
                         self.last_1f_tap = None;
                     } else if bc {
@@ -1343,6 +1374,7 @@ impl<O: Output> State<O> {
                         log::debug!("1f lift, click suppressed (born during coast)");
                         self.last_1f_tap = None;
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                         self.tap_drag_pending_since = None;
                     } else if self.tap_drag_pending_since.take().is_some() {
                         // The second contact of a tap pair lifted before
@@ -1356,12 +1388,18 @@ impl<O: Output> State<O> {
                             "1f tap-drag: second tap lifted undecided after {}ms — dispatching double-click",
                             dur.as_millis(),
                         );
-                        self.emit_tap_click(MouseButton::Left);
+                        let modifiers = self
+                            .tap_drag_modifiers
+                            .take()
+                            .unwrap_or_else(|| self.out.current_modifiers());
+                        self.emit_tap_click_with_modifiers(MouseButton::Left, modifiers);
                         self.last_1f_tap = None;
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                     } else if let Some(p3) = pending_3f {
                         self.last_1f_tap = None;
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                         let total_dur = now - p3.started_at;
                         let combined_max_move = p3.max_move_sq.max(self.max_move_sq).sqrt();
                         if total_dur < Duration::from_millis(420) && combined_max_move < 2.8 {
@@ -1375,6 +1413,7 @@ impl<O: Output> State<O> {
                     } else if let Some(p) = pending_2f {
                         self.last_1f_tap = None;
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                         let total_dur = now - p.started_at;
                         let combined_max_move = p.max_move_sq.max(self.max_move_sq).sqrt();
                         if p.initial_distance < FAT_FINGER_SPLIT_MM {
@@ -1388,7 +1427,7 @@ impl<O: Output> State<O> {
                                     p.initial_distance,
                                     total_dur.as_millis(),
                                 );
-                                self.emit_tap_click(MouseButton::Left);
+                                self.emit_tap_click_with_modifiers(MouseButton::Left, p.modifiers);
                                 self.last_1f_tap = Some(now);
                             } else {
                                 log::debug!(
@@ -1401,7 +1440,7 @@ impl<O: Output> State<O> {
                         } else if total_dur < TAP_MAX_DURATION
                             && combined_max_move < TAP_MAX_MOVE_MM
                         {
-                            self.on_two_finger_tap_lift(now);
+                            self.on_two_finger_tap_lift(now, p.modifiers);
                         } else {
                             // If total duration exceeded or moved, it was NOT a 2F tap!
                             // Fallback to evaluating the residual 1F touch as a normal 1F tap so single taps are never lost!
@@ -1412,13 +1451,14 @@ impl<O: Output> State<O> {
                                     "1f tap after canceled 2f split: click Left (dur={}ms)",
                                     dur_1f.as_millis()
                                 );
-                                self.emit_tap_click(MouseButton::Left);
+                                self.emit_tap_click_with_modifiers(MouseButton::Left, p.modifiers);
                                 self.last_1f_tap = Some(now);
                             }
                         }
                     } else if suppress_residual {
                         self.last_1f_tap = None;
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                         // Residual 1F is the tail of a non-tap 2F (a
                         // pan, pinch, rotate, or motion-disqualified
                         // unclassified). User didn't intend a 1F tap.
@@ -1450,6 +1490,7 @@ impl<O: Output> State<O> {
                             );
                         }
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                     }
                 }
             }
@@ -1588,11 +1629,14 @@ impl<O: Output> State<O> {
                             "2f tap reclassified as 1f: contacts only {:.1}mm apart (fat-finger split) — click Left",
                             split_distance,
                         );
-                        self.emit_tap_click(MouseButton::Left);
+                        self.emit_tap_click_with_modifiers(
+                            MouseButton::Left,
+                            self.out.current_modifiers(),
+                        );
                         self.last_1f_tap = Some(now);
                         self.pending_right_click = None;
                     } else if tap_eligible {
-                        self.on_two_finger_tap_lift(now);
+                        self.on_two_finger_tap_lift(now, self.out.current_modifiers());
                     } else {
                         log::debug!(
                             "2f lift, no tap: dur={}ms max_move={:.2}mm",
@@ -1629,6 +1673,7 @@ impl<O: Output> State<O> {
                             started_at: self.started_at,
                             max_move_sq: self.max_move_sq,
                             initial_distance: split_distance,
+                            modifiers: self.out.current_modifiers(),
                         });
                     }
                 }
@@ -1791,6 +1836,7 @@ impl<O: Output> State<O> {
                         self.pending_motion = None;
                         self.last_1f_tap = None;
                         self.tap_drag_candidate = false;
+                        self.tap_drag_modifiers = None;
                         self.tap_drag_pending_since = None;
                         self.pending_right_click = None;
                         if self.drag_lock_escape {
@@ -2364,6 +2410,7 @@ impl<O: Output> State<O> {
                 self.drag_button_held = true;
                 self.tap_drag_active = true;
                 self.tap_drag_pending_since = None;
+                self.tap_drag_modifiers = None;
                 log::debug!(
                     "1f tap-drag: engaged (max_move={max_move:.2}mm held={}ms)",
                     held.as_millis(),
@@ -3258,6 +3305,8 @@ mod tests {
 
     struct Recorder {
         log: RefCell<Vec<String>>,
+        live_modifiers: std::cell::Cell<u64>,
+        last_click_modifiers: std::cell::Cell<Option<u64>>,
         /// What `cancel_inertia` should report. Toggle on with
         /// `set_inertia_active` to simulate "user touches the pad while
         /// a fling is coasting"; the next `cancel_inertia` returns true
@@ -3277,6 +3326,8 @@ mod tests {
         fn default() -> Self {
             Self {
                 log: RefCell::new(Vec::new()),
+                live_modifiers: std::cell::Cell::new(0),
+                last_click_modifiers: std::cell::Cell::new(None),
                 inertia_active: std::cell::Cell::new(false),
                 pinch_admit: std::cell::Cell::new(true),
                 rotate_admit: std::cell::Cell::new(true),
@@ -3289,6 +3340,12 @@ mod tests {
     impl Recorder {
         fn pop(&self) -> Vec<String> {
             self.log.borrow_mut().drain(..).collect()
+        }
+        fn set_modifiers(&self, modifiers: u64) {
+            self.live_modifiers.set(modifiers);
+        }
+        fn last_click_modifiers(&self) -> Option<u64> {
+            self.last_click_modifiers.get()
         }
         fn set_inertia_active(&self, active: bool) {
             self.inertia_active.set(active);
@@ -3309,6 +3366,13 @@ mod tests {
             self.log.borrow_mut().push(format!("move {dx_px} {dy_px}"));
         }
         fn click(&self, button: MouseButton) {
+            self.log.borrow_mut().push(format!("click {button:?}"));
+        }
+        fn current_modifiers(&self) -> u64 {
+            self.live_modifiers.get()
+        }
+        fn click_with_modifiers(&self, button: MouseButton, modifiers: u64) {
+            self.last_click_modifiers.set(Some(modifiers));
             self.log.borrow_mut().push(format!("click {button:?}"));
         }
         fn set_left_button_held(&self, held: bool) {
@@ -4617,6 +4681,38 @@ mod tests {
         assert!(log.iter().any(|l| l.contains("click Left")), "{log:?}");
     }
 
+    #[test]
+    fn delayed_second_single_finger_click_keeps_landing_modifier_snapshot() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+        let modifiers = crate::scroll_policy::MOD_CMD;
+        r.set_modifiers(modifiers);
+
+        // First tap establishes the double-click sequence.
+        s.on_frame_at(frame(&[(1, 0.5, 0.5)]), t0);
+        s.on_frame_at(frame(&[]), at(t0, 50));
+
+        // The second tap is delayed while the engine disambiguates it from
+        // tap-drag. Release Command before lift; the second click must still
+        // carry the modifier from touchdown.
+        s.on_frame_at(frame(&[(1, 0.5, 0.5)]), at(t0, 150));
+        r.set_modifiers(0);
+        s.on_frame_at(frame(&[]), at(t0, 200));
+
+        let log = r.pop();
+        assert_eq!(
+            log.iter().filter(|line| line.contains("click Left")).count(),
+            2,
+            "double tap must still produce two clicks: {log:?}"
+        );
+        assert_eq!(
+            r.last_click_modifiers(),
+            Some(modifiers),
+            "delayed second click must use the modifier snapshot captured on touchdown"
+        );
+    }
+
     /// Two-finger touchdown then lift, short and stationary — right click.
     #[test]
     fn short_stationary_two_finger_tap_fires_right_click() {
@@ -4628,6 +4724,32 @@ mod tests {
         s.tick(at(t0, 350));
         let log = r.pop();
         assert!(log.iter().any(|l| l.contains("click Right")), "{log:?}");
+    }
+
+    #[test]
+    fn delayed_two_finger_right_click_keeps_lift_modifier_snapshot() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+        let modifiers = crate::scroll_policy::MOD_OPTION | crate::scroll_policy::MOD_SHIFT;
+        r.set_modifiers(modifiers);
+
+        // The right-click is intentionally delayed so a second 2F tap can
+        // become Smart Zoom. Release the physical modifier before the
+        // debounce heartbeat; the eventual click must retain the state that
+        // was present when the touch lifted.
+        s.on_frame_at(frame(&[(1, 0.4, 0.5), (2, 0.6, 0.5)]), t0);
+        s.on_frame_at(frame(&[]), at(t0, 50));
+        r.set_modifiers(0);
+        s.tick(at(t0, 300));
+
+        let log = r.pop();
+        assert!(log.iter().any(|l| l.contains("click Right")), "{log:?}");
+        assert_eq!(
+            r.last_click_modifiers(),
+            Some(modifiers),
+            "deferred right-click must use the modifier snapshot captured at touch lift"
+        );
     }
 
     /// Touch held past TAP_MAX_DURATION with no motion — does not tap.

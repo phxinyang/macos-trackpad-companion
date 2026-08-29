@@ -263,10 +263,12 @@ a Taptic Engine silently ignore the cue.
 The sync is startup-only; restart the process after changing System Settings.
 
 Keyboard modifiers are preserved on every emitted mouse, scroll, and gesture
-event. Synthetic system shortcuts (Space/Mission Control and Control+Arrow)
-also merge the live Shift/Command/Control/Option flags; the internal Cmd+Ctrl+D
-dictionary pulse remains a fixed shortcut. This lets macOS and the active app
-apply their normal meanings:
+event, so macOS and the active app can apply their normal meanings. Delayed
+tap actions keep the modifier snapshot from the touch-lift frame. Synthetic
+system shortcuts (Space/Mission Control and Control+Arrow) intentionally use
+only their registered chord; adding unrelated live modifiers makes
+WindowServer reject the action on some macOS releases. The internal Cmd+Ctrl+D
+dictionary pulse is also fixed:
 
 | Combination | Behavior |
 | --- | --- |
