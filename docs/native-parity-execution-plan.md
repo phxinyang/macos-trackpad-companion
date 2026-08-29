@@ -523,7 +523,7 @@ Ketch 的开源代码检索还核对了 `NavigationSplitView` 在 macOS 设置�
 ### I21：Android 单场景 GPU 合成器（2026-08-29）
 
 - 状态：已完成。API 31+ 默认使用 `GpuGlassView` 单次 AGSL 合成，QWEA0 保留为 API 26–30 回退；`TouchPadView` 只增加质心位置回调，输入编码和手势语义不变。
-- 验证：ADB `192.168.3.137:44899` 安装/启动无崩溃；稳定主页基线 PSS `124.8 MB`、Graphics `35.0 MB`、GL mtrack `16.6 MB`、EGL mtrack `18.4 MB`；交互滑动 GPU p50 `6 ms`、90th `13 ms`、janky `0%`（本机瞬时 CPU 快照约 `18%`，受设备后台负载影响）。空闲 3 秒 gfxinfo 帧数保持不变；全屏稳定后渲染器尺寸为 `2712x1220`，无旧边距暗边。
+- 验证：最终 Debug APK SHA-256 为 `b7486d1a12c4774d00a8b20eeccc064cbfd2bf22cb5794136c82ef9fc40d4da1`，ADB `192.168.3.137:44899` 安装/启动无崩溃；干净主页 PSS `92.5–93.4 MB`、Graphics `29.6 MB`、GL mtrack `13.4 MB`、EGL mtrack `16.2 MB`；交互滑动 GPU p50 `8 ms`、90th `9 ms`、janky `0.08%`，`top` 瞬时 CPU 约 `4%`。空闲 3 秒 gfxinfo 帧数保持不变；全屏稳定后渲染器尺寸为 `2712x1220`，无旧边距暗边。
 
 ### 阶段 M：再次全面 native parity 审计（2026-08-29）
 
@@ -625,7 +625,7 @@ Apple Mac 触控板的公开实现/规范。
 
 - [x] T1. 将三指拖拽的完整抬手建模为 `DragLocked`，实现
   `3F -> 0F -> 4F -> 0F -> 3F`：四指阶段不释放左键，目标 Space 再落三指可继续同一拖拽。
-- [x] T2. 明确解锁与安全边界：短 1F/2F 触摸解锁；加入第四指前未完整抬手时释放 live drag；断链、取消和进程退出始终释放按键。
+- [x] T2. 明确解锁与安全边界：静止 1F/2F 触摸解锁，真实 1F/2F 移动立即回到普通输入；加入第四指前未完整抬手时释放 live drag；断链、取消和进程退出始终释放按键。
 - [x] T3. 新增 `persistent_drag_lock` 配置及 TUI 中英双语开关；关闭后保留有限
   `release_delay_ms` 兼容模式，设为 `0` 即严格抬手释放。
 - [x] T4. 修复合成 `SymbolicHotKey` 与 `Control+Arrow` 丢失用户 Shift/Command/Option 的问题；统一合并 Quartz 四个键盘修饰位，固定 Cmd+Ctrl+D 查词脉冲不受污染。
@@ -633,3 +633,11 @@ Apple Mac 触控板的公开实现/规范。
 - [ ] T6. 在 MacBook/Magic Trackpad + Mac mini 目标环境实测 staged 拖拽、快捷键组合及不同 WindowServer 版本的实际消费结果。
 
 阶段 T：**代码、自动化回归和文档已完成；T6 依赖 macOS 真机。**
+
+### 阶段 T1：持久拖拽后的单指可用性修正（2026-08-29）
+
+- [x] T1.1. 定位 `DragLocked` 吞掉 1F/2F dispatch 的原因；静止触摸仍保留换把候选，超过 `0.4mm` 的单指移动或双指 pan 立即退出锁定。
+- [x] T1.2. 退出时释放合成左键、清理 tap-drag/右键残留，并抑制解锁动作在抬手时生成额外单击。
+- [x] T1.3. 增加“拖拽后单指恢复指针”回归测试，验证移动、单次释放和无误点击。
+
+阶段 T1：**代码与自动化回归已完成；真机停顿体感仍待验。**

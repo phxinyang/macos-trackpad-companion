@@ -654,6 +654,9 @@ pub struct State<O: Output> {
     /// Highest contact count observed while the persistent drag lock is
     /// waiting for either a 3F re-grip, a 4F Space stage, or an unlock tap.
     drag_lock_contact_peak: usize,
+    /// The current one-finger session escaped a persistent drag lock. Keep
+    /// its eventual lift from being interpreted as a fresh click.
+    drag_lock_escape: bool,
     /// Drag-lock pending release. Set when the pad empties during an
     /// engaged drag; the actual button-up fires via [`State::tick`]
     /// once `release_delay_ms` elapses. Any finger landing inside the
@@ -766,6 +769,7 @@ impl<O: Output> State<O> {
             options,
             drag_lock_latched: false,
             drag_lock_contact_peak: 0,
+            drag_lock_escape: false,
             pending_drag_release: None,
             pending_motion: None,
             cursor_accel,
@@ -1017,6 +1021,7 @@ impl<O: Output> State<O> {
         self.pending_drag_release = None;
         self.drag_lock_latched = false;
         self.drag_lock_contact_peak = 0;
+        self.drag_lock_escape = false;
         self.contacts.clear();
         self.pending_motion = None;
         self.two_finger_recent = None;
@@ -1077,6 +1082,7 @@ impl<O: Output> State<O> {
         self.pending_drag_release = None;
         self.drag_lock_latched = false;
         self.drag_lock_contact_peak = 0;
+        self.drag_lock_escape = false;
         if self.drag_button_held {
             log::debug!("3f drag: {reason} — releasing left button");
             self.out.set_event_time(now);
@@ -1144,6 +1150,20 @@ impl<O: Output> State<O> {
                 && self.drag_lock_contact_peak > 0
             {
                 return GestureKind::Idle;
+            }
+            // A stationary single finger can still be a transport-split
+            // precursor to 3F/4F (1F -> 2F -> 4F). Keep that candidate
+            // latched, but exit as soon as it has real pointer motion so a
+            // normal 1F session never remains blocked. Two fingers use the
+            // same idea with the normal pan lock threshold; a stationary 2F
+            // touch remains an explicit unlock tap.
+            if matches!(self.kind, GestureKind::DragLocked) {
+                if n == 1 && self.max_move_sq.sqrt() >= PAN_LOCK_MM {
+                    return GestureKind::OneFinger;
+                }
+                if n == 2 && self.max_move_sq.sqrt() >= PAN_LOCK_MM {
+                    return GestureKind::TwoFingerUnclassified;
+                }
             }
             if matches!(self.kind, GestureKind::ThreeFingerDrag) && self.drag_button_held {
                 return if n == 0 {
@@ -1294,6 +1314,9 @@ impl<O: Output> State<O> {
                 let pending_2f = self.pending_two_finger_tap.take();
                 let pending_3f = self.pending_three_finger_tap.take();
                 let suppress_residual = std::mem::take(&mut self.suppress_one_finger_click);
+                if matches!(new_kind, GestureKind::Idle) {
+                    self.drag_lock_escape = false;
+                }
                 if matches!(new_kind, GestureKind::Idle) {
                     if self.hold_latched {
                         log::debug!("1f press-and-hold: release left button on lift");
@@ -1754,6 +1777,28 @@ impl<O: Output> State<O> {
                             self.drag_lock_contact_peak = 0;
                             return;
                         }
+                    }
+                    GestureKind::OneFinger | GestureKind::TwoFingerUnclassified => {
+                        if self.drag_button_held {
+                            self.out.set_drag_button_held(false);
+                            self.drag_button_held = false;
+                        }
+                        self.drag_lock_latched = false;
+                        self.drag_lock_contact_peak = 0;
+                        self.drag_lock_escape = matches!(new_kind, GestureKind::OneFinger);
+                        self.pending_drag_release = None;
+                        self.drag_baseline = None;
+                        self.pending_motion = None;
+                        self.last_1f_tap = None;
+                        self.tap_drag_candidate = false;
+                        self.tap_drag_pending_since = None;
+                        self.pending_right_click = None;
+                        if self.drag_lock_escape {
+                            self.suppress_one_finger_click = true;
+                        }
+                        log::debug!(
+                            "drag lock: escaped to {new_kind:?}; ordinary touch input is available"
+                        );
                     }
                     _ => {}
                 }
@@ -2296,7 +2341,9 @@ impl<O: Output> State<O> {
                 );
                 self.pending_two_finger_tap = None;
             }
-            self.suppress_one_finger_click = false;
+            if !self.drag_lock_escape {
+                self.suppress_one_finger_click = false;
+            }
         }
 
         // Tap-drag candidate: commit to the drag once this contact has
@@ -6181,6 +6228,49 @@ mod tests {
                 .count(),
             1,
             "explicit unlock must release exactly once: {unlock:?}"
+        );
+    }
+
+    #[test]
+    fn persistent_drag_lock_does_not_block_single_finger_pointer() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        let t0 = Timestamp::now();
+
+        // Engage and park a persistent three-finger drag.
+        s.on_frame_at(
+            frame(&[(1, 20.0, 20.0), (2, 35.0, 20.0), (3, 50.0, 20.0)]),
+            t0,
+        );
+        s.on_frame_at(
+            frame(&[(1, 20.0, 23.0), (2, 35.0, 23.0), (3, 50.0, 23.0)]),
+            at(t0, 40),
+        );
+        s.on_frame_at(frame(&[]), at(t0, 60));
+
+        // A single-finger landing must immediately escape the lock. The
+        // normal 1F path defers one frame, then emits movement without a
+        // dead interval or a synthetic click on lift.
+        s.on_frame_at(frame(&[(1, 40.0, 23.0)]), at(t0, 100));
+        s.on_frame_at(frame(&[(1, 41.0, 23.0)]), at(t0, 116));
+        s.on_frame_at(frame(&[(1, 42.0, 23.0)]), at(t0, 132));
+        s.on_frame_at(frame(&[]), at(t0, 148));
+
+        let log = r.pop();
+        assert!(
+            log.iter().any(|line| line.starts_with("move ")),
+            "single-finger movement must resume immediately after drag lock: {log:?}"
+        );
+        assert!(
+            !log.iter().any(|line| line == "click Left"),
+            "the lock-escape touch must not synthesize an extra click: {log:?}"
+        );
+        assert_eq!(
+            log.iter()
+                .filter(|line| *line == "set_left_button_held false")
+                .count(),
+            1,
+            "escaping to 1F must release the carried drag exactly once: {log:?}"
         );
     }
 

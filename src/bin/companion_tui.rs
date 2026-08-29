@@ -357,10 +357,10 @@ impl SettingId {
                 "三指移动时保持虚拟点按，用于拖移窗口或项目。"
             }
             (Self::PersistentDragLock, Locale::English) => {
-                "Keep the drag held across a complete lift for 3F → 4F → 3F handoff."
+                "Keep the drag across 3F → 4F → 3F; moving 1F/2F returns to normal input."
             }
             (Self::PersistentDragLock, Locale::Chinese) => {
-                "三指完全抬起后仍保持拖移，以支持 3F → 4F → 3F 换把。"
+                "保持 3F → 4F → 3F 拖移；单指或双指移动会立即恢复普通输入。"
             }
             (Self::ReleaseDelay, Locale::English) => {
                 "Keep the drag held briefly while changing grip."
