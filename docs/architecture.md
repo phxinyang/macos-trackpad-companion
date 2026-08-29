@@ -27,7 +27,7 @@ Android / browser / USB PTP
   command-line tools.
 - `crates/touchpad-proto/`: versioned ATP1 wire-format crate shared by clients.
 - `macos/TrackpadCompanionSettings/`: macOS 13+ SwiftUI settings app. The
-  package keeps the app entry point and service/config models together, while
+  package keeps `App.swift` with the app entry point and service/config models, while
   reusable settings rows and overview components live under `Views/`.
 - `packaging/macos/`: reproducible app bundle and DMG scripts. Helpers are
   embedded in `Contents/Resources`; no Homebrew dependency is required at

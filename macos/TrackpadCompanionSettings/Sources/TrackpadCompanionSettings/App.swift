@@ -47,7 +47,7 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
            let language = AppLanguage(rawValue: saved) {
             return language
         }
-        return Locale.current.languageCode?.lowercased().hasPrefix("zh") == true ? .chinese : .english
+        return Locale.current.language.languageCode?.identifier.lowercased().hasPrefix("zh") == true ? .chinese : .english
     }
 
     func text(_ english: String, _ chinese: String) -> String {
@@ -150,7 +150,9 @@ final class ServiceSupervisor: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.stop()
+            Task { @MainActor [weak self] in
+                self?.stop()
+            }
         }
     }
 
@@ -423,7 +425,7 @@ final class SettingsModel: ObservableObject {
             values = flatten(config)
             configPath = root["path"] as? String ?? ""
             error = nil
-        } catch { error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription }
     }
 
     func bool(_ path: String, default fallback: Bool = false) -> Bool { values[path] as? Bool ?? fallback }
@@ -448,7 +450,7 @@ final class SettingsModel: ObservableObject {
             _ = try runHelper(["set", "--path", path, "--value", value])
             values[path] = scalar(value)
             error = nil
-        } catch { error = error.localizedDescription }
+        } catch { self.error = error.localizedDescription }
         isSaving = false
     }
 
@@ -519,7 +521,7 @@ struct SettingsView: View {
                     } icon: {
                         Image(systemName: icon(for: section))
                             .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(section == model.selectedSection ? .tint : .secondary)
+                            .foregroundStyle(section == model.selectedSection ? Color.accentColor : Color.secondary)
                     }
                     .tag(section)
                     .padding(.vertical, 3)
