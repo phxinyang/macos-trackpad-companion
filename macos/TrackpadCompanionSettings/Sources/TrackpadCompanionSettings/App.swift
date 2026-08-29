@@ -412,7 +412,6 @@ final class SettingsModel: ObservableObject {
                 self.language = self.language == .english ? .chinese : .english
             }
         }
-        reload()
     }
 
     deinit { if let languageObserver { NotificationCenter.default.removeObserver(languageObserver) } }
@@ -596,6 +595,11 @@ struct SettingsView: View {
         .onAppear {
             supervisor.refreshPermissions()
             supervisor.start()
+        }
+        .task {
+            // Load after StateObject installation. Mutating @Published values
+            // from SettingsModel.init re-enters SwiftUI's AttributeGraph.
+            model.reload()
         }
     }
 
