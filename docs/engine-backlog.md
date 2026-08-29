@@ -21,7 +21,7 @@ both transports equally.
 | Palm-edge suppression | Contact density near sensor edge ignored | N/A over network — phone clients own rejection (web/app trust-flag only) |
 | Browser history swipe | Two-finger swipe navigating back/forward inside Safari or Chrome | **Not achievable via CGEvent.** Chromium's `HistorySwiper` requires real `NSTouch` data and Safari behaves the same; synthetic phased scrolls are rejected by both regardless of phase/`ScrollCount`/`mayBegin` shaping. Probe write-up: <https://github.com/aislopware/slop-desk/blob/dc64b6fa/docs/05-input-window-control.md>. Anything beyond plain scroll has to be translated to a key equivalent (⌘[ / ⌘]) instead |
 
-| 三指拖拽 + 四指切 Space | Hold a window with three fingers, add a fourth finger, switch Space, then release | **Implemented state transition; macOS 26 uses SymbolicHotKey, macOS 27+ prefers HIDEvent and falls back to SymbolicHotKey** — left button remains held through the switch, horizontal threshold 10mm, vertical threshold 7mm, 350ms cooldown; macOS <26 keeps DockSwipe. Requires macOS application/WindowServer verification |
+| 三指拖拽 + 四指切 Space | Hold a window with three fingers, add a fourth finger, switch Space, then release | **Implemented state transition; macOS 26 keeps DockSwipe, macOS 27+ prefers HIDEvent and falls back to SymbolicHotKey** — left button remains held through the switch, horizontal threshold 10mm, vertical threshold 7mm, 350ms cooldown. Requires macOS application/WindowServer verification |
 
 ## Verification foundation (2026-08)
 
