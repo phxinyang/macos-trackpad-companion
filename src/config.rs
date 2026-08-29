@@ -5,7 +5,7 @@
 //! Default location: `$XDG_CONFIG_HOME/macos-trackpad-companion/config.toml`,
 //! falling back to `$HOME/.config/macos-trackpad-companion/config.toml`.
 //!
-//! See `README.md` for full syntax. Quick reference:
+//! See `docs/configuration.md` for the full syntax. Quick reference:
 //!
 //! ```toml
 //! [device]                # optional; omit for any PTP digitizer
