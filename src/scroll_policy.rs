@@ -6,15 +6,28 @@
 
 pub(crate) const MOD_CMD: u64 = 0x0010_0000;
 pub(crate) const MOD_CTRL: u64 = 0x0004_0000;
-#[allow(dead_code)]
 pub(crate) const MOD_OPTION: u64 = 0x0008_0000;
-#[allow(dead_code)]
 pub(crate) const MOD_SHIFT: u64 = 0x0002_0000;
+/// The four keyboard modifier bits shared by Quartz mouse, gesture, and
+/// keyboard events. Other CGEvent flags (numeric pad, function, non-
+/// coalescing, and so on) are deliberately outside this mask.
+pub(crate) const KEYBOARD_MODIFIER_MASK: u64 = MOD_SHIFT | MOD_CTRL | MOD_OPTION | MOD_CMD;
 pub(crate) const DEFAULT_MODIFIER_ZOOM_MASK: u64 = MOD_CMD | MOD_CTRL;
 /// Accessibility Zoom's supported scroll modifiers. Shift is intentionally
 /// excluded: Apple exposes it for ordinary keyboard/mouse semantics, not for
 /// the scroll-to-zoom setting.
 pub(crate) const SUPPORTED_ZOOM_MODIFIER_MASK: u64 = MOD_CMD | MOD_CTRL | MOD_OPTION;
+
+/// Merge modifiers held by the user into a synthetic shortcut's existing
+/// flags. The shortcut's own required bits are retained, while all four
+/// live keyboard bits are carried through so combinations such as
+/// Shift+Control+Arrow and Option+Mission-Control behave like real key
+/// events. Non-keyboard flags from the shortcut are preserved unchanged.
+#[allow(dead_code)]
+pub(crate) fn merge_keyboard_modifiers(shortcut_flags: u64, live_flags: u64) -> u64 {
+    (shortcut_flags & !KEYBOARD_MODIFIER_MASK)
+        | ((shortcut_flags | live_flags) & KEYBOARD_MODIFIER_MASK)
+}
 
 /// Sample Command/Control only at session begin. Once latched, modifier
 /// changes cannot switch the event family before the session ends.
@@ -96,5 +109,26 @@ mod tests {
         assert_eq!(shift_scroll_delta(MOD_SHIFT, 0.0, 4.0, true), (4.0, 0.0));
         assert_eq!(shift_scroll_delta(MOD_SHIFT, 0.0, 4.0, false), (0.0, 4.0));
         assert_eq!(shift_scroll_delta(MOD_SHIFT, 1.0, 4.0, true), (1.0, 4.0));
+    }
+
+    #[test]
+    fn synthetic_shortcuts_keep_required_and_live_modifiers() {
+        let registry = MOD_CTRL | (1 << 21);
+        let live = MOD_SHIFT | MOD_OPTION | MOD_CMD;
+        assert_eq!(
+            merge_keyboard_modifiers(registry, live),
+            registry | live,
+            "live Shift/Option/Command must augment a Control shortcut"
+        );
+        assert_eq!(
+            merge_keyboard_modifiers(0, live),
+            live,
+            "a shortcut without required modifiers still carries live flags"
+        );
+        assert_eq!(
+            merge_keyboard_modifiers(registry, 1 << 25),
+            registry,
+            "unrelated CGEvent flags must not leak into keyboard modifiers"
+        );
     }
 }

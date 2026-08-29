@@ -376,13 +376,19 @@ impl Default for PressAndHoldDrag {
 
 /// `[gestures.three_finger_drag]` — companion-net's 拖移样式 = 三指拖移.
 /// While on, three-finger motion drags (left-button held) instead of firing
-/// Dock swipes; four fingers keep the full swipe surface. Both HID and
-/// network binaries use the same resolved options via `boot::gesture_options`.
+/// Dock swipes. `persistent_drag_lock` enables the explicit staged
+/// 3F -> 0F -> 4F -> 0F -> 3F handoff; four fingers otherwise keep the full
+/// swipe surface. Both HID and network binaries use the same resolved options
+/// via `boot::gesture_options`.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct ThreeFingerDrag {
     pub enable: GestureEnable,
     pub release_delay_ms: u64,
+    /// Keep the synthetic drag button held across a complete lift so a
+    /// staged 3F -> 0F -> 4F -> 0F -> 3F handoff can continue one drag.
+    /// This is companion behavior, not a physical Apple Drag Lock switch.
+    pub persistent_drag_lock: bool,
 }
 
 impl Default for ThreeFingerDrag {
@@ -392,6 +398,7 @@ impl Default for ThreeFingerDrag {
             // Default 500ms drag-lock delay allows lifting fingers and re-gripping (换把悬停)
             // to continue dragging across large screens. Set to 0 for instant lift-to-release.
             release_delay_ms: 500,
+            persistent_drag_lock: true,
         }
     }
 }
@@ -641,6 +648,7 @@ mod tests {
         assert_eq!(cfg.gestures.pinch.enable, GestureEnable::On);
         assert_eq!(cfg.gestures.pinch.gain, 1.0);
         assert_eq!(cfg.gestures.rotate.gain, 1.0);
+        assert!(cfg.gestures.three_finger_drag.persistent_drag_lock);
         assert_eq!(
             cfg.gestures.swipe.horizontal.backend,
             SwipeBackend::Synthetic
@@ -680,6 +688,18 @@ mod tests {
         assert!(cfg.gestures.dynamic_transform_compat);
         assert_eq!(cfg.gestures.pinch.gain, 1.75);
         assert_eq!(cfg.gestures.rotate.gain, 0.5);
+    }
+
+    #[test]
+    fn persistent_drag_lock_parses_and_can_be_disabled() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [gestures.three_finger_drag]
+            persistent_drag_lock = false
+        "#,
+        )
+        .unwrap();
+        assert!(!cfg.gestures.three_finger_drag.persistent_drag_lock);
     }
 
     #[test]

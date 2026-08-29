@@ -147,6 +147,7 @@ enum SettingId {
     VerticalSwipe,
     RightEdgeSwipe,
     ThreeFingerDrag,
+    PersistentDragLock,
     ReleaseDelay,
     OneFingerTapDrag,
     PressAndHoldDrag,
@@ -190,6 +191,7 @@ const MORE_GESTURES: &[SettingId] = &[
 ];
 const COMPANION: &[SettingId] = &[
     SettingId::ThreeFingerDrag,
+    SettingId::PersistentDragLock,
     SettingId::ReleaseDelay,
     SettingId::OneFingerTapDrag,
     SettingId::PressAndHoldDrag,
@@ -251,6 +253,8 @@ impl SettingId {
             (Self::RightEdgeSwipe, Locale::Chinese) => "通知中心",
             (Self::ThreeFingerDrag, Locale::English) => "Three-finger drag",
             (Self::ThreeFingerDrag, Locale::Chinese) => "三指拖移",
+            (Self::PersistentDragLock, Locale::English) => "Persistent drag lock",
+            (Self::PersistentDragLock, Locale::Chinese) => "持久拖移锁定",
             (Self::ReleaseDelay, Locale::English) => "Drag-lock delay",
             (Self::ReleaseDelay, Locale::Chinese) => "拖移锁定延迟",
             (Self::OneFingerTapDrag, Locale::English) => "One-finger tap-drag",
@@ -352,6 +356,12 @@ impl SettingId {
             (Self::ThreeFingerDrag, Locale::Chinese) => {
                 "三指移动时保持虚拟点按，用于拖移窗口或项目。"
             }
+            (Self::PersistentDragLock, Locale::English) => {
+                "Keep the drag held across a complete lift for 3F → 4F → 3F handoff."
+            }
+            (Self::PersistentDragLock, Locale::Chinese) => {
+                "三指完全抬起后仍保持拖移，以支持 3F → 4F → 3F 换把。"
+            }
             (Self::ReleaseDelay, Locale::English) => {
                 "Keep the drag held briefly while changing grip."
             }
@@ -434,6 +444,7 @@ impl SettingId {
             Self::VerticalSwipe => &["gestures", "swipe", "vertical", "enable"],
             Self::RightEdgeSwipe => &["gestures", "right_edge_swipe"],
             Self::ThreeFingerDrag => &["gestures", "three_finger_drag", "enable"],
+            Self::PersistentDragLock => &["gestures", "three_finger_drag", "persistent_drag_lock"],
             Self::ReleaseDelay => &["gestures", "three_finger_drag", "release_delay_ms"],
             Self::OneFingerTapDrag => &["gestures", "one_finger_tap_drag", "enable"],
             Self::PressAndHoldDrag => &["gestures", "press_and_hold_drag", "enable"],
@@ -561,6 +572,10 @@ impl App {
             SettingId::ThreeFingerDrag => {
                 enable_text(&self.cfg.gestures.three_finger_drag.enable, self.locale)
             }
+            SettingId::PersistentDragLock => bool_text(
+                self.cfg.gestures.three_finger_drag.persistent_drag_lock,
+                self.locale,
+            ),
             SettingId::ReleaseDelay => format!(
                 "{} ms",
                 self.cfg.gestures.three_finger_drag.release_delay_ms
@@ -664,6 +679,10 @@ impl App {
             SettingId::RightEdgeSwipe => toggle_enable(&mut self.cfg.gestures.right_edge_swipe),
             SettingId::ThreeFingerDrag => {
                 toggle_enable(&mut self.cfg.gestures.three_finger_drag.enable)
+            }
+            SettingId::PersistentDragLock => {
+                self.cfg.gestures.three_finger_drag.persistent_drag_lock =
+                    !self.cfg.gestures.three_finger_drag.persistent_drag_lock
             }
             SettingId::ReleaseDelay => {
                 let delta = if increase { 50 } else { -50 };
@@ -801,6 +820,9 @@ impl App {
             SettingId::VerticalSwipe => enable_value(&self.cfg.gestures.swipe.vertical.enable),
             SettingId::RightEdgeSwipe => enable_value(&self.cfg.gestures.right_edge_swipe),
             SettingId::ThreeFingerDrag => enable_value(&self.cfg.gestures.three_finger_drag.enable),
+            SettingId::PersistentDragLock => {
+                toml::Value::Boolean(self.cfg.gestures.three_finger_drag.persistent_drag_lock)
+            }
             SettingId::ReleaseDelay => {
                 toml::Value::Integer(self.cfg.gestures.three_finger_drag.release_delay_ms as i64)
             }
@@ -1264,6 +1286,11 @@ mod tests {
                 .settings()
                 .contains(&SettingId::ThreeFingerDrag)
         );
+        assert!(
+            Category::Companion
+                .settings()
+                .contains(&SettingId::PersistentDragLock)
+        );
     }
     #[test]
     fn language_switch_changes_labels() {
@@ -1310,6 +1337,24 @@ mod tests {
             app.cfg.gestures.parameter_profile,
             config::GestureParameterProfile::Native
         );
+    }
+
+    #[test]
+    fn persistent_drag_lock_toggles_and_serializes() {
+        let mut app = App::new(config::Config::default(), PathBuf::from("config.toml"));
+        app.category = CATEGORIES
+            .iter()
+            .position(|category| *category == Category::Companion)
+            .unwrap();
+        app.selected = COMPANION
+            .iter()
+            .position(|id| *id == SettingId::PersistentDragLock)
+            .unwrap();
+
+        assert_eq!(app.value(SettingId::PersistentDragLock), "打开");
+        app.adjust(true);
+        assert!(!app.cfg.gestures.three_finger_drag.persistent_drag_lock);
+        assert_eq!(app.toml_value(SettingId::PersistentDragLock).as_bool(), Some(false));
     }
 
     #[test]

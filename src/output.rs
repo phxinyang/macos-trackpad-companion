@@ -511,7 +511,7 @@ impl Event {
         // Keep non-keyboard event bits (for example the gesture
         // non-coalescing flag), but replace the four keyboard modifiers with
         // the snapshot that belongs to this event.
-        const MODIFIER_FLAGS: u64 = 0x001E_0000;
+        const MODIFIER_FLAGS: u64 = crate::scroll_policy::KEYBOARD_MODIFIER_MASK;
         let existing = unsafe { CGEventGetFlags(self.0) };
         let merged = (existing & !MODIFIER_FLAGS) | (mods & MODIFIER_FLAGS);
         unsafe { CGEventSetFlags(self.0, merged) };
@@ -2131,12 +2131,14 @@ impl Emitter {
 }
 
 fn post_ctrl_arrow_key(source: CGEventSourceRef, keycode: u16, ts: Timestamp) {
-    const kCGEventFlagMaskControl: u64 = 0x00040000;
+    use crate::scroll_policy::{MOD_CTRL, merge_keyboard_modifiers};
+    let live_flags = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
+    let flags = merge_keyboard_modifiers(MOD_CTRL, live_flags);
     if let Some(down) =
         Event::from_raw(unsafe { CGEventCreateKeyboardEvent(source, keycode, true) })
     {
         unsafe {
-            CGEventSetFlags(down.0, kCGEventFlagMaskControl);
+            CGEventSetFlags(down.0, flags);
             CGEventSetTimestamp(down.0, ts.as_nanos());
         }
         down.post_raw(kCGHIDEventTap);
@@ -2144,7 +2146,7 @@ fn post_ctrl_arrow_key(source: CGEventSourceRef, keycode: u16, ts: Timestamp) {
     if let Some(up) = Event::from_raw(unsafe { CGEventCreateKeyboardEvent(source, keycode, false) })
     {
         unsafe {
-            CGEventSetFlags(up.0, kCGEventFlagMaskControl);
+            CGEventSetFlags(up.0, flags);
             CGEventSetTimestamp(up.0, ts.as_nanos());
         }
         up.post_raw(kCGHIDEventTap);
@@ -2279,6 +2281,9 @@ fn post_symbolic_hotkey(source: CGEventSourceRef, shk: u32, ts: Timestamp) -> bo
             (vkc_out_of_reach, SHK_MODS, false)
         }
     };
+
+    let live_flags = unsafe { CGEventSourceFlagsState(kCGEventSourceStateCombinedSessionState) };
+    let mods_to_send = crate::scroll_policy::merge_keyboard_modifiers(mods_to_send, live_flags);
 
     let post_key = |code: u16, down: bool, offset_ms: u64| -> bool {
         // Pass NULL (std::ptr::null_mut()) so the event is created from the default system source, matching Mac Mouse Fix

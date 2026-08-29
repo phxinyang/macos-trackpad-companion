@@ -121,7 +121,8 @@ impl PeerGate {
 
 /// The net transport pushes frames and idle-ticks into this sink.
 /// Implementors own the gesture state; the idle tick is what fires
-/// drag-lock releases (see `gesture::GestureOptions::release_delay_ms`).
+/// finite drag-lock releases (see `gesture::GestureOptions::release_delay_ms`);
+/// persistent staged drags are released only by an explicit unlock or cancel.
 pub trait InputSink {
     fn on_frame(&mut self, frame: Frame, ts: Timestamp);
     fn idle_tick(&mut self, now: Timestamp);

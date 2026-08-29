@@ -222,7 +222,8 @@ backend = "synthetic"        # synthetic animates; notification commits on lift
 
 [gestures.three_finger_drag]  # three fingers → left-button drag
 enable = "on"                 # "off" restores three-finger swipes
-release_delay_ms = 500        # 500 = 500ms 换把悬停延续 (0 = 抬手即松)
+release_delay_ms = 500        # finite grace when persistent lock is off
+persistent_drag_lock = true   # staged 3F → 0F → 4F → 0F → 3F handoff
 
 [gestures.one_finger_tap_drag] # double-tap, hold, then drag
 enable = "on"
@@ -231,14 +232,19 @@ enable = "on"
 enable = "off"                # stationary 1F hold; off matches stock default
 ```
 
-When a three-finger drag is already holding a window and a fourth finger joins,
-the gesture engine keeps the left mouse button held while entering the four-finger
-Space-swipe state. macOS 26 keeps the animated DockSwipe path. macOS 27 and later
-use the system SymbolicHotKey registry (Space Left/Right, Mission Control or App
-Exposé), because WindowServer drops third-party DockSwipe events there; when
-available, the companion first tries SkyLight's `SLEventSetIOHIDEvent` payload
-and falls back to SymbolicHotKey. Cancelled or broken sessions always release
-the held button.
+With `persistent_drag_lock = true`, a three-finger drag stays held after a
+complete lift. Land four fingers to switch Space, lift again, then land three
+fingers to continue the same drag; a short one- or two-finger tap explicitly
+unlocks it. Adding a fourth finger before the complete three-finger lift is
+treated as an independent swipe and releases the live drag. Set
+`persistent_drag_lock = false` to use the finite `release_delay_ms` grace window
+instead, or set `release_delay_ms = 0` for strict lift-to-release behavior.
+macOS 26 keeps the animated DockSwipe path. macOS 27 and later use the system
+SymbolicHotKey registry (Space Left/Right, Mission Control or App Exposé),
+because WindowServer drops third-party DockSwipe events there; when available,
+the companion first tries SkyLight's `SLEventSetIOHIDEvent` payload and falls
+back to SymbolicHotKey. Cancelled or broken sessions always release the held
+button.
 
 On macOS, the process reads `com.apple.AppleMultitouchTrackpad` at startup,
 falls back to `com.apple.driver.AppleBluetoothMultitouch.trackpad` for missing
@@ -255,7 +261,10 @@ a Taptic Engine silently ignore the cue.
 The sync is startup-only; restart the process after changing System Settings.
 
 Keyboard modifiers are preserved on every emitted mouse, scroll, and gesture
-event. This lets macOS and the active app apply their normal meanings:
+event. Synthetic system shortcuts (Space/Mission Control and Control+Arrow)
+also merge the live Shift/Command/Control/Option flags; the internal Cmd+Ctrl+D
+dictionary pulse remains a fixed shortcut. This lets macOS and the active app
+apply their normal meanings:
 
 | Combination | Behavior |
 | --- | --- |
@@ -291,11 +300,11 @@ tap_to_click = "off"
 Missing Trackpad settings are normal on Macs without an internal pad or when
 only an external device is present. The process logs the missing domain and
 continues with TOML/default values. `DragLock` is reported for diagnostics but
-does not change the companion's three-finger re-grip timeout; configure
-`[gestures.three_finger_drag].release_delay_ms` directly (the default is
-500 ms). A 3F-to-4F Space handoff is only possible while this grace window is
-open; setting it to `0` intentionally releases the dragged item as soon as all
-three fingers leave, so a later 4F swipe is an independent gesture.
+does not change the companion's staged drag contract. Use
+`persistent_drag_lock` for the long-lived 3F/4F handoff; use
+`release_delay_ms` only for the finite re-grip compatibility mode. A 3F-to-4F
+handoff without a complete lift is intentionally rejected so an accidental
+extra finger cannot silently steal a live drag.
 
 For an A/B test with the public ChromiumOS recognizer thresholds, set the
 experimental profile and restart the daemon:
