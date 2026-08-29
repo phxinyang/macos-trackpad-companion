@@ -134,6 +134,8 @@ final class ServiceSupervisor: ObservableObject {
     @Published private(set) var diagnostics = ""
     private var process: Process?
     private var outputPipe: Pipe?
+    private var lastServiceOutput = ""
+    private var didRequestAccessibility = false
     private let bonjour = BonjourAdvertiser()
     private let serviceID: String
     private var terminationObserver: NSObjectProtocol?
@@ -168,6 +170,12 @@ final class ServiceSupervisor: ObservableObject {
     func start() {
         guard process?.isRunning != true else { return }
         refreshPermissions()
+        guard accessibilityGranted else {
+            state = .waitingForPermission
+            message = "Accessibility permission is required."
+            requestAccessibility()
+            return
+        }
         preparePairing()
         guard let executable = locate("COMPANION_NET_BIN", bundledName: "companion-net") else {
             state = .failed
@@ -176,18 +184,31 @@ final class ServiceSupervisor: ObservableObject {
         }
         let child = Process()
         child.executableURL = URL(fileURLWithPath: executable)
+        // The host owns the TCC prompt. Keep the embedded helper silent so a
+        // stale child answer cannot create a repeating system dialog.
+        child.environment = ProcessInfo.processInfo.environment.merging([
+            "MTC_ACCESSIBILITY_PROMPT": "0",
+        ]) { _, new in new }
         let pipe = Pipe()
         child.standardOutput = pipe
         child.standardError = pipe
         outputPipe = pipe
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty else { return }
+            guard !data.isEmpty else {
+                // A closed child pipe can repeatedly report readability.
+                // Remove the handler at EOF or the host app spins forever.
+                handle.readabilityHandler = nil
+                return
+            }
             let text = String(data: data, encoding: .utf8) ?? ""
             Task { @MainActor in
                 guard let self else { return }
                 let status = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !status.isEmpty { self.message = status }
+                if !status.isEmpty {
+                    self.lastServiceOutput = String(status.suffix(2000))
+                    self.message = status
+                }
                 if let port = self.port(from: status) {
                     self.endpoint = "http://\(ProcessInfo.processInfo.hostName):\(port)/"
                     self.publishBonjour(port: port)
@@ -203,11 +224,25 @@ final class ServiceSupervisor: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.process = nil
-                if process.terminationStatus == 0 || self.state == .stopped { self.state = .stopped }
-                else { self.state = .failed; self.message = "companion-net exited with status \(process.terminationStatus)." }
+                self.outputPipe?.fileHandleForReading.readabilityHandler = nil
+                self.outputPipe = nil
+                if process.terminationStatus == 0 || self.state == .stopped {
+                    self.state = .stopped
+                } else {
+                    let detail = self.lastServiceOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if detail.localizedCaseInsensitiveContains("Accessibility permission") {
+                        self.state = .waitingForPermission
+                    } else {
+                        self.state = .failed
+                    }
+                    self.message = detail.isEmpty
+                        ? "companion-net exited with status \(process.terminationStatus)."
+                        : detail
+                }
             }
         }
         do {
+            lastServiceOutput = ""
             try child.run()
             process = child
             state = .starting
@@ -219,6 +254,8 @@ final class ServiceSupervisor: ObservableObject {
     }
 
     func stop() {
+        outputPipe?.fileHandleForReading.readabilityHandler = nil
+        outputPipe = nil
         guard let process, process.isRunning else {
             bonjour.stop()
             state = .stopped
@@ -247,6 +284,14 @@ final class ServiceSupervisor: ObservableObject {
 
     func refreshPermissions() {
         accessibilityGranted = AXIsProcessTrusted()
+    }
+
+    private func requestAccessibility() {
+        guard !accessibilityGranted, !didRequestAccessibility else { return }
+        didRequestAccessibility = true
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        let options = [promptKey: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
     }
 
     func copyPairingURI() {

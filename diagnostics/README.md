@@ -22,9 +22,9 @@ Run the script from the repository root on the Mac:
 
 `collect` writes `diagnostics/mac-debug-*.txt`; `trace` writes an additional
 `diagnostics/mac-trace-*.log`. Both files are mode `0600`. The script checks the
-installed app, embedded helpers, configuration health, process/port state,
-recent unified logs, and the HTTP endpoint. It does not use `sudo`, grant TCC,
-modify configuration, upload data, or open a new listener.
+installed app, embedded helpers, configuration health, process CPU/memory and
+port state, recent unified logs, and the HTTP endpoint. It does not use `sudo`,
+grant TCC, modify configuration, upload data, or open a new listener.
 
 When reporting an issue, paste the command output and the relevant report
 sections only after reviewing them. Remove pairing tokens, host names, full
