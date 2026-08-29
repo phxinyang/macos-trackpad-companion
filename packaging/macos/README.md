@@ -15,7 +15,8 @@ than reusing `target/release` binaries built on Linux.
 
 The scripts create an unsigned `.app`, `.zip`, and `.dmg` under `dist/macos`.
 The DMG includes the conventional `Applications` shortcut for drag-and-drop
-installation.
+installation. `package-dmg.sh` removes older local DMGs first, so opening a
+wildcard after a rebuild cannot select a stale application.
 Set `CODESIGN_IDENTITY='Developer ID Application: ...'` for a hardened runtime
 signature. Notarization remains a release-pipeline concern: after signing,
 submit the DMG with `xcrun notarytool submit` and staple it with

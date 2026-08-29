@@ -13,6 +13,13 @@ fi
 [[ -f "$APP/Contents/Info.plist" ]] || { echo "App bundle is missing Contents/Info.plist: $APP" >&2; exit 1; }
 VERSION=${VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")}
 mkdir -p "$OUT"
+# `dist/macos` is a local build directory. Remove older DMGs so a shell glob
+# cannot accidentally open a stale application after a successful rebuild.
+for stale in "$OUT"/Trackpad-Companion-*-macos.dmg; do
+  if [[ -e "$stale" ]]; then
+    rm -f "$stale"
+  fi
+done
 DMG="$OUT/Trackpad-Companion-$VERSION-macos.dmg"
 rm -f "$DMG"
 STAGE="$OUT/.dmg-stage"
