@@ -109,6 +109,14 @@ const SWIPE_AXIS_LOCK_MM: f64 = 3.0;
 /// trigger. Tunable.
 const SWIPE_PROGRESS_REF_MM: f64 = 50.0;
 
+/// Fraction of the virtual surface reserved for a true right-edge gesture.
+/// Apple starts this gesture at the physical edge, not at an arbitrary
+/// absolute coordinate. Keeping the ratio here lets HID and network senders
+/// use different surface widths without mixing millimeters and normalized
+/// coordinates.
+const RIGHT_EDGE_START_RATIO: f64 = 0.85;
+const DEFAULT_SURFACE_WIDTH_MM: f64 = 65.0;
+
 /// Maximum interval between first tap lift and second tap landing for tap-drag.
 /// Apple standard is ~200-220ms. Longer windows cause accidental text selection drags.
 const TAP_DRAG_INTERVAL: Duration = Duration::from_millis(220);
@@ -415,6 +423,10 @@ pub struct GestureOptions {
     /// compatibility control; native macOS does not expose rotation
     /// sensitivity. Values are normalized by the startup layer.
     pub rotate_gain: f64,
+    /// Threshold profile for the two-finger recognizer. The ChromiumOS
+    /// profile is an experiment based on their public recognizer defaults;
+    /// it does not claim to reproduce Apple's private driver.
+    pub parameter_profile: ParameterProfile,
     /// Allow a gesture that already locked to scroll to transition into
     /// pinch/rotate. Strict native mode keeps scroll locked; this remains
     /// an opt-in compatibility behavior for legacy surfaces.
@@ -425,6 +437,9 @@ pub struct GestureOptions {
     pub scroll_enabled: bool,
     /// Whether a right-edge two-finger swipe toggles Notification Center.
     pub right_edge_swipe: bool,
+    /// Width of the sender's virtual touch surface in millimeters. The edge
+    /// gesture uses the final 15% of this width as its start zone.
+    pub surface_width_mm: f64,
     /// 拖移样式 = 三指拖移: three-finger motion drags instead of firing
     /// Dock swipes. Four fingers keep the full swipe surface.
     pub three_finger_drag: bool,
@@ -452,14 +467,64 @@ impl Default for GestureOptions {
             smart_zoom: true,
             pinch_gain: 1.0,
             rotate_gain: 1.0,
+            parameter_profile: ParameterProfile::Native,
             dynamic_transform_compat: false,
             dictionary_lookup: true,
             scroll_enabled: true,
             right_edge_swipe: true,
+            surface_width_mm: DEFAULT_SURFACE_WIDTH_MM,
             three_finger_drag: true,
             release_delay_ms: 500,
             one_finger_tap_drag: true,
             press_and_hold_drag: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParameterProfile {
+    Native,
+    ChromiumOs,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct GestureTuning {
+    pan_lock_mm: f64,
+    pinch_lock_ratio: f64,
+    pinch_guess_min_mm: f64,
+    pinch_certain_min_mm: f64,
+    rotate_lock_rad: f64,
+    min_two_finger_frames: u32,
+    transform_min_delta: f64,
+    rotate_emit_deadzone_rad: f64,
+}
+
+impl ParameterProfile {
+    fn tuning(self) -> GestureTuning {
+        match self {
+            Self::Native => GestureTuning {
+                pan_lock_mm: PAN_LOCK_MM,
+                pinch_lock_ratio: PINCH_LOCK_RATIO,
+                pinch_guess_min_mm: TAP_MAX_MOVE_MM,
+                pinch_certain_min_mm: TAP_MAX_MOVE_MM,
+                rotate_lock_rad: ROTATE_LOCK_RAD,
+                min_two_finger_frames: TWO_FINGER_MIN_FRAMES,
+                transform_min_delta: TRANSFORM_MIN_DELTA,
+                rotate_emit_deadzone_rad: ROTATE_EMIT_DEADZONE_RAD,
+            },
+            Self::ChromiumOs => GestureTuning {
+                // ChromiumOS defaults: 1.5mm scroll intent, 2mm pinch
+                // guess, 8mm pinch certainty, three observed frames, and
+                // a 1.005 squared-scale update resolution (~0.25% scale).
+                pan_lock_mm: 1.5,
+                pinch_lock_ratio: PINCH_LOCK_RATIO,
+                pinch_guess_min_mm: 2.0,
+                pinch_certain_min_mm: 8.0,
+                rotate_lock_rad: ROTATE_LOCK_RAD,
+                min_two_finger_frames: 3,
+                transform_min_delta: 0.00249688,
+                rotate_emit_deadzone_rad: ROTATE_EMIT_DEADZONE_RAD,
+            },
         }
     }
 }
@@ -482,6 +547,11 @@ struct DragBaseline {
     engaged: bool,
     /// Host timestamp when a re-grip touchdown frame was observed.
     regrip_started_at: Option<Timestamp>,
+    /// Original drag-lock release deadline carried into this re-grip.
+    /// While set, one- and two-finger frames are transient contact
+    /// acquisition and must not release the held button. `State::tick`
+    /// closes the lock at this deadline if a 4F handoff never arrives.
+    regrip_deadline: Option<Timestamp>,
 }
 
 /// Carry-over state from a 2F touch that briefly dropped to 1F (a
@@ -664,6 +734,10 @@ impl<O: Output> State<O> {
         let mut options = options;
         options.pinch_gain = normalize_transform_gain(options.pinch_gain);
         options.rotate_gain = normalize_transform_gain(options.rotate_gain);
+        if !options.surface_width_mm.is_finite() || options.surface_width_mm < 20.0 {
+            options.surface_width_mm = DEFAULT_SURFACE_WIDTH_MM;
+        }
+        options.surface_width_mm = options.surface_width_mm.min(200.0);
         Self {
             out,
             contacts: HashMap::new(),
@@ -951,23 +1025,44 @@ impl<O: Output> State<O> {
                 self.emit_tap_click(MouseButton::Right);
             }
         }
-        let Some(expires_at) = self.pending_drag_release else {
-            return;
-        };
-        if now < expires_at {
-            return;
+        if let Some(expires_at) = self.pending_drag_release {
+            if now >= expires_at {
+                self.expire_drag_lock(now, "drag-lock expired");
+                return;
+            }
         }
+        // A re-grip consumes `pending_drag_release` so the 4F handoff can
+        // arrive without the ordinary empty-pad timer firing. Keep a copy
+        // of that original deadline in DragBaseline and enforce it here as
+        // well: if only 1F/2F remains on the pad, it must not strand a
+        // synthetic left-button hold indefinitely.
+        if self.drag_button_held {
+            let regrip_expired = self
+                .drag_baseline
+                .and_then(|base| base.regrip_deadline)
+                .map(|deadline| now >= deadline)
+                .unwrap_or(false);
+            if regrip_expired {
+                self.expire_drag_lock(now, "drag-lock regrip deadline expired");
+            }
+        }
+    }
+
+    /// Release a synthetic drag button and reset the gesture session. This
+    /// is used by both the normal empty-pad timer and the re-grip deadline;
+    /// the latter can fire while stale 1F/2F contacts are still reported.
+    fn expire_drag_lock(&mut self, now: Timestamp, reason: &'static str) {
         self.pending_drag_release = None;
-        if !self.drag_button_held {
-            return; // shouldn't happen: release implies hold, but never strand a press either way
+        if self.drag_button_held {
+            log::debug!("3f drag: {reason} — releasing left button");
+            self.out.set_event_time(now);
+            self.out.set_drag_button_held(false);
+            self.drag_button_held = false;
         }
-        log::debug!("3f drag: drag-lock expired — releasing left button");
-        self.out.set_event_time(now);
-        self.out.set_drag_button_held(false);
-        self.drag_button_held = false;
-        // Manual full close-out to Idle (mirrors transition()'s reset
-        // block; bypassing transition() here avoids re-entering the
-        // ThreeFingerDrag arm that just ran).
+        // Clear the contacts too. If a re-grip deadline expires while a
+        // finger is still down, the next report must begin a clean gesture
+        // instead of inheriting the old drag's tracked down-time and motion.
+        self.contacts.clear();
         self.kind = GestureKind::Idle;
         self.started_at = now;
         self.max_move_sq = 0.0;
@@ -1008,16 +1103,16 @@ impl<O: Output> State<O> {
     }
 
     fn classify(&self, n: usize) -> GestureKind {
-        // Drag-lock: while a delayed release is pending, resume the 3-finger drag
-        // ONLY if 3 or more fingers land! If 1 or 2 fingers land, let them fall
-        // through to OneFinger / TwoFinger to release drag-lock immediately.
+        // Drag-lock: while a delayed release is pending, every contact count
+        // below five belongs to the same re-grip session. In particular, the
+        // network sender can expose a transient 1F/2F frame before the fourth
+        // finger arrives; classifying it as a fresh gesture releases the
+        // carried mouse button before the 4F Spaces handoff can start.
         if self.pending_drag_release.is_some() {
             if n >= 4 {
                 return GestureKind::FourFingerLive;
-            } else if n == 3 || n == 0 {
-                return GestureKind::ThreeFingerDrag;
             }
-            // n == 1 or n == 2 fall through to normal classification below
+            return GestureKind::ThreeFingerDrag;
         }
         // Once a swipe has fired, stay latched until every finger leaves
         // the pad.
@@ -1314,7 +1409,10 @@ impl<O: Output> State<O> {
                 self.emit_scroll_inertia(vx, vy);
                 if matches!(new_kind, GestureKind::Idle) {
                     if let Some(base) = self.two_baseline {
-                        if base.right_edge_candidate && base.cumulative_dx <= -5.0 {
+                        if base.right_edge_candidate
+                            && !base.right_edge_latched
+                            && base.cumulative_dx <= -5.0
+                        {
                             log::debug!(
                                 "2f right edge swipe: toggle notification center (cumulative_dx={:.2}mm)",
                                 base.cumulative_dx
@@ -1518,8 +1616,8 @@ impl<O: Output> State<O> {
             GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => {
                 // A carried three-finger drag must finish the Space gesture
                 // before releasing its left button. This matters for the
-                // macOS 26 symbolic flick path: its final switch can be
-                // committed on the Ended frame, after all fingers leave.
+                // The symbolic fallback path can commit its final switch on
+                // the Ended frame, after all fingers leave.
                 let release_carried_drag = self.drag_button_held
                     && matches!(new_kind, GestureKind::Idle | GestureKind::SwipeLatched);
                 let swipe_in_flight = self
@@ -1648,10 +1746,14 @@ impl<O: Output> State<O> {
                         "2F gesture start: admit pinch={pinch_admitted} rotate={rotate_admitted}"
                     );
                 }
-                let right_edge_candidate = a.x >= 28.0
-                    || b.x >= 28.0
-                    || (a.x >= 0.65 && a.x <= 1.0)
-                    || (b.x >= 0.65 && b.x <= 1.0);
+                // Coordinates are millimeters throughout the pipeline. The
+                // old check mixed a 28mm absolute threshold with a legacy
+                // 0..1 normalized range, making the middle of a 65mm pad
+                // behave like its edge. Require both contacts to land in the
+                // final 15% of the configured surface width, matching the
+                // physical edge gesture contract.
+                let edge_start_mm = self.options.surface_width_mm * RIGHT_EDGE_START_RATIO;
+                let right_edge_candidate = a.x >= edge_start_mm && b.x >= edge_start_mm;
                 self.two_baseline = Some(TwoFingerBaseline {
                     initial_distance: dist,
                     initial_angle: ang,
@@ -1684,6 +1786,7 @@ impl<O: Output> State<O> {
                     finger_count: active.len(),
                     engaged: false,
                     regrip_started_at: None,
+                    regrip_deadline: None,
                 });
             }
             GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => {
@@ -1885,8 +1988,11 @@ impl<O: Output> State<O> {
             return;
         }
         // Fingers re-landed while a delayed release was armed: grip
-        // adjustment — cancel the release and continue the same drag.
-        let was_regrip = self.pending_drag_release.take().is_some();
+        // adjustment — cancel the release and continue the same drag. Keep
+        // the original deadline so a partial re-grip that never becomes a
+        // 4F handoff cannot hold the synthetic button forever.
+        let regrip_deadline = self.pending_drag_release.take();
+        let was_regrip = regrip_deadline.is_some();
         let Some(mut base) = self.drag_baseline else {
             return;
         };
@@ -1901,6 +2007,7 @@ impl<O: Output> State<O> {
             base.last_centroid = (cx, cy);
             base.finger_count = active.len();
             base.regrip_started_at = Some(now);
+            base.regrip_deadline = regrip_deadline;
             self.pending_motion = None;
             self.cursor_carry_x_px = 0.0;
             self.cursor_carry_y_px = 0.0;
@@ -1908,26 +2015,25 @@ impl<O: Output> State<O> {
             return;
         }
 
-        // If only 1 finger touched down during a regrip:
-        if base.finger_count == 1 && active.len() == 1 {
-            if let Some(re_t) = base.regrip_started_at {
-                let dur = now.saturating_duration_since(re_t);
-                let drift = ((cx - base.last_centroid.0).powi(2)
-                    + (cy - base.last_centroid.1).powi(2))
-                .sqrt();
-                if dur > Duration::from_millis(50) || drift > TAP_MAX_MOVE_MM {
-                    log::debug!("3f drag: 1-finger interrupt during regrip — releasing drag lock");
-                    if self.drag_button_held {
-                        self.out.set_drag_button_held(false);
-                        self.drag_button_held = false;
-                    }
-                    self.drag_baseline = None;
-                    self.kind = GestureKind::OneFinger;
-                    self.started_at = now;
-                    return;
-                }
+        // While the re-grip deadline is live, 1F/2F reports are contact
+        // acquisition rather than a new cursor gesture. Re-anchor when the
+        // count changes and hold the pointer still until either a third/fourth
+        // finger completes the handoff or `tick` expires the lock.
+        if base.regrip_deadline.is_some() && active.len() <= 2 {
+            if base.finger_count != active.len() {
+                base.finger_count = active.len();
+                base.initial_centroid = (cx, cy);
+                base.last_centroid = (cx, cy);
             }
+            self.drag_baseline = Some(base);
             return;
+        }
+
+        // A complete three-finger re-grip is a normal continuation. Clear the
+        // temporary deadline now that the hand is stable again.
+        if active.len() >= 3 {
+            base.regrip_started_at = None;
+            base.regrip_deadline = None;
         }
 
         // Per-frame centroid delta from ALL surviving fingers. When the
@@ -1945,6 +2051,7 @@ impl<O: Output> State<O> {
             base.initial_centroid = (cx, cy);
             base.last_centroid = (cx, cy);
             base.regrip_started_at = None;
+            base.regrip_deadline = None;
             self.drag_baseline = Some(base);
             return;
         }
@@ -2157,6 +2264,7 @@ impl<O: Output> State<O> {
         let Some(mut base) = self.two_baseline else {
             return;
         };
+        let tuning = self.options.parameter_profile.tuning();
         let (a, b) = if active[0].id == base.initial_a.0 {
             (active[0], active[1])
         } else if active[1].id == base.initial_a.0 {
@@ -2248,19 +2356,22 @@ impl<O: Output> State<O> {
             // amount of per-finger travel before bypassing the tap grace
             // window. The anchored-finger form remains responsive when one
             // finger is effectively still and the other clearly moves.
-            let pinch_rot_motion_ready = max_per_finger >= TAP_MAX_MOVE_MM
-                && (min_per_finger >= TAP_MAX_MOVE_MM
+            let pinch_rot_motion_ready = max_per_finger >= tuning.pinch_guess_min_mm
+                && (min_per_finger >= tuning.pinch_guess_min_mm
                     || min_per_finger <= ANCHORED_FINGER_FLOOR_MM);
+            let pinch_certain_ready = max_per_finger >= tuning.pinch_certain_min_mm;
             let is_active_pinch_or_rot = pinch_rot_motion_ready
-                && ((base.rotate_admitted && ang_delta_from_init >= ROTATE_LOCK_RAD)
-                    || (base.pinch_admitted && pinch_ratio_from_init >= PINCH_LOCK_RATIO));
+                && ((base.rotate_admitted && ang_delta_from_init >= tuning.rotate_lock_rad)
+                    || (base.pinch_admitted
+                        && pinch_certain_ready
+                        && pinch_ratio_from_init >= tuning.pinch_lock_ratio));
             let could_still_tap =
                 !is_active_pinch_or_rot && max_move < TAP_MAX_MOVE_MM && dur < TAP_MAX_DURATION;
             // The landing frame (and, with the default of 2, only the
             // landing frame) is observation-only: one contact is fresh
             // and the other is mid-glide, so any decomposition of their
             // motion describes the landing, not the user's intent.
-            let within_grace = base.frames_observed < TWO_FINGER_MIN_FRAMES;
+            let within_grace = base.frames_observed < tuning.min_two_finger_frames;
             if (could_still_tap || within_grace) && !is_active_pinch_or_rot {
                 base.last_centroid = centroid;
                 // Track scale and angle pre-lock so the first Changed
@@ -2293,9 +2404,9 @@ impl<O: Output> State<O> {
             // there should mean "didn't accumulate," not "qualification
             // gate zeroed it." The selection scores below still gate on
             // qualification so suppressed signals can't win.
-            let pan_raw = common_mag / PAN_LOCK_MM;
-            let pinch_raw = (dist / base.initial_distance - 1.0).abs() / PINCH_LOCK_RATIO;
-            let rot_raw = angle_delta(ang, base.initial_angle).abs() / ROTATE_LOCK_RAD;
+            let pan_raw = common_mag / tuning.pan_lock_mm;
+            let pinch_raw = (dist / base.initial_distance - 1.0).abs() / tuning.pinch_lock_ratio;
+            let rot_raw = angle_delta(ang, base.initial_angle).abs() / tuning.rotate_lock_rad;
 
             let pan = if pan_qualified { pan_raw } else { 0.0 };
             // Pinch/rotate scoring is hypersensitive to per-finger noise on
@@ -2332,7 +2443,7 @@ impl<O: Output> State<O> {
             // Pure relative motion tangential to inter-finger axis (real rotate)
             let rot_arc_mm = (d_diff_x * v_x + d_diff_y * v_y).abs();
             let pinch_rot_admissible =
-                !(ANCHORED_FINGER_FLOOR_MM..TAP_MAX_MOVE_MM).contains(&min_per_finger);
+                !(ANCHORED_FINGER_FLOOR_MM..tuning.pinch_guess_min_mm).contains(&min_per_finger);
             // Penalize pinch/rot selection scores when the two finger-
             // motion vectors are roughly parallel (high positive
             // alignment cosine). Real pinch and real rotate have
@@ -2341,14 +2452,14 @@ impl<O: Output> State<O> {
             // gives cos = -1 by the code's fallback (penalty 1.0).
             let align_penalty = (1.0 - alignment).clamp(0.0, 1.0);
 
-            let pinch = if base.pinch_admitted && pinch_rot_admissible {
-                (pinch_dist_mm / (base.initial_distance * PINCH_LOCK_RATIO)).max(pinch_raw)
+            let pinch = if base.pinch_admitted && pinch_rot_admissible && pinch_certain_ready {
+                (pinch_dist_mm / (base.initial_distance * tuning.pinch_lock_ratio)).max(pinch_raw)
                     * align_penalty
             } else {
                 0.0
             };
             let rot = if base.rotate_admitted && pinch_rot_admissible {
-                (rot_arc_mm / (dist * ROTATE_LOCK_RAD)).max(rot_raw) * align_penalty
+                (rot_arc_mm / (dist * tuning.rotate_lock_rad)).max(rot_raw) * align_penalty
             } else {
                 0.0
             };
@@ -2640,12 +2751,12 @@ impl<O: Output> State<O> {
                 // transform session. This keeps each AppKit consumer's
                 // Began/Changed/Ended lifecycle coherent, while the small
                 // deadzones below suppress sensor noise.
-                if scale_delta.abs() >= TRANSFORM_MIN_DELTA && base.pinch_admitted {
+                if scale_delta.abs() >= tuning.transform_min_delta && base.pinch_admitted {
                     log::debug!("pinch: delta={:+.4} scale={:.4}", scale_delta, scale);
                     self.out.pinch(scale_delta, Phase::Changed);
                 }
 
-                if angle_d.abs() >= ROTATE_EMIT_DEADZONE_RAD && base.rotate_admitted {
+                if angle_d.abs() >= tuning.rotate_emit_deadzone_rad && base.rotate_admitted {
                     // AppKit defines rotation as a signed relative angle;
                     // keep the geometric 1:1 value until a real-device A/B
                     // test proves an acceleration curve is desirable.
@@ -2683,6 +2794,17 @@ impl<O: Output> State<O> {
         let cx: f64 = active.iter().map(|c| c.x).sum::<f64>() / active.len() as f64;
         let cy: f64 = active.iter().map(|c| c.y).sum::<f64>() / active.len() as f64;
 
+        // The Space gesture is a four-finger gesture. A fifth contact is
+        // usually a palm/edge split and must not advance the in-flight
+        // stream or start a new one. Keep the baseline live so returning to
+        // four contacts can resume without a centroid jump.
+        if active.len() > 4 {
+            base.last_centroid = (cx, cy);
+            base.last_centroid_time = Some(now);
+            self.multi_baseline = Some(base);
+            return;
+        }
+
         // When the finger count changes (e.g. 4 -> 3 or 3 -> 4) during a multi-finger swipe,
         // the raw centroid jumps by several millimetres because the cluster geometry changes,
         // NOT because the user's hand moved. Re-anchor last_centroid without adding the jump
@@ -2709,7 +2831,7 @@ impl<O: Output> State<O> {
         let dy = base.cumulative_dy;
 
         // 4-Finger Radial Pinch/Spread Detection (Launchpad & Show Desktop):
-        if base.finger_count >= 4
+        if base.finger_count == 4
             && !base.radial_action_latched
             && base.axis.is_none()
             && base.initial_radial_spread > 1.0
@@ -3269,6 +3391,36 @@ mod tests {
             log.iter()
                 .any(|l| l.starts_with("pinch") && l.contains("Began")),
             "{log:?}"
+        );
+    }
+
+    #[test]
+    fn chromium_profile_waits_for_three_frames_and_certain_pinch_motion() {
+        let r = Recorder::default();
+        let mut s = State::with_options(
+            &r,
+            test_accel(),
+            GestureOptions {
+                parameter_profile: ParameterProfile::ChromiumOs,
+                ..GestureOptions::default()
+            },
+        );
+        let t0 = Timestamp::now();
+        // First two frames are observation/guess only (ChromiumOS uses a
+        // 3-frame minimum and a 2mm guess threshold).
+        s.on_frame_at(frame(&[(1, 0.45, 0.50), (2, 0.55, 0.50)]), t0);
+        s.on_frame_at(frame(&[(1, 0.40, 0.50), (2, 0.60, 0.50)]), at(t0, 16));
+        assert!(
+            !r.pop().iter().any(|line| line.starts_with("pinch")),
+            "ChromiumOS profile must not lock on the second frame"
+        );
+        // The third frame exceeds the 8mm per-finger certainty gate.
+        s.on_frame_at(frame(&[(1, 0.28, 0.50), (2, 0.72, 0.50)]), at(t0, 32));
+        let log = r.pop();
+        assert!(
+            log.iter()
+                .any(|line| line.starts_with("pinch") && line.contains("Began")),
+            "ChromiumOS profile should lock after certain motion: {log:?}"
         );
     }
 
@@ -4001,7 +4153,14 @@ mod tests {
     #[test]
     fn two_finger_right_edge_swipe_toggles_notification_center() {
         let r = Recorder::default();
-        let mut s = State::new(&r, test_accel());
+        let mut s = State::with_options(
+            &r,
+            test_accel(),
+            GestureOptions {
+                surface_width_mm: TEST_PAD_MM,
+                ..GestureOptions::default()
+            },
+        );
         // Two fingers land near the right edge (x >= 0.85 on test pad of 50mm -> x >= 42.5mm)
         s.on_frame(frame(&[(1, 0.90, 0.50), (2, 0.90, 0.60)]));
         s.on_frame(frame(&[(1, 0.85, 0.50), (2, 0.85, 0.60)]));
@@ -4013,6 +4172,61 @@ mod tests {
         assert!(
             log.iter().any(|l| l == "toggle_notification_center"),
             "expected toggle_notification_center after right edge swipe, got: {log:?}"
+        );
+        assert_eq!(
+            log.iter()
+                .filter(|l| l.as_str() == "toggle_notification_center")
+                .count(),
+            1,
+            "one edge swipe must toggle notification center exactly once: {log:?}"
+        );
+    }
+
+    #[test]
+    fn two_finger_non_edge_swipe_does_not_toggle_notification_center() {
+        let r = Recorder::default();
+        let mut s = State::with_options(
+            &r,
+            test_accel(),
+            GestureOptions {
+                surface_width_mm: TEST_PAD_MM,
+                ..GestureOptions::default()
+            },
+        );
+        // 35mm is well inside a 50mm surface, even though the old 28mm
+        // absolute check incorrectly classified it as the right edge.
+        s.on_frame(frame(&[(1, 0.70, 0.50), (2, 0.70, 0.60)]));
+        s.on_frame(frame(&[(1, 0.65, 0.50), (2, 0.65, 0.60)]));
+        s.on_frame(frame(&[(1, 0.50, 0.50), (2, 0.50, 0.60)]));
+        s.on_frame(frame(&[(1, 0.30, 0.50), (2, 0.30, 0.60)]));
+        s.on_frame(frame(&[]));
+        let log = r.pop();
+        assert!(
+            !log.iter().any(|l| l == "toggle_notification_center"),
+            "non-edge swipe must not toggle notification center: {log:?}"
+        );
+    }
+
+    #[test]
+    fn right_edge_swipe_requires_both_contacts_in_edge_zone() {
+        let r = Recorder::default();
+        let mut s = State::with_options(
+            &r,
+            test_accel(),
+            GestureOptions {
+                surface_width_mm: TEST_PAD_MM,
+                ..GestureOptions::default()
+            },
+        );
+        // Only one finger starts at the edge; the other is 15mm inward.
+        s.on_frame(frame(&[(1, 0.90, 0.50), (2, 0.60, 0.60)]));
+        s.on_frame(frame(&[(1, 0.80, 0.50), (2, 0.50, 0.60)]));
+        s.on_frame(frame(&[(1, 0.60, 0.50), (2, 0.30, 0.60)]));
+        s.on_frame(frame(&[]));
+        let log = r.pop();
+        assert!(
+            !log.iter().any(|l| l == "toggle_notification_center"),
+            "edge swipe must start with both contacts at the edge: {log:?}"
         );
     }
 
@@ -5485,6 +5699,42 @@ mod tests {
     }
 
     #[test]
+    fn five_finger_contact_does_not_trigger_four_finger_swipe() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_options());
+        let t0 = Timestamp::now();
+
+        // A fifth contact can be a palm/edge split. It must not turn a
+        // four-finger desktop gesture into an accidental Space switch.
+        s.on_frame_at(
+            frame(&[
+                (1, 0.30, 0.50),
+                (2, 0.40, 0.50),
+                (3, 0.50, 0.50),
+                (4, 0.60, 0.50),
+                (5, 0.70, 0.50),
+            ]),
+            t0,
+        );
+        s.on_frame_at(
+            frame(&[
+                (1, 0.40, 0.50),
+                (2, 0.50, 0.50),
+                (3, 0.60, 0.50),
+                (4, 0.70, 0.50),
+                (5, 0.80, 0.50),
+            ]),
+            at(t0, 40),
+        );
+
+        let log = r.pop();
+        assert!(
+            !log.iter().any(|line| line.starts_with("swipe ")),
+            "five contacts must be ignored by the 4F swipe recognizer: {log:?}"
+        );
+    }
+
+    #[test]
     fn adding_third_finger_to_locked_two_finger_pan_does_not_start_drag() {
         let r = Recorder::default();
         let mut s = State::with_options(&r, test_accel(), drag_options());
@@ -5626,6 +5876,237 @@ mod tests {
                 .count(),
             1,
             "drag-lock must release exactly once: {log:?}",
+        );
+    }
+
+    #[test]
+    fn drag_lock_quick_four_finger_handoff_keeps_button_held() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_lock_options());
+        let t0 = Timestamp::now();
+
+        // Engage a three-finger window drag.
+        s.on_frame_at(
+            frame(&[(1, 0.40, 0.50), (2, 0.50, 0.50), (3, 0.60, 0.50)]),
+            t0,
+        );
+        s.on_frame_at(
+            frame(&[(1, 0.42, 0.50), (2, 0.52, 0.50), (3, 0.62, 0.50)]),
+            at(t0, 20),
+        );
+        let _ = r.pop();
+
+        // All three fingers leave, but the configured drag-lock grace
+        // window is still open when the four-finger handoff arrives.
+        s.on_frame_at(frame(&[]), at(t0, 40));
+        s.on_frame_at(
+            frame(&[
+                (1, 0.40, 0.50),
+                (2, 0.50, 0.50),
+                (3, 0.60, 0.50),
+                (4, 0.70, 0.50),
+            ]),
+            at(t0, 100),
+        );
+        s.on_frame_at(
+            frame(&[
+                (1, 0.30, 0.50),
+                (2, 0.40, 0.50),
+                (3, 0.50, 0.50),
+                (4, 0.60, 0.50),
+            ]),
+            at(t0, 130),
+        );
+
+        let log = r.pop();
+        assert!(
+            !log.iter().any(|line| line == "set_left_button_held false"),
+            "quick 4F handoff must not cancel the carried drag: {log:?}"
+        );
+        assert!(
+            log.iter()
+                .any(|line| line.starts_with("swipe ") && line.contains("Horizontal")),
+            "4F handoff must still start a Space swipe: {log:?}"
+        );
+    }
+
+    #[test]
+    fn drag_lock_transient_one_and_two_finger_regrip_keeps_button_held() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_lock_options());
+        let t0 = Timestamp::now();
+
+        // Engage a three-finger window drag.
+        s.on_frame_at(
+            frame(&[(1, 0.40, 0.50), (2, 0.50, 0.50), (3, 0.60, 0.50)]),
+            t0,
+        );
+        s.on_frame_at(
+            frame(&[(1, 0.42, 0.50), (2, 0.52, 0.50), (3, 0.62, 0.50)]),
+            at(t0, 20),
+        );
+        let initial = r.pop();
+        assert!(
+            initial.iter().any(|line| *line == "set_left_button_held true"),
+            "test setup must engage the drag button: {initial:?}"
+        );
+
+        // The pad briefly reports no contacts, then the real hardware
+        // re-grip arrives as 1F and 2F frames before the fourth finger
+        // lands. The 1F sample intentionally lasts longer than the old
+        // 50ms interrupt guard, matching the captured timeline.
+        s.on_frame_at(frame(&[]), at(t0, 40));
+        s.on_frame_at(frame(&[(1, 0.42, 0.50)]), at(t0, 100));
+        s.on_frame_at(frame(&[(1, 0.42, 0.50)]), at(t0, 170));
+        s.on_frame_at(
+            frame(&[(1, 0.42, 0.50), (2, 0.52, 0.50)]),
+            at(t0, 180),
+        );
+
+        // Complete the handoff to the 4F Spaces gesture.
+        s.on_frame_at(
+            frame(&[
+                (1, 0.42, 0.50),
+                (2, 0.52, 0.50),
+                (3, 0.62, 0.50),
+                (4, 0.72, 0.50),
+            ]),
+            at(t0, 220),
+        );
+        s.on_frame_at(
+            frame(&[
+                (1, 0.32, 0.50),
+                (2, 0.42, 0.50),
+                (3, 0.52, 0.50),
+                (4, 0.62, 0.50),
+            ]),
+            at(t0, 250),
+        );
+
+        let mut log = initial;
+        log.extend(r.pop());
+        assert_eq!(
+            log.iter()
+                .filter(|line| *line == "set_left_button_held true")
+                .count(),
+            1,
+            "re-grip must not re-engage the drag button: {log:?}"
+        );
+        assert!(
+            !log.iter().any(|line| *line == "set_left_button_held false"),
+            "transient 1F/2F re-grip must not release before 4F arrives: {log:?}"
+        );
+        assert!(
+            log.iter()
+                .any(|line| line.starts_with("swipe ") && line.contains("Horizontal")),
+            "4F handoff must still start a Space swipe: {log:?}"
+        );
+
+        // The carried drag is released only after the 4F stream ends.
+        s.on_frame_at(frame(&[]), at(t0, 280));
+        let tail = r.pop();
+        assert!(
+            tail.iter().any(|line| *line == "set_left_button_held false"),
+            "4F lift must release the carried drag button: {tail:?}"
+        );
+    }
+
+    #[test]
+    fn drag_lock_regrip_deadline_releases_a_stranded_one_finger() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_lock_options());
+        let t0 = Timestamp::now();
+
+        s.on_frame_at(
+            frame(&[(1, 0.40, 0.50), (2, 0.50, 0.50), (3, 0.60, 0.50)]),
+            t0,
+        );
+        s.on_frame_at(
+            frame(&[(1, 0.42, 0.50), (2, 0.52, 0.50), (3, 0.62, 0.50)]),
+            at(t0, 20),
+        );
+        let _ = r.pop();
+
+        // Re-grip as one finger and keep it down. It is still a valid
+        // handoff candidate before the original 260ms release deadline.
+        s.on_frame_at(frame(&[]), at(t0, 40));
+        s.on_frame_at(frame(&[(1, 0.42, 0.50)]), at(t0, 100));
+        s.on_frame_at(frame(&[(1, 0.42, 0.50)]), at(t0, 250));
+        let before_deadline = r.pop();
+        assert!(
+            !before_deadline
+                .iter()
+                .any(|line| *line == "set_left_button_held false"),
+            "re-grip must remain held before the original deadline: {before_deadline:?}"
+        );
+
+        // The empty-pad deadline was t=300ms. A heartbeat at that point
+        // must release even though stale 1F contact data is still present.
+        s.tick(at(t0, 300));
+        let expired = r.pop();
+        assert!(
+            expired
+                .iter()
+                .any(|line| *line == "set_left_button_held false"),
+            "deadline must release a stranded re-grip: {expired:?}"
+        );
+
+        // Expiry clears the old tracked contacts, so the next physical
+        // touch starts a normal session instead of inheriting the drag lock.
+        s.on_frame_at(frame(&[(1, 0.42, 0.50)]), at(t0, 320));
+        s.on_frame_at(frame(&[]), at(t0, 360));
+        let fresh = r.pop();
+        assert!(
+            fresh.iter().any(|line| *line == "click Left"),
+            "a touch after re-grip expiry must be a normal tap: {fresh:?}"
+        );
+    }
+
+    #[test]
+    fn zero_drag_lock_delay_releases_before_later_four_finger_swipe() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_options());
+        let t0 = Timestamp::now();
+
+        s.on_frame_at(
+            frame(&[(1, 0.40, 0.50), (2, 0.50, 0.50), (3, 0.60, 0.50)]),
+            t0,
+        );
+        s.on_frame_at(
+            frame(&[(1, 0.42, 0.50), (2, 0.52, 0.50), (3, 0.62, 0.50)]),
+            at(t0, 20),
+        );
+        s.on_frame_at(frame(&[]), at(t0, 40));
+        s.on_frame_at(
+            frame(&[
+                (1, 0.40, 0.50),
+                (2, 0.50, 0.50),
+                (3, 0.60, 0.50),
+                (4, 0.70, 0.50),
+            ]),
+            at(t0, 100),
+        );
+        s.on_frame_at(
+            frame(&[
+                (1, 0.30, 0.50),
+                (2, 0.40, 0.50),
+                (3, 0.50, 0.50),
+                (4, 0.60, 0.50),
+            ]),
+            at(t0, 130),
+        );
+
+        let log = r.pop();
+        assert_eq!(
+            log.iter()
+                .filter(|line| *line == "set_left_button_held true")
+                .count(),
+            1,
+            "zero-delay mode must not re-engage the drag on a later 4F swipe: {log:?}"
+        );
+        assert!(
+            log.iter().any(|line| line == "set_left_button_held false"),
+            "zero-delay mode must release the 3F drag immediately: {log:?}"
         );
     }
 

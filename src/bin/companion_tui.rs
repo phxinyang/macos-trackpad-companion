@@ -156,6 +156,8 @@ enum SettingId {
     VerticalBackend,
     ShiftScrollHorizontal,
     DynamicTransformCompat,
+    ParameterProfile,
+    SurfaceWidth,
     SyncSystemSettings,
 }
 
@@ -197,6 +199,8 @@ const COMPANION: &[SettingId] = &[
     SettingId::VerticalBackend,
     SettingId::ShiftScrollHorizontal,
     SettingId::DynamicTransformCompat,
+    SettingId::ParameterProfile,
+    SettingId::SurfaceWidth,
     SettingId::SyncSystemSettings,
 ];
 
@@ -265,6 +269,10 @@ impl SettingId {
             (Self::ShiftScrollHorizontal, Locale::Chinese) => "Shift 滚动兼容",
             (Self::DynamicTransformCompat, Locale::English) => "Scroll-to-transform compatibility",
             (Self::DynamicTransformCompat, Locale::Chinese) => "滚动转变换兼容",
+            (Self::ParameterProfile, Locale::English) => "Gesture parameter profile",
+            (Self::ParameterProfile, Locale::Chinese) => "手势参数配置",
+            (Self::SurfaceWidth, Locale::English) => "Virtual surface width",
+            (Self::SurfaceWidth, Locale::Chinese) => "虚拟触控面宽度",
             (Self::SyncSystemSettings, Locale::English) => "Sync macOS settings",
             (Self::SyncSystemSettings, Locale::Chinese) => "同步 macOS 设置",
         }
@@ -384,6 +392,16 @@ impl SettingId {
             (Self::DynamicTransformCompat, Locale::Chinese) => {
                 "允许已开始的滚动转为缩放或旋转；关闭时遵循原生滚动锁定。"
             }
+            (Self::ParameterProfile, Locale::English) => {
+                "Use native thresholds or the experimental ChromiumOS gesture profile."
+            }
+            (Self::ParameterProfile, Locale::Chinese) => {
+                "选择原生阈值，或试用 ChromiumOS 的实验参数配置。"
+            }
+            (Self::SurfaceWidth, Locale::English) => {
+                "Width used to locate the right-edge gesture zone."
+            }
+            (Self::SurfaceWidth, Locale::Chinese) => "用于计算右边缘手势区域的虚拟触控面宽度。",
             (Self::SyncSystemSettings, Locale::English) => {
                 "Use available macOS preferences as startup defaults."
             }
@@ -425,6 +443,8 @@ impl SettingId {
             Self::VerticalBackend => &["gestures", "swipe", "vertical", "backend"],
             Self::ShiftScrollHorizontal => &["scroll", "shift_scroll_horizontal"],
             Self::DynamicTransformCompat => &["gestures", "dynamic_transform_compat"],
+            Self::ParameterProfile => &["gestures", "parameter_profile"],
+            Self::SurfaceWidth => &["gestures", "surface_width_mm"],
             Self::SyncSystemSettings => &["macos", "sync_system_settings"],
         }
     }
@@ -565,6 +585,18 @@ impl App {
             SettingId::DynamicTransformCompat => {
                 bool_text(self.cfg.gestures.dynamic_transform_compat, self.locale)
             }
+            SettingId::ParameterProfile => match (self.cfg.gestures.parameter_profile, self.locale)
+            {
+                (config::GestureParameterProfile::Native, Locale::English) => "Native".into(),
+                (config::GestureParameterProfile::Native, Locale::Chinese) => "原生".into(),
+                (config::GestureParameterProfile::ChromiumOs, Locale::English) => {
+                    "ChromiumOS (experimental)".into()
+                }
+                (config::GestureParameterProfile::ChromiumOs, Locale::Chinese) => {
+                    "ChromiumOS（实验）".into()
+                }
+            },
+            SettingId::SurfaceWidth => format!("{:.1} mm", self.cfg.gestures.surface_width_mm),
             SettingId::SyncSystemSettings => {
                 bool_text(self.cfg.macos.sync_system_settings, self.locale)
             }
@@ -665,6 +697,21 @@ impl App {
             SettingId::DynamicTransformCompat => {
                 self.cfg.gestures.dynamic_transform_compat =
                     !self.cfg.gestures.dynamic_transform_compat
+            }
+            SettingId::ParameterProfile => {
+                let _ = increase;
+                self.cfg.gestures.parameter_profile = match self.cfg.gestures.parameter_profile {
+                    config::GestureParameterProfile::Native => {
+                        config::GestureParameterProfile::ChromiumOs
+                    }
+                    config::GestureParameterProfile::ChromiumOs => {
+                        config::GestureParameterProfile::Native
+                    }
+                };
+            }
+            SettingId::SurfaceWidth => {
+                self.cfg.gestures.surface_width_mm =
+                    (self.cfg.gestures.surface_width_mm + signed).clamp(20.0, 200.0);
             }
             SettingId::SyncSystemSettings => {
                 self.cfg.macos.sync_system_settings = !self.cfg.macos.sync_system_settings
@@ -779,6 +826,14 @@ impl App {
             SettingId::DynamicTransformCompat => {
                 toml::Value::Boolean(self.cfg.gestures.dynamic_transform_compat)
             }
+            SettingId::ParameterProfile => toml::Value::String(
+                match self.cfg.gestures.parameter_profile {
+                    config::GestureParameterProfile::Native => "native",
+                    config::GestureParameterProfile::ChromiumOs => "chromium_os",
+                }
+                .into(),
+            ),
+            SettingId::SurfaceWidth => toml::Value::Float(self.cfg.gestures.surface_width_mm),
             SettingId::SyncSystemSettings => {
                 toml::Value::Boolean(self.cfg.macos.sync_system_settings)
             }
@@ -1224,6 +1279,39 @@ mod tests {
         assert!(app.changed.is_empty());
         assert!(app.status.contains("硬件") || app.status.contains("Hardware"));
     }
+
+    #[test]
+    fn parameter_profile_cycles_and_serializes() {
+        let mut app = App::new(config::Config::default(), PathBuf::from("config.toml"));
+        app.category = CATEGORIES
+            .iter()
+            .position(|category| *category == Category::Companion)
+            .unwrap();
+        app.selected = COMPANION
+            .iter()
+            .position(|id| *id == SettingId::ParameterProfile)
+            .unwrap();
+
+        assert_eq!(app.value(SettingId::ParameterProfile), "原生");
+        app.adjust(true);
+        assert_eq!(
+            app.cfg.gestures.parameter_profile,
+            config::GestureParameterProfile::ChromiumOs
+        );
+        assert_eq!(app.value(SettingId::ParameterProfile), "ChromiumOS（实验）");
+        assert_eq!(
+            app.toml_value(SettingId::ParameterProfile)
+                .as_str()
+                .unwrap(),
+            "chromium_os"
+        );
+        app.adjust(false);
+        assert_eq!(
+            app.cfg.gestures.parameter_profile,
+            config::GestureParameterProfile::Native
+        );
+    }
+
     #[test]
     fn set_value_creates_nested_tables() {
         let mut root = toml::Value::Table(toml::map::Map::new());

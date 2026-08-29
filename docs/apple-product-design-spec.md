@@ -23,7 +23,7 @@ The touch surface is the primary content layer and now uses a bounded liquid-gla
 - Material 3 component guidance: <https://m3.material.io/>. The Android implementation uses the same semantic surface vocabulary and 8dp rhythm, but keeps the existing View stack to avoid adding a new UI runtime.
 - Mousedroid, an open-source remote input product: <https://github.com/darusc/Mousedroid>. Its connection modes, explicit gesture guide, and separate input modes are useful product patterns for a remote input utility.
 - Open Apple HIG skill family used during implementation: <https://github.com/0xKoru/apple-hig-codex-skills> and <https://github.com/s1gmamale1/apple-design-skills>.
-- Android liquid material: <https://github.com/QWEA0/Liquid-Glass-Android> (MIT; JitPack `com.github.QWEA0:liquidglass:v2.0.2`). The APK uses its View-based `LiquidGlassView`, API 33+ single-pass AGSL/SDF lens with live backdrop capture, refraction, physical dispersion, sensor highlight, and Regular/Clear material variants; older Android versions keep the opaque theme fallback. The default light theme uses the Regular lens with adaptive tint disabled so the bright sampled scene stays neutral and the rim remains visible; dark glass enables adaptive tint for legibility.
+- Android liquid material: <https://github.com/QWEA0/Liquid-Glass-Android> (MIT; JitPack `com.github.QWEA0:liquidglass:v2.0.2`). The APK uses its View-based `LiquidGlassView`, API 33+ single-pass AGSL/SDF lens with backdrop capture, refraction, physical dispersion, and edge highlight; older Android versions keep the opaque theme fallback. The touch plane uses the `CLEAR` material so the backdrop remains recognizable instead of becoming a gray slab; no idle animation is scheduled.
 - Web liquid lens reference: <https://github.com/PallavAg/liquid-glass-web-react> (MIT). The static client uses its geometry-derived displacement-map approach for the SVG `feDisplacementMap` enhancement and keeps `backdrop-filter` as the cross-browser readable baseline.
 
 ## Visual thesis
@@ -32,17 +32,24 @@ Quiet graphite utility surfaces with a white touch canvas, one Apple blue action
 
 ## Theme matrix
 
-Both clients persist the same theme key (`light-glass` by default) locally.
+Both clients persist the same theme key (`light-glass` by default) locally. The seven Liquid Glass variants use the QWEA0 lens on Android and the SVG displacement path on Chromium Web; editor/utility themes deliberately use opaque surfaces for predictable contrast.
 
 | Key | Surface | Material | Use |
 |---|---|---|---|
-| `light-glass` | blue/white/peach sampled backdrop | LiquidGlassView Regular + blur + refraction + dispersion | Default Apple-style appearance |
-| `dark-glass` | graphite/blue sampled backdrop | LiquidGlassView + blur + refraction | Low-light rooms |
-| `classic-light` | solid system light surfaces | No blur/refraction | Battery and clarity |
-| `classic-dark` | solid system dark surfaces | No blur/refraction | OLED-friendly utility mode |
+| `light-glass` | blue/white/peach sampled backdrop | Clear lens, balanced refraction | Default Apple-style appearance |
+| `dark-glass` | graphite/blue sampled backdrop | Clear lens, deeper refraction and adaptive tint | Low-light rooms |
+| `ocean-glass` | blue/cyan sampled backdrop | Stronger refraction and cool chromatic edge | Calm, high-clarity glass |
+| `graphite-glass` | graphite/teal/rose sampled backdrop | Low-brightness lens with adaptive tint | Dark glass without pure black |
+| `sunset-glass` | warm coral/amber sampled backdrop | Soft warm refraction and edge light | Warm rooms and evening use |
+| `aurora-glass` | cyan/green/violet sampled backdrop | Cool adaptive tint with stronger edge light | Colorful ambient scenes |
+| `custom-glass` | user-selected wallpaper | Highest refraction range with adaptive tint | Personal wallpapers and experiments |
+| `tokyo-night`, `nord`, `dracula`, `solarized-dark`, `catppuccin-mocha`, `monokai` | editor-inspired solid surfaces | No blur/refraction | Stable developer themes |
+| `classic-light`, `classic-dark` | solid system surfaces | No blur/refraction | Battery and clarity |
 | `high-contrast` | black/white boundaries | No transparency or motion reliance | Accessibility fallback |
 
-Liquid Glass is intentionally limited to the touch plane and functional chrome. The touch plane's sampled backdrop contains quiet gradient bands and moving sheen so the real lens has visual structure to refract; it is not a decorative full-screen blur.
+Liquid Glass is intentionally limited to the touch plane and functional chrome. The sampled backdrop uses quiet static gradient bands; specular response is driven by touch position rather than an idle loop, so the lens is readable without becoming a screensaver.
+
+Touch feedback is a separate, non-interactive visual layer above the lens: active contacts get a restrained colored core, two optical rings, a velocity ribbon and a directional specular streak. The glass frame also brightens its local edge field while a contact is held, then settles on release. On lift, the marker eases out over 280ms so a fast swipe reads as fluid material motion without leaving persistent particles or stealing contrast from the gesture target.
 
 ## Tokens
 
@@ -64,7 +71,9 @@ Liquid Glass is intentionally limited to the touch plane and functional chrome. 
 ### Geometry and type
 
 - Spacing: 4dp/4px half steps, 8dp/8px base rhythm, 16 and 24 for section separation.
-- Radii: 8 for fields, 12 for grouped surfaces, 16 for dialogs/sheets, 999 for compact status pills.
+- Radii: 8 for controls and fields, 12 for grouped surfaces, 16 for dialogs/sheets, 999 only for compact status pills.
+- Press profile: controls acknowledge input with a 95ms down state, 0.8% scale plus a half-pixel visual settle, then a 175ms release. Android mirrors the same geometry and adds an asymmetric fast-out/decay pair with 96% alpha instead of the platform's default symmetric easing.
+- Deep press bar: use the same 10px/10dp control radius at every configured height, clip progress to that shape, and expose a clear accessible action label because the bar is a custom-drawn control.
 - Android touch targets: minimum 48dp for controls. Web touch targets: minimum 44px.
 - System font: Android `sans-serif` with `sans-serif-medium` for labels; Web `-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif`.
 - Type hierarchy: app title 20sp/20px, section label 12sp metadata only, body 14-16sp, control label 13-14sp.
@@ -73,9 +82,9 @@ Liquid Glass is intentionally limited to the touch plane and functional chrome. 
 
 ```text
 MainActivity
-├── Top app bar: connection state + product name + compact actions
+├── Unified top chrome: connection state + product name + expandable actions
 ├── Touch surface: TouchPadView + configurable DeepPressBarView
-└── Bottom action rail: sensitivity, haptic toggle, gesture tests, deep-press settings
+└── Control center: sensitivity, haptic toggle, gesture tests, deep-press settings
     └── Connection sheet: host / port / token / connect
     └── Deep-press sheet: enabled / hold / strength / position / size
     └── Gesture test sheet: grouped test actions
@@ -85,9 +94,9 @@ The main screen never puts IP, port, token, and six unrelated buttons in one row
 
 ## Web information architecture
 
-- A compact top toolbar shows status, a connection hint, diagnostics, haptics, and fullscreen.
-- A high-contrast touch plane occupies the full viewport and keeps pointer events uninterrupted.
-- A bottom glass action dock exposes sensitivity and settings without hiding the touch plane.
+- A unified top toolbar owns only status, the control-center entry, and fullscreen. After connection it collapses to a compact status capsule; sensitivity, haptics, diagnostics, theme, command, and deep-press controls live in a grouped control center and never require horizontal discovery.
+- A high-contrast touch plane occupies the full viewport and keeps pointer events uninterrupted. Its contact visualizer is velocity-aware on Android and Web, with short trails and spring-like lift fade.
+- There is no persistent bottom dock. The touch plane uses the freed bottom space; mobile widths keep the top toolbar fixed-width with no horizontal scrolling, while the control center is the only vertically scrollable surface.
 - Fullscreen keeps a single floating settings button. Escape and the browser fullscreen API remain available.
 - `prefers-reduced-motion`, `prefers-reduced-transparency`, `prefers-contrast`, and safe-area insets have explicit fallbacks.
 
@@ -98,11 +107,12 @@ The main screen never puts IP, port, token, and six unrelated buttons in one row
 - A touch frame is never blocked by a visual overlay. The deep-press bar is the only interactive overlay and remains configurable.
 - Sensitivity changes are immediate and persisted locally. Haptic toggle gives one confirmation pulse only when enabled.
 - Diagnostic gestures stay in a grouped sheet and keep their existing sender actions.
-- Glass appears on the touch plane and chrome only. Reduced transparency uses opaque surfaces. Reduced motion removes decorative transforms.
+- Glass appears on the touch plane and chrome only. Reduced transparency uses opaque surfaces. Material animations are opt-in and event-driven: a touch can trigger one finite response, but no surface runs a permanent loop. Fullscreen hides chrome and expands the touch plane to the complete window; `fullSensor` allows portrait and landscape layouts.
 
 ## Implementation constraints
 
-- Android: keep the existing `TouchPadView`, `DeepPressBarView`, `Haptics`, `UdpSender`, and gesture test runner contracts. Refactor only the presentation shell and dialog styling in `MainActivity`.
+- Android: keep the existing `TouchPadView`, `DeepPressBarView`, `Haptics`, `UdpSender`, and gesture test runner contracts. Presentation uses a compact connection capsule, a fixed top chrome with a single control-center entry, a dominant touch plane, and a vertically scrollable control-center dialog; alternate material rendering stays in a pointer-transparent `MaterialSurfaceView`.
+- Android editor and utility themes must derive their touch-plane background from `ThemePalette` instead of a baked white ceramic gradient; all settings/test sheets use the active palette for labels, controls, and strokes.
 - Web: keep the existing binary wire protocol and pointer capture logic. Replace only the shell markup, CSS tokens, visualizer palette, and controls.
 - No new network service, no new runtime, and no unverified Apple/private API dependency.
 

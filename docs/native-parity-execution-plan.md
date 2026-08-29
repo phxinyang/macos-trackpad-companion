@@ -210,17 +210,51 @@
 
 - Apple 官方分别记录三指拖拽和四指左右切换全屏 App/桌面，但没有公开“两个手势并行”的事件合同；原生 Trackpad 面板只提供独立开关。
 - Apple 社区有用户报告用触控板把文件拖到另一 Space 失败，说明系统版本、Finder 路径和拖拽目标会影响结果；该类案例不能作为普遍支持证据。
-- Mac Mouse Fix Issue #1735 把“按住窗口、执行切 Space、保持抓取、目标 Space 释放”列为明确需求。其 PR #1875 记录 macOS 26 会丢弃第三方 DockSwipe，改用 SymbolicHotKey（SpaceLeft/Right、Mission Control/App Exposé），并以约 220px/150px 阈值、350ms 冷却和快速释放检测保证不会连续跳过多个 Space；后续 PR #1936 记录 macOS 27 可通过 SkyLight `SLEventSetIOHIDEvent` 附加 HIDEvent 恢复连续 DockSwipe，否则仍应降级到 SymbolicHotKey。
+- Mac Mouse Fix Issue #1735 把“按住窗口、执行切 Space、保持抓取、目标 Space 释放”列为明确需求。其 PR #1875 的早期补丁曾把 macOS 26/27 都切到 SymbolicHotKey；后续运行时版本修订确认 macOS 26 保留连续 DockSwipe，而 macOS 27+ 才需要 SymbolicHotKey，并尝试通过 SkyLight `SLEventSetIOHIDEvent` 附加 HIDEvent。Symbolic 路径使用约 220px/150px 阈值、350ms 冷却和快速释放检测保证不会连续跳过多个 Space。
 - BetterTouchTool 社区指出四指拖动并非原生能力，鼠标按钮切 Space 过快还可能被系统解释为双击最小化；因此本项目保留“按键生命周期”和“切换节流”两个独立状态，不把四指输入直接伪装成鼠标双击。
 
 #### 实现与验收状态
 
 - [x] K1. 保留既有 `ThreeFingerDrag -> FourFingerLive` 状态转换；加入第四指时不释放 `drag_button_held`，最终 `Idle`/断链/Drop 统一释放。
-- [x] K2. macOS 25 及更早版本继续使用已存在的动画 DockSwipe payload。
-- [x] K3. macOS 26 对 `synthetic` swipe 自动使用 CGS SymbolicHotKey；macOS 27+ 优先通过 SkyLight `SLEventSetIOHIDEvent` 保留连续 DockSwipe，运行时不可用时降级到同一 SymbolicHotKey 状态机。Symbolic 路径横向 Space 阈值 10mm、纵向 Mission Control/App Exposé 阈值 7mm，单次触发后冷却 350ms，不在冷却期累积位移。
+- [x] K1a. 修复真实网络帧的 `3F -> 0F -> 1F/2F -> 4F` re-grip：release-delay 窗口内的 1F/2F 只做重锚定，不提前发送 `leftMouseUp`；原始 deadline 到期由 heartbeat 安全释放并清空旧触点状态。
+- [x] K2. macOS 26 及更早版本继续使用已存在的动画 DockSwipe payload。
+- [x] K3. macOS 26 保留连续 DockSwipe；macOS 27+ 的 `synthetic` swipe 优先通过 SkyLight `SLEventSetIOHIDEvent`，运行时不可用时降级到同一 CGS SymbolicHotKey 状态机。Symbolic 路径横向 Space 阈值 10mm、纵向 Mission Control/App Exposé 阈值 7mm，单次触发后冷却 350ms，不在冷却期累积位移。
 - [x] K4. 增加快速抬指路径（速度阈值 180mm/s，且最后运动距抬指不超过 80ms），避免停住后释放仍误切 Space。
 - [x] K5. 取消/断链/进程退出不会发送错误的 DockSwipe 取消包，也不会留下按键粘连。
 - [ ] K6. macOS 真机矩阵：MacBook/Magic Trackpad + Finder、Preview、Safari、Numbers；分别验证 3F→4F 加指、左右多 Space、切换中反向、目标 Space 抬指、Mission Control/App Exposé，以及 macOS 25/26/27 的事件日志和窗口结果。
+
+#### K6 调研结论（2026-08-29）
+
+- **需求合同已被 Mac Mouse Fix Issue #1735 明确写出：**先按住窗口进入拖拽，执行
+  Space 切换，窗口在过渡期间保持 grabbed，进入目标 Space 后再释放；这不是“同时让
+  macOS 识别三指和四指原生触点”，而是拖拽按钮生命周期与系统 Space 输出的组合。
+  参考：<https://github.com/noah-nuebling/mac-mouse-fix/issues/1735>。
+- **系统路径存在版本分歧。**Mac Mouse Fix PR #1875 的早期提交把 macOS 26+ 都降级为
+  SymbolicHotKey；后续运行时版本修订和当前 `TouchSimulator.m` 将连续 legacy 字段路径
+  保留到 macOS 26，并在 macOS 27+ 构造 `HIDEvent`。因此不能只依据 PR 的早期评论判断
+  26.5.x；目标版本必须实测。参考：
+  <https://github.com/noah-nuebling/mac-mouse-fix/pull/1875>、
+  <https://raw.githubusercontent.com/noah-nuebling/mac-mouse-fix/master/Helper/Core/Touch/TouchSimulator.m>。
+- **macOS 27 的连续路径依赖私有 setter。**PR #1920 记录了旧的
+  `CGEventSetIOHIDEvent` opaque offset（`0x18/0xd0`）在 27 上失效，建议运行时解析
+  `SLEventSetIOHIDEvent`；找不到符号时只能降级。该 PR 还提示 ownership 在 arm64、
+  Rosetta 和不同修订间存在争议，必须用本项目自己的 recorder/释放回归定案，不能把
+  “调用成功”当作 Dock 已消费。参考：<https://github.com/noah-nuebling/mac-mouse-fix/pull/1920>。
+- **独立 OSS 实现复核了事件形状而非原生保证。**`oomol-lab/dockswipe` 使用 type 30
+  DockControl、subtype 23、axis/progress/phase 字段，按约 8ms 的多帧流驱动连续动画，
+  并明确标注 macOS 27+ 需要 IOHIDEvent 路径；这支持当前字段布局，但不证明窗口拖拽
+  在所有系统版本都跨 Space 保持抓取。参考：<https://github.com/oomol-lab/dockswipe>。
+- **三指与系统 Space 手势默认存在冲突。**Trident 的首次运行引导要求把 macOS 的
+  三指 Space 手势改成四指，否则自定义三指手势会与系统动作同时触发；这支持本项目
+  采用“3F drag + 4F swipe”的显式状态机，而不是依赖系统设置自动并行识别。参考：
+  <https://github.com/cyanyux/trident>。
+
+当前代码与上述合同的对应关系：`src/gesture.rs` 在 `ThreeFingerDrag -> FourFingerLive`
+时保留 `drag_button_held`，四指 `Ended` 后才释放；`src/output.rs` 在 macOS 26 及更早
+版本走 legacy DockSwipe，macOS 27+ 先尝试 `SLEventSetIOHIDEvent`，失败后进入带阈值、
+350ms 冷却和 flick 保护的 SymbolicHotKey。状态机测试和断链收尾已完成；**K6 的真实
+WindowServer/Dock 消费结果、ownership/timestamp、窗口跨 Space 附着仍待真机**，本轮不
+将其标记为完成。
 
 ## 3. 调研与审查结论
 
@@ -367,7 +401,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] H6-H8. 新增 `companion-tui` 作为无 Trackpad pane 的配置入口，并让 `companion-net` 忽略虚拟输入不适用的残留 `Clicking=0`。
 - [x] J1-J5. 完成 Shift/Command/Control/Option 的 Quartz flags 传递、Zoom modifier session latch、Shift 兼容开关和 TUI 配置入口；系统合成热键改走保留 flags 的派发路径。
 - [x] J6. 修正横向滚动总开关优先级：`horizontal = false` 现在同时抑制原生横向分量和 Shift 兼容映射。
-- [x] K1-K5. 实现三指拖拽进入四指切 Space 时的按键保持、macOS 26 SymbolicHotKey 与 macOS 27+ HIDEvent 优先/fallback、阈值/冷却/flick 防误触，以及取消/断链安全收尾。
+- [x] K1-K5. 实现三指拖拽进入四指切 Space 时的按键保持、macOS 26 DockSwipe 与 macOS 27+ HIDEvent 优先/SymbolicHotKey fallback、阈值/冷却/flick 防误触，以及取消/断链安全收尾。
 - [ ] K6. 在 macOS 25/26/27 的真实 MacBook/Magic Trackpad 与 Finder/Preview/Safari/Numbers 上完成联合拖拽验收。
 - [ ] F5. 在目标 macOS 版本用真实 MacBook/Magic Trackpad 验证 performer 是否可用、触发时机和系统“触控反馈”开关；未完成前不宣称硬件 click parity。
 - [x] G1. 通过 AnySearch + Ketch 完成 Android/Apple/开源触觉检索，确认本机 primitives 能力与系统强度约束。
@@ -376,20 +410,23 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] G4. 根据首次体感反馈修正深按条时序：`ACTION_DOWN` 立即发普通 click，阈值后只发一次带阻尼尾的更深冲击，避免“延迟的一次震动”错觉。
 - [x] G5. 对 Xiaomi/Redmi + 支持 163 的 HAL 优先使用系统桌面同款 `HARDWARE_FEEDBACK` 预置效果，其他设备继续走可移植波形。
 - [x] F5c. 为 `companion-net` 增加虚拟输入偏好合并路径：忽略 Mac mini 残留的 `Clicking=0`，默认保留手机 tap-to-click，同时保留显式 TOML 关闭能力。
+- [x] I20. Android 资源消耗收敛为单一平衡方案：QWEA0 玻璃保留完整动态背景、色差、色散、传感器高光和触点光学层，仅在手指交互期间开启动态重绘；背景采样使用 `globalDownsampleFactor=0.5`、`downsampleScale=3`、优化捕获和降采样模糊，色差/色散中间缓冲使用 0.35 降采样；关闭帧统计；壁纸解码最长边限制为 1600px；不增加高质量/省电/兼容三档设置。
 
 ### 4.1 本轮验证记录
 
-- `~/.cargo/bin/cargo test --workspace`：通过，144 个库测试 + 2 个 `companion-tui` 测试 + 9 个协议测试（包含 R1 transform filter、R7 两指误触回归、C1 bit-packed decode、C2 descriptor report-ID、C3 fixture、C4 hybrid 聚合、无编号 report、虚拟输入 `Clicking=0` 隔离回归，以及 J3 Option Zoom mask、J4 Shift 轴向、J1 配置映射和 J6 横向总开关回归）。
+- `~/.cargo/bin/cargo test --workspace`：通过，155 个库测试 + 3 个 `companion-config` 测试 + 6 个 `companion-tui` 测试 + 9 个协议测试（包含 R1 transform filter、R7 两指误触回归、C1 bit-packed decode、C2 descriptor report-ID、C3 fixture、C4 hybrid 聚合、无编号 report、虚拟输入 `Clicking=0` 隔离回归，以及 J3 Option Zoom mask、J4 Shift 轴向、J1 配置映射和 J6 横向总开关回归）。
 - `~/.cargo/bin/cargo check --all-targets`：通过。
 - `~/.cargo/bin/cargo check --target aarch64-apple-darwin --all-targets`：通过（交叉检查 macOS binary/module wiring；仅有既有 dead-code 警告）。
 - `~/.cargo/bin/cargo run --bin companion-tui -- --help`：通过，TUI binary 可构建并暴露 `--config` 覆盖入口。
 - 修饰键事件回归审查：点击 down/up 使用同一 modifier 快照；pinch/rotate/swipe/scroll 保留当前四键 flags；Cmd+Ctrl+D 与 Control+Arrow 等合成系统热键使用 raw post，避免被实时 modifier 覆盖逻辑清除。
 - Shift 兼容边界回归审查：映射在横向总开关之后生效，`[scroll].horizontal = false` 不会被兼容模式绕过。
 - 联合拖拽回归审查：现有 `three_finger_drag_to_four_finger_swipe` 和 `link_timeout_releases_drag_button_carried_into_four_finger_swipe` 通过；输出层新增 SymbolicHotKey 阈值、350ms 冷却、80ms flick 保护和 Drop 时 fallback 状态隔离，macOS 行为仍待真机。
-- 2026-08-29 修订：根据 Mac Mouse Fix PR #1936，将 macOS 27+ 的连续 HIDEvent 路径恢复为优先级最高；仅在 `SLEventSetIOHIDEvent`/`HIDEvent` 不可用时切换 SymbolicHotKey，避免在可用系统上退化为离散跳桌面。
+- 联合拖拽追加回归：配置的拖拽锁定窗口内，3F 全抬起后快速落 4F 会继续保持左键并启动 Space swipe；显式 `release_delay_ms=0` 会立即结束拖拽；五指/掌托接触不会推进四指 Space 手势。
+- 2026-08-29 修订：根据 Mac Mouse Fix 后续运行时版本修订，macOS 26 保留连续 DockSwipe，macOS 27+ 将 `SLEventSetIOHIDEvent`/`HIDEvent` 作为优先路径，仅在不可用时切换 SymbolicHotKey，避免 26.5.x 用户被错误降级为离散跳桌面。
 - red-green：临时移除 `policy_for_mode(..., virtual_input=true)` 的隔离时，`virtual_input_keeps_tap_to_click_default` 按预期失败（`Off` vs `On`）；恢复后虚拟输入两项回归均通过。
 - `android/./gradlew test`（工作目录 `android/`）：通过，Gradle `BUILD SUCCESSFUL`。
 - `android/./gradlew assembleDebug`：通过；`adb install -r android/app/build/outputs/apk/debug/app-debug.apk` 返回 `Success`，已在设备 `192.168.3.131:34743` 启动 `com.mtc.touchpad/.MainActivity`。
+- I20 资源回归（2026-08-29）：使用 ARM AAPT2 完成 `testDebugUnitTest assembleDebug`，并在 `192.168.3.137:44899` 重装启动。主页稳定后 `dumpsys meminfo` 为 PSS `187.1 MB`、Graphics `108.7 MB`、GL mtrack `93.7 MB`、EGL mtrack `15.0 MB`；`dumpsys cpuinfo` 为 `1.4%`。执行 5 秒交互滑动时，CPU 快照约 `11.1%`、GPU p50 `8 ms`、janky `2.12%`，完整动态镜头正常渲染；壁纸纹理约 `1200x797`/`3.65 MB`，没有 4K 级原图纹理。此前约 `300 MB` PSS 的记录包含多个 Dialog，不能作为严格同场景 A/B；当前采用单一平衡配置，不提供三档质量 UI。
 - G3 追加验收：深按条触发后 `dumpsys vibrator_manager` 显示 `usage: PHYSICAL_EMULATION`、`adaptive=1.00`，实际播放 `[0ms@0, 10ms@0.68, 6ms@0, 18ms@1.00]`；设置页显示 `按下震动强度 255 / 255`。
 - G4 代码验收：`DeepPressBarView.ACTION_DOWN` 立即调用 `Haptics.click()`；阈值回调调用一次 `Haptics.deepPress()`，新深按波形为 `[0ms@0, 11ms@1.00, 4ms@0, 8ms@0.34]`。
 - G5 实机验收：Redmi/HyperOS 触发后日志显示 `usage: HARDWARE_FEEDBACK`、`Prebaked=163(MEDIUM, with fallback)`，确认厂商校准路径已被选中。
@@ -456,12 +493,26 @@ Ketch 的开源代码检索还核对了 `NavigationSplitView` 在 macOS 设置�
 - I2：已完成。检索 Apple Materials/HIG、Liquid Glass、Material 3、Mousedroid 及开源 Apple HIG skills，锁定“内容层高对比 + 功能层少量玻璃”的跨平台方案。
 - I3：已完成。安装并直接调用 `implement-apple-web-ui`、`review-hig-compliance`、`design-macos-interfaces`、`apple-design-foundations`、`apple-design-materials`、`apple-design-interaction`、`apple-design-web`、`apple-design-motion`、`material-3` skills。
 - I4：已完成。Android 保持原生 View/Activity 与触控链路，完成 app bar、操作栏、连接面板、深按设置面板和主题资源重制。
-- I5：已完成。Web 保持二进制协议与 pointer capture，完成工具栏、底部操作 dock、产品标识、状态层级、fullscreen 同步和可访问性降级。
+- I5：已完成。Web 保持二进制协议与 pointer capture，完成统一顶栏、连接态收缩胶囊、产品标识、状态层级、fullscreen 同步和可访问性降级。
 - I6：部分完成。ADB 与 Playwright 截图验收覆盖 Android 横屏、Web 375px/1280px、诊断页两种尺寸；静态 server 无 `/ws`，实时 WebSocket 仍需 macOS companion-net 实例验收。
 - I7：已完成。README、Apple 产品设计规范和本规划书已回写；GitHub 发布前仍需真实 macOS 应用矩阵与网络安全复核。
-- I8：已完成。调研并核对 `QWEA0/Liquid-Glass-Android`（MIT、JitPack `com.github.QWEA0:liquidglass:v2.0.2`）与 `PallavAg/liquid-glass-web-react`（MIT、SVG 位移图）后，Android 触控面接入 QWEA0 的 API 33+ 单遍 AGSL/SDF 实时折射、物理色散、传感器高光和 Regular/Clear 材质管线；Web 触控面接入同类几何位移滤镜并保留 `backdrop-filter` 降级。
-- I9：已完成。主题矩阵统一为 6 种 Liquid Glass（`light-glass`、`dark-glass`、`ocean-glass`、`sunset-glass`、`aurora-glass`、`graphite-glass`）、6 种编辑器主题（`tokyo-night`、`nord`、`dracula`、`solarized-dark`、`catppuccin-mocha`、`monokai`）以及经典/辅助主题（`classic-light`、`classic-dark`、`high-contrast`）；Android 使用 SharedPreferences，Web/诊断页使用同一 `localStorage` key。玻璃主题按变体调整 QWEA0 `REGULAR` 或 Web SVG 透镜的折射、色散、饱和度和高光参数，编辑器主题关闭折射以保持可读性。
+- I8：已完成。调研并核对 `QWEA0/Liquid-Glass-Android`（MIT、JitPack `com.github.QWEA0:liquidglass:v2.0.2`）与 `PallavAg/liquid-glass-web-react`（MIT、SVG 位移图）后，Android 触控面接入 QWEA0 的 API 33+ AGSL/SDF 折射、物理色散、边缘高光和透明 `CLEAR` 材质管线；Web 触控面接入同类几何位移滤镜并保留 `backdrop-filter` 降级，双方均无空闲背景动画。
+- I9：已完成并收敛。主题矩阵统一为 7 种 Liquid Glass（`light-glass`、`dark-glass`、`ocean-glass`、`sunset-glass`、`aurora-glass`、`graphite-glass`、`custom-glass`）、6 种编辑器主题（`tokyo-night`、`nord`、`dracula`、`solarized-dark`、`catppuccin-mocha`、`monokai`）以及经典/辅助主题（`classic-light`、`classic-dark`、`high-contrast`）；实验材质从正式入口移除，历史值回退到默认玻璃。Android 使用 SharedPreferences，Web 使用同一 `localStorage` key；Android 使用 QWEA0 `CLEAR` 透镜，Web 使用 SVG 位移透镜，均不运行空闲背景动画。
 - I10：部分完成。API 36 Redmi 实机已重新安装并启动 QWEA0 v2.0.2，截图确认全窗口动态后景、SDF 玻璃宿主、边缘高光和触控层无崩溃；Android/Web 触点已加入速度拖尾、方向高光、双层光学环和 280ms 松手衰减；Safari/Firefox 的 SVG `backdrop-filter` 仍按公开 WebKit 限制走 blur fallback，需目标浏览器和 macOS 主机做最终矩阵。
+- I11：已完成。Android 端补齐材质实验室主题（凝露、触控水波、雨痕、棱镜、软胶、液态金属、纸张、全息、LCD、陶瓷），材质层不接收触控；材质响应与“触点显示”分离，默认仅由触摸事件驱动有限响应；顶部/底部 chrome 收紧，全屏零边距零圆角，Activity 使用 `fullSensor` 支持竖屏。2026-08-29 在 `192.168.3.137:44899` 完成安装、启动、主题滚动和竖屏截图回归。
+- I12：已完成（2026-08-29）。Android 全屏隐藏整个底部轨道并关闭系统导航栏 contrast scrim，Web 删除 `glass-sheen` 无限动画并让全屏触控面移除 inset；QWEA0 触控面改为 `CLEAR` + 透明子层以保留背景可辨识度。APK 已在 `192.168.3.137:44899` 安装，单元测试和构建通过。
+
+### 阶段 I 视觉收尾（2026-08-29）
+
+- I13：已完成。按中央触控面视觉回归移除 Android 背景中的圆形、圆角块和大曲线带，改为与 Web 对齐的连续线性色场和低强度镜面层；清理 `Quiet Glass` 的离散装饰，收紧 Android 控制栏内边距，QWEA0 保持透明度更合适的 `CLEAR` 材质。重新完成 Web 静态回归；Android 真机复验受当前构建容器的 AAPT2 运行时限制，保留上一轮已安装 APK 的实机结果。
+- I14：已完成（2026-08-29）。完成 Web/APK 主题 parity 收尾：两端正式选择器与 tester 共用 16 个主题 key；Android 六种编辑器主题、经典主题和辅助主题均由 `ThemePalette` 驱动，设置/测试弹窗、顶部/底部 chrome 与触控面边框跟随当前 palette；Liquid Glass 触控面统一采用 Android QWEA0 `CLEAR` 透镜与 Web SVG/CSS 折射近似，且保留无滤镜/无动画降级路径。当前环境仍无法启动 x86_64 AAPT2（ARM 容器缺少 `/lib64/ld-linux-x86-64.so.2`），已改用 Kotlin 编译排除资源任务和 Web 语法/浏览器回归验证。
+- I15：已完成（2026-08-29）。按连接态重排 Web 与 APK 触控页：原底部操作 dock/controlsRail 合并至统一顶栏，成功连接时仅保留可识别的状态胶囊；详细控制移入可纵向滚动的控制中心，顶栏和触控面均不依赖横向滚动；断开或连接中保持展开以提供恢复路径；Web 触控面上移至 `top: 72px/bottom: 24px`，Android 触控面底部释放为 18dp；全屏继续使用独立退出按钮，不抢占触控区。
+- I16：已完成（2026-08-29）。使用 ARM AAPT2 override 完成最新 APK 打包并安装到 `192.168.3.137:44899`，ADB 返回 `Success`；启动截图确认 Android 连接态 header 已收缩为状态胶囊，触控面保留完整可用区域。
+- I17：已完成（2026-08-29）。视觉回归移除其他主题右下椭圆落地阴影，并通过主题专属背景纹理与 `pad-texture` 规则表达编辑器/经典主题；非玻璃主题保持纯色高对比，Liquid Glass 不叠加该阴影，避免层次冲突。
+
+- I18：已完成（2026-08-29）。按窄屏产品化回归重排 Web 与 Android 顶栏：顶栏固定为连接状态、控制中心和全屏三个入口，移除移动端横向滚动依赖；灵敏度、震动、触点显示、深按、诊断、主题和命令收进分组控制中心/对话框。非玻璃与编辑器主题移除右下椭圆阴影，改为各主题对应的网格、纸面或低强度纹理背景；Android Ceramic 同步改为主题色网格。
+- I19：已完成（2026-08-29）。修复 Android 连接态紧凑顶栏中全屏按钮因 `LinearLayout` 宽度不足被裁切的问题，加入 44dp 独立命中区和轻量 elevation；全屏进入/退出使用可中断的缩放、淡入和位移过渡。Android 所有模态设置打开时隐藏底层控制中心/全屏入口，Web 控制中心打开时隐藏对应顶栏操作；新增 `HeaderLayoutMetricsTest` 防止紧凑胶囊宽度回退。
+- I20：已完成（2026-08-29）。Android QWEA0 玻璃保留完整动态光学栈，交互期间开启动态背景重绘，抬指后停止常驻循环；全局 0.5 降采样、三级模糊降采样、优化捕获、0.35 色差/色散降采样和关闭帧统计共同控制资源；自定义/内置壁纸解码最长边限制 1600px，Activity 销毁时释放位图。ADB 交互回归显示 CPU 约 11.1%、GPU p50 8ms；主页稳定基线 PSS 187.1MB、Graphics 108.7MB，没有新增质量模式设置。
 
 ### 阶段 M：再次全面 native parity 审计（2026-08-29）
 
@@ -495,3 +546,58 @@ Ketch 的开源代码检索还核对了 `NavigationSplitView` 在 macOS 设置�
 - [ ] N7. macOS 真机仍需验证 gain 手感、单路径 Smart Zoom 消费结果，以及 strict/compat 两种模式在 Preview、Photos、Safari、Maps、Figma 的结果。
 
 阶段 N：**部分完成**（代码、TUI、文档和自动化测试已完成；N7 依赖目标 macOS 真机与应用矩阵）。
+
+### 阶段 O：跨平台触控板逆向与参数对照（2026-08-29）
+
+依据：`docs/reverse-engineering-sources.md` 新增的跨平台资料，包含
+libinput、Windows Precision Touchpad、VoodooRMI、OpenMultitouchSupport 和
+Apple Mac 触控板的公开实现/规范。
+
+- [x] O1. 核对 libinput 的 pinch/rotate 合同：相对角度增量、相对初始位置的绝对 scale、中心位移、固定手指数和 100/150ms 锁定超时。
+- [x] O2. 核对 Windows PTP 的 Contact ID、Tip、Confidence、Width、Height、Pressure、最大触点数和溢出生命周期规则。
+- [x] O3. 核对 Windows 的 `CursorSpeed`、`ClickForceSensitivity`、`FeedbackIntensity` 等真实用户参数，确认没有可迁移的旋转/缩放 gain。
+- [x] O4. 核对 Synaptics/VoodooRMI/OpenMultitouchSupport 的压力、接触面积、边缘区和拇指/手掌粘性分类策略。
+- [x] O4a. 抓取 ChromiumOS `ImmediateInterpreter` 与 `PalmClassifyingFilter` 的源码默认值，记录 pinch 锁定、尺度分辨率、角度余弦、滤波器和 palm 参数及单位。
+- [x] O4b. 核对 Fusuma 的 `threshold`/`interval` 优先级和倍率语义，确认它不是物理灵敏度曲线。
+- [x] O4c. 核对 Synaptics man page/样例配置的 Finger、Palm、Hysteresis、Coasting、LockedDrag 和 SoftButton 参数，区分驱动默认与设备样例。
+- [x] O5. 将可迁移结论回写到架构决策：保持平台中立的 transform core，保留 `confidence`，不伪造 width/height/pressure，继续把 `pinch.gain`/`rotate.gain` 标为 Companion-only。
+- [x] O6. 将来源、许可证状态、具体参数速查表和不可验证项写入 `docs/reverse-engineering-sources.md`，不复制第三方私有 ABI 或未核验许可证代码。
+- [ ] O7. 在真实 Mac、Windows PTP 和 Linux libinput 设备上采集同一套 pinch/rotate/scroll 轨迹，用于参数分布对照；当前依赖外部硬件，不能在本环境完成。
+
+阶段 O：**部分完成**（公开规范、源码和社区实测已整理；跨设备同动作采样与 macOS 应用消费结果待真机）。
+
+### 阶段 P：ChromiumOS 参数实验档案（2026-08-29）
+
+- [x] P1. 将公开 ChromiumOS 手势识别器的可迁移阈值封装为独立
+  `native` / `chromium_os` profile；默认保持 Companion 原生校准值，不覆盖既有用户行为。
+- [x] P2. 应用 ChromiumOS 的 1.5mm 滚动锁定、2mm pinch guess、8mm pinch certainty、
+  三帧观察窗口和约 0.25% 缩放更新死区；旋转仍沿用已验证的角度锁定与输出死区。
+- [x] P3. 在配置解析、启动映射、双指 recognizer、TUI 和 `companion-config` 文档中接通
+  profile，并增加解析、行为和序列化回归测试。
+- [x] P4. 提供无损 A/B 切换与回退：`gestures.parameter_profile = "chromium_os"`
+  或恢复为 `"native"`，改动仅在重启 companion 服务后生效。
+- [ ] P5. 在目标 Mac mini + Android 触控端完成同一组慢捏、快捏、轻微旋转和滚动轨迹
+  的 A/B 记录，确认误触率、锁定延迟、缩放连续性和四指手势无回归。
+
+阶段 P：**已完成代码与自动化验证；真机 A/B 仍待执行**。
+
+### 阶段 Q：Notification Center 右边缘判定修正（2026-08-29）
+
+- [x] Q1. 移除右边缘识别中混用的旧归一化坐标和 28mm 绝对阈值。
+- [x] Q2. 改用 `gestures.surface_width_mm * 0.85` 计算边界，默认虚拟触控面宽度为
+  65mm；要求两根手指都从边缘区开始，减少中部左滑误触发。
+- [x] Q3. Web 触控面把完整输入区域映射到 65mm 虚拟宽度，Android 测试动作更新到
+  56/60mm 起点；增加非边缘和单指边缘回归测试。
+- [ ] Q4. 在 Mac mini + Android 真机验证 65mm 默认值与不同屏幕 DPI 下的边缘手感；
+  必要时通过 TUI 的“虚拟触控面宽度”微调。
+
+阶段 Q：**已完成代码与自动化验证；真机边缘手势仍待执行**。
+
+### 阶段 R：深按条编辑与触点显示配置（2026-08-29）
+
+- [x] R1. Android/Web 深按条统一支持显示开关、横纵位置、宽度和高度；两端均提供可拖动预览，Android 使用 8dp 触摸布局，Web 使用 Pointer Events。
+- [x] R2. “动效”产品设置拆分为仅控制触点覆盖层的“触点显示”，材质层不再随该开关关闭；旧 key 仅用于兼容读取。
+- [x] R3. `custom-glass` 暴露折射强度、饱和度、亮度和边缘高光参数，保持其它主题的默认变量和减少透明度降级。
+- [x] R4. 移除测试按钮自由布局入口，诊断动作保留固定顺序，避免测试结果受自定义布局影响。
+
+阶段 R：**已完成代码、脚本语法检查和 Android 构建安装；目标 Mac 上的深按按压时延及不同应用消费结果仍属于 M6/M7 真机矩阵。**

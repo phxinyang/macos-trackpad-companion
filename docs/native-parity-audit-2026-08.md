@@ -186,13 +186,12 @@ pinch/rotate。这是为早期误分类保留的兼容路径，可能在用户�
 
 ### P2: Notification Center edge zone 混用物理 mm 与旧 normalized 坐标
 
-位置：`src/gesture.rs:1621-1624`。
+位置：`src/gesture.rs`（已在阶段 Q 修正）。
 
-同一表达式同时检查 `x >= 28.0`（代码/协议的物理 mm）和 `0.65 <= x <= 1.0`（旧版
-normalized 坐标）。在当前 mm 输入下，靠近左边缘的 `0.65..1.0mm` 触点也会被标记为
-right-edge candidate；同时 `28mm` 对 40mm 和 65mm 宽的 pad 又代表不同的边缘比例。
-后续 `cumulative_dx <= -3.8` 才触发，所以不是每次误标都会动作，但它使 edge 手势
-依赖 pad 尺寸和坐标来源，无法称为原生 edge zone。
+旧实现同时检查 `x >= 28.0`（物理 mm）和 `0.65..1.0`（旧版 normalized 坐标），
+导致 65mm 触控面的中部也会被标记为 right-edge candidate。现已改为使用显式虚拟
+surface width 的 85% 边界，并要求两根手指都在边缘区；剩余差异仅是不同发送端的
+surface width 标定问题。
 
 ### P2: 未知枚举值被静默当作启用
 

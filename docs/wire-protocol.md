@@ -67,7 +67,8 @@ Total size = 15 + 10n bytes ≤ 115 B.
   sender that skips the pixel→mm conversion feels wrong by orders of
   magnitude. Convert using one isotropic pixel-pitch scalar. Native Android
   uses the average of the display's valid `xdpi`/`ydpi` values (falling back
-  to `densityDpi`); the browser uses the CSS 96-DPI reference. Apply a
+  to `densityDpi`); the browser maps its full touch surface to a calibrated
+  65mm virtual width because CSS pixels do not expose physical DPI. Apply a
   user-visible overall calibration factor after that conversion. Do not map
   the two axes independently to an arbitrary virtual rectangle: on a
   portrait phone that makes identical finger motion feel directionally
