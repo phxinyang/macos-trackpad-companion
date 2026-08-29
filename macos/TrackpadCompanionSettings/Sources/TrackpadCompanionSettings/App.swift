@@ -150,7 +150,7 @@ final class ServiceSupervisor: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.stop()
             }
         }
