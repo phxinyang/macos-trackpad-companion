@@ -43,7 +43,11 @@ cp "$RUST_BIN_DIR/companion-net" "$APP/Contents/Resources/companion-net"
 cp "$RUST_BIN_DIR/companion-config" "$APP/Contents/Resources/companion-config"
 cp "$ROOT/packaging/macos/Info.plist" "$APP/Contents/Info.plist"
 chmod 755 "$APP/Contents/MacOS/TrackpadCompanion" "$APP/Contents/Resources/companion-net" "$APP/Contents/Resources/companion-config"
-/usr/bin/test ! -f "$ICON" || cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
+if [[ -f "$ICON" ]]; then
+  cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
+else
+  echo "No AppIcon.icns found; using the default application icon."
+fi
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
 if [[ -f "$ICON" ]]; then
