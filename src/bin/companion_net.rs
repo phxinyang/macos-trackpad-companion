@@ -181,8 +181,8 @@ fn ensure_accessibility() -> Result<()> {
     if !prompt {
         if host_trusted {
             log::warn!(
-                "embedded helper could not verify its own Accessibility identity; "
-                    "continuing because the host app already has Accessibility permission"
+                "embedded helper could not verify its own Accessibility identity; \
+                 continuing because the host app already has Accessibility permission"
             );
             return Ok(());
         }

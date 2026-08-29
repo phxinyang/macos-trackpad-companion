@@ -13,7 +13,7 @@ struct SidebarHeader: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ))
-                Image(systemName: "hand.draw.fill")
+                Image(systemName: "rectangle.inset.filled")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.white)
             }
@@ -93,7 +93,7 @@ struct OverviewHero: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "hand.draw.fill")
+            Image(systemName: "rectangle.inset.filled")
                 .font(.system(size: 30, weight: .medium))
                 .foregroundStyle(.tint)
                 .frame(width: 48, height: 48)
