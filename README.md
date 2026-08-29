@@ -234,8 +234,10 @@ enable = "off"                # stationary 1F hold; off matches stock default
 
 With `persistent_drag_lock = true`, a three-finger drag stays held after a
 complete lift. Land four fingers to switch Space, lift again, then land three
-fingers to continue the same drag; a short one- or two-finger tap explicitly
-unlocks it. Adding a fourth finger before the complete three-finger lift is
+fingers to continue the same drag. A stationary one- or two-finger touch
+explicitly unlocks it; real one-finger movement or two-finger pan motion exits
+the lock and immediately returns to ordinary pointer/scroll input. Adding a
+fourth finger before the complete three-finger lift is
 treated as an independent swipe and releases the live drag. Set
 `persistent_drag_lock = false` to use the finite `release_delay_ms` grace window
 instead, or set `release_delay_ms = 0` for strict lift-to-release behavior.
