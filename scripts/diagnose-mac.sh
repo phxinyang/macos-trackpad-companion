@@ -178,6 +178,14 @@ collect_report() {
 
   section "processes and listeners"
   if command_exists pgrep; then pgrep -afil 'TrackpadCompanion|companion-net|companion' 2>&1 || true; fi
+  if command_exists ps; then
+    # shellcheck disable=SC2009
+    # ps exposes CPU, memory, and elapsed time together.
+    ps -axo pid=,ppid=,%cpu=,%mem=,etime=,command= 2>&1 \
+      | grep -E 'TrackpadCompanion|companion-net|companion' \
+      | grep -v 'diagnose-mac.sh' \
+      | head -n 30 | redact || true
+  fi
   if command_exists lsof; then
     lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>&1 || true
     lsof -nP -iUDP:"$PORT" 2>&1 || true

@@ -166,8 +166,20 @@ fn ax_trusted(prompt: bool) -> bool {
 
 #[cfg(target_os = "macos")]
 fn ensure_accessibility() -> Result<()> {
-    if ax_trusted(true) {
+    // The SwiftUI host owns the Accessibility prompt when this helper is
+    // embedded in the app. Prompting from both processes makes TCC dialogs
+    // repeat and can leave the child with a stale per-process answer.
+    let prompt = std::env::var("MTC_ACCESSIBILITY_PROMPT")
+        .map(|value| value != "0")
+        .unwrap_or(true);
+    if ax_trusted(prompt) {
         return Ok(());
+    }
+    if !prompt {
+        anyhow::bail!(
+            "Accessibility permission is not available to companion-net. \
+             Grant Trackpad Companion.app in System Settings -> Privacy & Security -> Accessibility, then click Restart."
+        );
     }
     anyhow::bail!(
         "Accessibility permission required (synthetic CGEvents are silently \
