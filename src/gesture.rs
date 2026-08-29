@@ -257,6 +257,18 @@ const ROTATE_MAX_RATE_RAD: f64 = 12.0;
 const ROTATE_MAX_FRAME_RAD: f64 = 15.0_f64.to_radians();
 const TRANSFORM_MIN_DELTA: f64 = 1e-3;
 const ROTATE_EMIT_DEADZONE_RAD: f64 = 0.1_f64.to_radians();
+pub const TRANSFORM_GAIN_MIN: f64 = 0.25;
+pub const TRANSFORM_GAIN_MAX: f64 = 4.0;
+
+/// Normalize a user-provided transform gain without allowing a malformed
+/// value to invert, disable, or bypass the gesture safety limits.
+pub fn normalize_transform_gain(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(TRANSFORM_GAIN_MIN, TRANSFORM_GAIN_MAX)
+    } else {
+        1.0
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 struct TwoFingerBaseline {
@@ -395,6 +407,18 @@ pub struct GestureOptions {
     pub secondary_click: bool,
     /// Whether a two-finger double tap invokes Smart Zoom.
     pub smart_zoom: bool,
+    /// Multiplier for relative pinch deltas. This is a companion-only
+    /// compatibility control; native macOS does not expose pinch
+    /// sensitivity. Values are normalized by the startup layer.
+    pub pinch_gain: f64,
+    /// Multiplier for relative rotation deltas. This is a companion-only
+    /// compatibility control; native macOS does not expose rotation
+    /// sensitivity. Values are normalized by the startup layer.
+    pub rotate_gain: f64,
+    /// Allow a gesture that already locked to scroll to transition into
+    /// pinch/rotate. Strict native mode keeps scroll locked; this remains
+    /// an opt-in compatibility behavior for legacy surfaces.
+    pub dynamic_transform_compat: bool,
     /// Whether a three-finger tap invokes Dictionary Lookup.
     pub dictionary_lookup: bool,
     /// Whether two-finger translation emits scroll events.
@@ -426,6 +450,9 @@ impl Default for GestureOptions {
             tap_to_click: true,
             secondary_click: true,
             smart_zoom: true,
+            pinch_gain: 1.0,
+            rotate_gain: 1.0,
+            dynamic_transform_compat: false,
             dictionary_lookup: true,
             scroll_enabled: true,
             right_edge_swipe: true,
@@ -634,6 +661,9 @@ impl<O: Output> State<O> {
 
     pub fn with_options(out: O, cursor_accel: CursorAccel, options: GestureOptions) -> Self {
         let now = Timestamp::now();
+        let mut options = options;
+        options.pinch_gain = normalize_transform_gain(options.pinch_gain);
+        options.rotate_gain = normalize_transform_gain(options.rotate_gain);
         Self {
             out,
             contacts: HashMap::new(),
@@ -2540,11 +2570,12 @@ impl<O: Output> State<O> {
                     || (min_relative_motion <= ANCHORED_FINGER_FLOOR_MM
                         && max_relative_motion >= TAP_MAX_MOVE_MM
                         && relative_alignment < 0.0);
-                if (base.pinch_admitted && scale_rel >= 0.25 && relative_motion_is_gesture)
-                    || (base.rotate_admitted
-                        && (frame_rot >= 2.0_f64.to_radians()
-                            || total_rot >= 15.0_f64.to_radians())
-                        && relative_motion_is_gesture)
+                if self.options.dynamic_transform_compat
+                    && ((base.pinch_admitted && scale_rel >= 0.25 && relative_motion_is_gesture)
+                        || (base.rotate_admitted
+                            && (frame_rot >= 2.0_f64.to_radians()
+                                || total_rot >= 15.0_f64.to_radians())
+                            && relative_motion_is_gesture))
                 {
                     log::info!(
                         "2F dynamic transition from Pan -> PinchAndRotate (scale_rel={:.2} frame_rot={:.2}rad align={:.2})",
@@ -2587,7 +2618,7 @@ impl<O: Output> State<O> {
                     .map(|t| now.saturating_duration_since(t))
                     .unwrap_or_else(|| Duration::from_millis(16));
                 let scale_delta = limit_transform_delta(
-                    raw_scale_delta,
+                    raw_scale_delta * self.options.pinch_gain,
                     transform_dt,
                     PINCH_MAX_RATE,
                     PINCH_MAX_FRAME_DELTA,
@@ -2598,7 +2629,7 @@ impl<O: Output> State<O> {
                     0.0
                 } else {
                     limit_transform_delta(
-                        raw_angle_d,
+                        raw_angle_d * self.options.rotate_gain,
                         transform_dt,
                         ROTATE_MAX_RATE_RAD,
                         ROTATE_MAX_FRAME_RAD,
@@ -2619,7 +2650,11 @@ impl<O: Output> State<O> {
                     // keep the geometric 1:1 value until a real-device A/B
                     // test proves an acceleration curve is desirable.
                     let appkit_angle_deg = -angle_d.to_degrees();
-                    log::debug!("rotate: delta={:+.2}deg gain=1.00x", appkit_angle_deg);
+                    log::debug!(
+                        "rotate: delta={:+.2}deg gain={:.2}x",
+                        appkit_angle_deg,
+                        self.options.rotate_gain
+                    );
                     self.out.rotate(appkit_angle_deg, Phase::Changed);
                 }
                 base.prev_scale = scale;
@@ -3234,6 +3269,48 @@ mod tests {
             log.iter()
                 .any(|l| l.starts_with("pinch") && l.contains("Began")),
             "{log:?}"
+        );
+    }
+
+    #[test]
+    fn transform_gain_scales_small_changed_delta_before_limiter() {
+        fn changed_pinch(gain: f64) -> f64 {
+            let r = Recorder::default();
+            let mut s = State::with_options(
+                &r,
+                test_accel(),
+                GestureOptions {
+                    pinch_gain: gain,
+                    ..GestureOptions::default()
+                },
+            );
+            let t0 = Timestamp::now();
+            // Establish a deliberate spread over the two-frame observation
+            // window, then apply a small 0.45% relative change. The latter
+            // remains below the safety limiter so the configured gain is
+            // observable in the emitted Changed delta.
+            s.on_frame_at(frame(&[(1, 0.30, 0.50), (2, 0.70, 0.50)]), t0);
+            s.on_frame_at(frame(&[(1, 0.28, 0.50), (2, 0.72, 0.50)]), at(t0, 16));
+            s.on_frame_at(frame(&[(1, 0.279, 0.50), (2, 0.721, 0.50)]), at(t0, 32));
+            s.on_frame_at(frame(&[(1, 0.278, 0.50), (2, 0.722, 0.50)]), at(t0, 48));
+            let log = r.pop();
+            log.iter()
+                .rev()
+                .find_map(|line| {
+                    line.strip_prefix("pinch ")
+                        .filter(|_| line.contains("Changed"))
+                        .and_then(|rest| rest.split_whitespace().next())
+                        .and_then(|value| value.parse::<f64>().ok())
+                })
+                .expect("expected a pinch Changed event, got {log:?}")
+        }
+
+        let one_x = changed_pinch(1.0);
+        let two_x = changed_pinch(2.0);
+        assert!(one_x > 0.0, "expected a positive spread delta: {one_x}");
+        assert!(
+            (two_x - one_x * 2.0).abs() < 1e-6,
+            "gain should scale the unsaturated Changed delta: 1x={one_x}, 2x={two_x}"
         );
     }
 
@@ -3859,7 +3936,14 @@ mod tests {
     #[test]
     fn two_finger_pan_transitions_to_pinch_when_pinching_mid_scroll() {
         let r = Recorder::default();
-        let mut s = State::new(&r, test_accel());
+        let mut s = State::with_options(
+            &r,
+            test_accel(),
+            GestureOptions {
+                dynamic_transform_compat: true,
+                ..GestureOptions::default()
+            },
+        );
         // Start as regular 2-finger scroll
         s.on_frame(frame(&[(1, 0.45, 0.40), (2, 0.55, 0.40)]));
         s.on_frame(frame(&[(1, 0.45, 0.45), (2, 0.55, 0.45)]));
@@ -3888,6 +3972,29 @@ mod tests {
             log.iter()
                 .any(|l| l.starts_with("pinch") && l.contains("Changed")),
             "expected pinch Changed, got: {log:?}"
+        );
+    }
+
+    #[test]
+    fn two_finger_pan_keeps_scroll_lock_by_default() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, test_accel());
+        s.on_frame(frame(&[(1, 0.45, 0.40), (2, 0.55, 0.40)]));
+        s.on_frame(frame(&[(1, 0.45, 0.45), (2, 0.55, 0.45)]));
+        s.on_frame(frame(&[(1, 0.45, 0.50), (2, 0.55, 0.50)]));
+        s.on_frame(frame(&[(1, 0.35, 0.50), (2, 0.65, 0.50)]));
+        s.on_frame(frame(&[(1, 0.25, 0.50), (2, 0.75, 0.50)]));
+        s.on_frame(frame(&[]));
+        let log = r.pop();
+        assert!(
+            log.iter()
+                .any(|l| l.starts_with("scroll") && l.contains("Began")),
+            "expected initial scroll lock, got: {log:?}"
+        );
+        assert!(
+            !log.iter()
+                .any(|l| l.starts_with("pinch") || l.starts_with("rotate")),
+            "strict native mode must not transition from scroll to transform: {log:?}"
         );
     }
 

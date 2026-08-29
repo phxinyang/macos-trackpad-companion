@@ -40,10 +40,14 @@
 //! # modifier_zoom_mask = 262144  # Control/Option/Command Quartz mask
 //! shift_scroll_horizontal = false # compatibility remap; strict native=false
 //!
+//! [gestures]
+//! dynamic_transform_compat = false # allow Pan -> pinch/rotate transition
 //! [gestures.pinch]                 # enable = "on" | "off" |
 //! enable = "on"                    #   { only = ["bundle.id", ..] } |
+//! gain = 1.0                       # companion-only response multiplier
 //! [gestures.rotate]                #   { except = ["bundle.id", ..] }
 //! enable = "on"
+//! gain = 1.0                       # companion-only response multiplier
 //! [gestures.swipe.horizontal]
 //! enable  = "on"
 //! backend = "synthetic"            # synthetic | notification | off
@@ -281,6 +285,11 @@ pub struct Gestures {
     pub dictionary_lookup: GestureEnable,
     /// Two-finger right-edge swipe to Notification Center.
     pub right_edge_swipe: GestureEnable,
+    /// Compatibility mode for gestures that begin as scroll and later turn
+    /// into pinch/rotate. Strict native mode keeps scroll locked once it
+    /// starts; enable this only for legacy input surfaces that need a
+    /// mid-gesture transition.
+    pub dynamic_transform_compat: bool,
     pub pinch: Pinch,
     pub rotate: Rotate,
     pub swipe: Swipe,
@@ -347,12 +356,17 @@ impl Default for ThreeFingerDrag {
 #[serde(deny_unknown_fields, default)]
 pub struct Pinch {
     pub enable: GestureEnable,
+    /// Multiplier applied to relative magnification deltas before the
+    /// gesture safety limiter. macOS does not expose a native pinch
+    /// sensitivity setting, so this is explicitly companion-only.
+    pub gain: f64,
 }
 
 impl Default for Pinch {
     fn default() -> Self {
         Self {
             enable: GestureEnable::On,
+            gain: 1.0,
         }
     }
 }
@@ -361,12 +375,17 @@ impl Default for Pinch {
 #[serde(deny_unknown_fields, default)]
 pub struct Rotate {
     pub enable: GestureEnable,
+    /// Multiplier applied to relative rotation deltas before the gesture
+    /// safety limiter. macOS does not expose a native rotation sensitivity
+    /// setting, so this is explicitly companion-only.
+    pub gain: f64,
 }
 
 impl Default for Rotate {
     fn default() -> Self {
         Self {
             enable: GestureEnable::On,
+            gain: 1.0,
         }
     }
 }
@@ -569,7 +588,10 @@ mod tests {
         assert_eq!(cfg.gestures.smart_zoom, GestureEnable::On);
         assert_eq!(cfg.gestures.dictionary_lookup, GestureEnable::On);
         assert_eq!(cfg.gestures.right_edge_swipe, GestureEnable::On);
+        assert!(!cfg.gestures.dynamic_transform_compat);
         assert_eq!(cfg.gestures.pinch.enable, GestureEnable::On);
+        assert_eq!(cfg.gestures.pinch.gain, 1.0);
+        assert_eq!(cfg.gestures.rotate.gain, 1.0);
         assert_eq!(
             cfg.gestures.swipe.horizontal.backend,
             SwipeBackend::Synthetic
@@ -591,6 +613,24 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.gestures.pinch.enable, GestureEnable::Off);
         assert_eq!(cfg.gestures.rotate.enable, GestureEnable::On);
+    }
+
+    #[test]
+    fn transform_controls_parse() {
+        let cfg: Config = toml::from_str(
+            r#"
+            [gestures]
+            dynamic_transform_compat = true
+            [gestures.pinch]
+            gain = 1.75
+            [gestures.rotate]
+            gain = 0.5
+        "#,
+        )
+        .unwrap();
+        assert!(cfg.gestures.dynamic_transform_compat);
+        assert_eq!(cfg.gestures.pinch.gain, 1.75);
+        assert_eq!(cfg.gestures.rotate.gain, 0.5);
     }
 
     #[test]

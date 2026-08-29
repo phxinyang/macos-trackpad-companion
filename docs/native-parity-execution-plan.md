@@ -256,7 +256,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 4. `src/output.rs:702-718` 构造 parent digitizer 且 `child_event_mask=0`，没有真实 child contacts；它可能被部分 AppKit 应用接受，但不能等同 CalfTrail 的 raw child touch stream，需阶段 D 逐字段真机比对。
 5. `src/gesture.rs:2521-2610` 当前实现已改为两个已准入 transform stream 各自保持完整 phase 生命周期，并对相对增量限速；Pan→pinch/rotate 动态转场仍是兼容策略，必须在 Preview/Photos/Figma 矩阵中验证。
 6. `src/output.rs` 的 DockSwipe 依赖私有 SkyLight ABI；macOS 27+ 优先使用 `SLEventSetIOHIDEvent`，缺失或失败时只降级到 SymbolicHotKey，不写入未经验证的 legacy 字段；ownership、timestamp、phase、velocity 仍无本机证据。
-7. `src/output.rs:2622-2643` Smart Zoom 同时投递两种事件形状、两个 tap，疑似重复触发；阶段 D3 必须用单一 recorder/应用结果决定保留哪条路径。
+7. **已处理（待真机验证）：** `src/output.rs:2960-2971` 的 Smart Zoom 已收敛为 Mac Mouse Fix 参考的 type 29/subtype 22、单 HID tap；仍需阶段 D3 用 recorder 和应用结果确认该单一路径在目标 macOS 上被消费。
 8. `src/config.rs:72-80` 默认网络监听地址为空，`src/net.rs:190-198` 解析为 `0.0.0.0`；无 token 时局域网任意主机可注入事件。README 已保留警告，生产部署应显式绑定回环/LAN 和 token。
 9. `src/gesture.rs:2640-2664` 的 Launchpad/Show Desktop 是离散 Dock notification/hotkey，不是连续原生四指输入流；矩阵已改成“离散命令 + 待真机”。
 10. `src/output.rs` 和 `src/gesture.rs` 的其他速度/阈值参数仍需真机校准，不应写成 Apple 官方参数。
@@ -460,5 +460,38 @@ Ketch 的开源代码检索还核对了 `NavigationSplitView` 在 macOS 设置�
 - I6：部分完成。ADB 与 Playwright 截图验收覆盖 Android 横屏、Web 375px/1280px、诊断页两种尺寸；静态 server 无 `/ws`，实时 WebSocket 仍需 macOS companion-net 实例验收。
 - I7：已完成。README、Apple 产品设计规范和本规划书已回写；GitHub 发布前仍需真实 macOS 应用矩阵与网络安全复核。
 - I8：已完成。调研并核对 `QWEA0/Liquid-Glass-Android`（MIT、JitPack `com.github.QWEA0:liquidglass:v2.0.2`）与 `PallavAg/liquid-glass-web-react`（MIT、SVG 位移图）后，Android 触控面接入 QWEA0 的 API 33+ 单遍 AGSL/SDF 实时折射、物理色散、传感器高光和 Regular/Clear 材质管线；Web 触控面接入同类几何位移滤镜并保留 `backdrop-filter` 降级。
-- I9：已完成。主题矩阵统一为 `light-glass`（默认）、`dark-glass`、`classic-light`、`classic-dark`、`high-contrast`；Android 使用 SharedPreferences，Web/诊断页使用同一 `localStorage` key。两种玻璃主题都使用 QWEA0 `REGULAR` 透镜；浅色关闭自适应染色以保持明亮中性，深色开启自适应染色保证文字可读性。
-- I10：部分完成。API 36 Redmi 实机已重新安装并启动 QWEA0 v2.0.2，截图确认全窗口动态后景、SDF 玻璃宿主、边缘高光和触控层无崩溃；Safari/Firefox 的 SVG `backdrop-filter` 仍按公开 WebKit 限制走 blur fallback，需目标浏览器和 macOS 主机做最终矩阵。
+- I9：已完成。主题矩阵统一为 6 种 Liquid Glass（`light-glass`、`dark-glass`、`ocean-glass`、`sunset-glass`、`aurora-glass`、`graphite-glass`）、6 种编辑器主题（`tokyo-night`、`nord`、`dracula`、`solarized-dark`、`catppuccin-mocha`、`monokai`）以及经典/辅助主题（`classic-light`、`classic-dark`、`high-contrast`）；Android 使用 SharedPreferences，Web/诊断页使用同一 `localStorage` key。玻璃主题按变体调整 QWEA0 `REGULAR` 或 Web SVG 透镜的折射、色散、饱和度和高光参数，编辑器主题关闭折射以保持可读性。
+- I10：部分完成。API 36 Redmi 实机已重新安装并启动 QWEA0 v2.0.2，截图确认全窗口动态后景、SDF 玻璃宿主、边缘高光和触控层无崩溃；Android/Web 触点已加入速度拖尾、方向高光、双层光学环和 280ms 松手衰减；Safari/Firefox 的 SVG `backdrop-filter` 仍按公开 WebKit 限制走 blur fallback，需目标浏览器和 macOS 主机做最终矩阵。
+
+### 阶段 M：再次全面 native parity 审计（2026-08-29）
+
+审计正文：[`native-parity-audit-2026-08.md`](native-parity-audit-2026-08.md)。本阶段重新核对 Apple 官方事件/设置语义、MultitouchSupport 逆向、Trident/LinearSwipe/Remote Pad 等开源实现、当前代码路径和 Git 历史，并将结论分成 A/B/C/D/T 五级。
+
+- [x] M1. 重新抓取并核对 Apple `phase`、`momentumPhase`、magnification/rotation 增量、scroll lock 和 Trackpad pane 硬件前置条件。
+- [x] M2. 核对 OpenMultitouchSupport、mactic、CalfTrail/Hammerspoon/Mac Mouse Fix、Trident/LinearSwipe、Remote Pad/Android NSD 的实际实现和限制。
+- [x] M3. 对 `macos_preferences.rs`、`gesture.rs`、`output.rs`、wire protocol、Android/Web 输入和 GUI/打包路径完成参数/事件矩阵审计。
+- [x] M4. 审查 `18e96a8`、`20f2206`、`2da296f`、`11cf06d`、`4e94503` 及最近产品化提交，识别经验倍率、私有 ABI 和产品安全边界的演进。
+- [x] M5. 运行 Rust/Android 自动化回归并记录 Clippy 基线债务；不把 portable recorder 的通过升级成 Mac 应用消费证明。
+- [ ] M6. 在 macOS 目标主机用 recorder 完成 Smart Zoom 单路径、HID/session tap、parent/child payload 和首帧 delta A/B。
+- [ ] M7. 在 Preview、Photos、Safari、Maps、Figma、Finder、Numbers、Mission Control、Spaces 完成 tap/scroll/momentum/pinch/rotate/cancel/reverse/联合拖拽矩阵。
+
+#### M 阶段执行回写
+
+- 阶段 M：**部分完成**（M1-M5 研究、代码静态审计和自动化验证已完成；M6-M7 依赖真实 macOS、目标系统版本、Accessibility/Input Monitoring 和应用矩阵）。
+- 当前发布判断：允许 beta/GitHub 开发版；不宣称 Apple 原始 Multitouch/Force Touch parity。
+- 已关闭的 P1：Smart Zoom 重复投递、默认 Pan→transform 违反 scroll lock。
+- 剩余 P1/P2：Notification Center edge 坐标归一化、未知偏好枚举静默启用、未认证默认 LAN 监听，以及所有依赖真机的私有事件矩阵。
+
+### 阶段 N：逆向参数落地与变换路径收敛（2026-08-29）
+
+依据：`docs/reverse-engineering-sources.md`，以及 CalfTrail/Touch、Hammerspoon、Mac Mouse Fix 的公开源码和文档。
+
+- [x] N1. 将 `gestures.pinch.gain`、`gestures.rotate.gain` 加入 TOML，范围归一化为 `0.25..4.0x`，默认 `1.0x`；倍率在 transform safety limiter 之前生效，不会绕过单帧上限。
+- [x] N2. 将变换倍率接入共享 `GestureOptions`，因此 HID 与 network 两条输入入口使用同一套参数；TUI 增加中英双语调节项。
+- [x] N3. 新增 `gestures.dynamic_transform_compat`，默认关闭。默认 2F scroll 一旦锁定不再转成 pinch/rotate；旧转场逻辑仅在显式兼容模式启用。
+- [x] N4. Smart Zoom 收敛到 Mac Mouse Fix 参考的 type 29、subtype 22、单 HID tap，移除 type 32 和 HID/session 双重投递，降低重复触发风险。
+- [x] N5. 新增逆向项目、来源 URL、发现字段、许可证状态和“不可直接复制私有 ABI”说明；CalfTrail/Touch、mactic、LinearSwipe、Remote Pad 等未暴露 SPDX 的项目已标记为待核验。
+- [x] N6. Rust workspace 回归：147 个核心测试、3 个 companion-config、5 个 companion-tui、9 个协议测试全部通过。
+- [ ] N7. macOS 真机仍需验证 gain 手感、单路径 Smart Zoom 消费结果，以及 strict/compat 两种模式在 Preview、Photos、Safari、Maps、Figma 的结果。
+
+阶段 N：**部分完成**（代码、TUI、文档和自动化测试已完成；N7 依赖目标 macOS 真机与应用矩阵）。

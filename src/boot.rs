@@ -51,6 +51,9 @@ pub fn gesture_options(cfg: &config::Config) -> gesture::GestureOptions {
         tap_to_click: !matches!(cfg.gestures.tap_to_click, GestureEnable::Off),
         secondary_click: !matches!(cfg.gestures.secondary_click, GestureEnable::Off),
         smart_zoom: !matches!(cfg.gestures.smart_zoom, GestureEnable::Off),
+        pinch_gain: gesture::normalize_transform_gain(cfg.gestures.pinch.gain),
+        rotate_gain: gesture::normalize_transform_gain(cfg.gestures.rotate.gain),
+        dynamic_transform_compat: cfg.gestures.dynamic_transform_compat,
         dictionary_lookup: !matches!(cfg.gestures.dictionary_lookup, GestureEnable::Off),
         scroll_enabled: cfg.scroll.enable,
         right_edge_swipe: !matches!(cfg.gestures.right_edge_swipe, GestureEnable::Off),
@@ -133,5 +136,24 @@ mod tests {
         .unwrap();
         // Shift (0x20000) | Option (0x80000): only Option reaches Zoom.
         assert_eq!(emitter_config(&cfg).modifier_zoom_mask, 0x0008_0000);
+    }
+
+    #[test]
+    fn transform_gain_and_compat_settings_reach_gesture_options() {
+        let cfg: config::Config = toml::from_str(
+            r#"
+            [gestures]
+            dynamic_transform_compat = true
+            [gestures.pinch]
+            gain = 2.5
+            [gestures.rotate]
+            gain = 0.1
+        "#,
+        )
+        .unwrap();
+        let options = gesture_options(&cfg);
+        assert_eq!(options.pinch_gain, 2.5);
+        assert_eq!(options.rotate_gain, 0.25);
+        assert!(options.dynamic_transform_compat);
     }
 }

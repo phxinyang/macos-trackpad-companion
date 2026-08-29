@@ -69,9 +69,9 @@ Apple 的 [Handling Trackpad Events](https://developer.apple.com/library/archive
 | Secondary click | `TrackpadRightClick` -> 2F tap right click | B | 判定由本项目状态机完成，未与 Apple driver 的 corner/两指细节做真机 A/B |
 | Natural scrolling | `.GlobalPreferences/com.apple.swipescrolldirection` -> `scroll.natural` | B | 方向语义直接可用，仍通过合成 scroll event 输出 |
 | Scroll enable/horizontal/momentum | `TrackpadScroll`、`TrackpadHorizScroll`、`TrackpadMomentumScroll` -> 三个 output 开关 | B | 开关路径清晰；事件不是 Apple 原始滚轮流 |
-| Pinch / Zoom in or out | `TrackpadPinch` -> private gesture type 29/field 0x71 | C/T | 采用 CalfTrail/Hammerspoon 形状，但 parent-only digitizer、tap 位置和 app 兼容性没有目标 Mac 证据 |
-| Smart Zoom | `TrackpadTwoFingerDoubleTapGesture` -> `smart_magnify()` | C/T | 当前函数同时构造两种 event shape，并分别发 HID/session 两个 tap，见第 5 节 P1 风险 |
-| Rotate | `TrackpadRotate` -> private gesture type 29/field 0x72 | C/T | 现在使用几何 1:1 相对角度；此前 `18e96a8` 的 2.0x 经验曲线已被后续提交移除 |
+| Pinch / Zoom in or out | `TrackpadPinch` -> private gesture type 29/field 0x71 | C/T | 采用 CalfTrail/Hammerspoon 形状，但 parent-only digitizer、tap 位置和 app 兼容性没有目标 Mac 证据；`gestures.pinch.gain` 是 companion-only 的 0.25..4.0x 响应倍率 |
+| Smart Zoom | `TrackpadTwoFingerDoubleTapGesture` -> `smart_magnify()` | C/T | 已收敛为 Mac Mouse Fix 参考的 type 29/subtype 22、单个 HID tap；仍需真机确认 Safari/Preview 是否只消费一次 |
+| Rotate | `TrackpadRotate` -> private gesture type 29/field 0x72 | C/T | 使用几何 1:1 相对角度，`gestures.rotate.gain` 提供 0.25..4.0x companion-only 倍率；此前 `18e96a8` 的 2.0x 经验曲线已移除 |
 | Look Up & data detectors | `TrackpadThreeFingerTapGesture` -> Cmd+Ctrl+D 脉冲 | B | 是键等价物，不是系统 raw lookup gesture；受前台 app/键盘布局影响 |
 | Three-finger drag | `TrackpadThreeFingerDrag` -> left button held + `LeftMouseDragged` | B | 应用层拖拽接近原生；不携带 Apple 的三指 identity/pressure/drag lock stream |
 | Dragging / DragLock | `Dragging` 只映射单指双击拖拽；`DragLock` 只诊断；三指换把使用独立 `release_delay_ms` | C | 这是有意拆分，避免把实体 DragLock 误当三指换把；两者不能宣称同义 |
@@ -161,30 +161,28 @@ HID digitizer 能力。DriverKit 虚拟设备还需要受限 entitlement、签�
 
 ## 5. 代码审查发现（按优先级）
 
-### P1: Smart Zoom 可能重复触发
+### 已修复：Smart Zoom 重复投递
 
-位置：`src/output.rs:2960-2981`。
+位置：`src/output.rs:2960-2974`。
 
-触发条件是一次双指 Smart Zoom。`smart_magnify()` 先创建一个 type 29/field 110
-事件并同时投递 HID tap、session tap，然后又创建一个 type 32 事件并再次投递两个 tap。
-这会让一个用户动作最多经过四次投递；当前没有 recorder 或应用层去重 guard。Mac Mouse
-Fix 的“exact formula”只能证明其中一种形状有参考来源，不能证明两种形状叠加是正确的。
+触发条件是一次双指 Smart Zoom。此前 `smart_magnify()` 同时投递 type 29/type 32
+和 HID/session 两组事件，一个动作最多经过四次投递。现在只保留 Mac Mouse Fix
+公开源码中的 type 29、subtype 22、单 HID tap 形状；仍需目标 Mac recorder 验证应用结果。
 
-影响：Safari/Preview/Photos 可能缩放两次、触发两次，或在不同系统上分别被两个 tap 消费。
-必须在真机 recorder 中比较四个组合（单形状 HID、单形状 session、type 32、双 tap），
-选出一条路径后删除其余实验分支。
+影响：重复投递风险已从代码路径移除。剩余风险是某些系统版本可能只消费另一种
+私有形状；这属于 M6 真机矩阵，而不是继续叠加事件的理由。
 
-### P1: Pan 已锁定后仍允许转成 pinch/rotate
+### 已修复默认值：Pan 已锁定后仍允许转成 pinch/rotate
 
 位置：`src/gesture.rs:2513-2567`。
 
-Apple 文档明确说 scroll 一旦开始就锁定到 scroll，直到结束；当前代码却在 `TwoFingerPan`
+Apple 文档明确说 scroll 一旦开始就锁定到 scroll，直到结束；当前代码现在默认保持
+该行为，只有显式打开 `gestures.dynamic_transform_compat` 才会在 `TwoFingerPan`
 中依据 `scale_rel`、`frame_rot`、`total_rot` 和相对 alignment 结束 scroll，再开启
-pinch/rotate。这是为早期误分类做的补救策略，可能在用户滚动时把手指滞后解释为缩放/旋转。
+pinch/rotate。这是为早期误分类保留的兼容路径，可能在用户滚动时把手指滞后解释为缩放/旋转。
 
-影响：与“原生模式”目标冲突，也是双指缩放易触发时最需要先验证的路径。建议把它做成
-显式 `compat_dynamic_transform`，原生默认保持 scroll lock；在 recorder 证明应用确实
-需要转换后再单独开启。
+影响：原生默认不再因为滚动中的手指滞后而切入变换；兼容开关的行为仍需在 recorder
+中单独验收，且不能写成 Apple 原生合同。
 
 ### P2: Notification Center edge zone 混用物理 mm 与旧 normalized 坐标
 
@@ -273,9 +271,9 @@ Gatekeeper/签名身份、LaunchAgent 重启和不同 macOS major 版本。这�
 ## 8. 下一阶段执行优先级
 
 1. **P0 真机 recorder**：记录一个输入动作在 CGEvent tap、AppKit responder 和目标应用
-   的实际回调；先决定 Smart Zoom 单一路径和 pinch/rotate 的 tap/child 形状。
-2. **P1 原生分类模式**：默认保持 2F scroll lock；把 Pan→transform 转场做成显式兼容
-   开关，并补一组“滚动中手指滞后/轻微 spread 不会缩放”的回放测试。
+   的实际回调；验证已收敛的 Smart Zoom 单路径和 pinch/rotate 的 tap/child 形状。
+2. **P1 原生分类模式**：默认保持 2F scroll lock；已实现显式兼容开关，补一组“滚动中
+   手指滞后/轻微 spread 不会缩放”的真机回放测试。
 3. **P1 参数归一化**：移除 normalized/physical 混用，按 `Layout` 或网络 surface
    明确 pad 宽度计算 edge zone；所有未知枚举统一进入 `unsupported`。
 4. **P1 网络发布门槛**：首次启动生成 token、GUI/CLI 都显示配对状态；未认证时默认
