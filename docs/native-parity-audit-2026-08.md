@@ -74,7 +74,7 @@ Apple 的 [Handling Trackpad Events](https://developer.apple.com/library/archive
 | Rotate | `TrackpadRotate` -> private gesture type 29/field 0x72 | C/T | 使用几何 1:1 相对角度，`gestures.rotate.gain` 提供 0.25..4.0x companion-only 倍率；此前 `18e96a8` 的 2.0x 经验曲线已移除 |
 | Look Up & data detectors | `TrackpadThreeFingerTapGesture` -> Cmd+Ctrl+D 脉冲 | B | 是键等价物，不是系统 raw lookup gesture；受前台 app/键盘布局影响 |
 | Three-finger drag | `TrackpadThreeFingerDrag` -> left button held + `LeftMouseDragged` | B | 应用层拖拽接近原生；不携带 Apple 的三指 identity/pressure/drag lock stream |
-| Dragging / DragLock | `Dragging` 只映射单指双击拖拽；`DragLock` 只诊断；三指换把使用独立 `release_delay_ms` | C | 这是有意拆分，避免把实体 DragLock 误当三指换把；两者不能宣称同义 |
+| Dragging / DragLock | `Dragging` 只映射单指双击拖拽；`DragLock` 只诊断；三指 staged 换把使用独立 `persistent_drag_lock` / `release_delay_ms` | C | 这是有意拆分，避免把实体 DragLock 误当三指换把；两者不能宣称同义 |
 | Swipe between pages | 当前没有稳定的页面 swipe 输出 | D/C | `CGEvent` scroll 不能证明 Safari/Chromium 会接受历史手势；需要 ⌘[ / ⌘] 等显式键等价物才是可控路线 |
 | Four-finger full-screen app/Spaces | DockSwipe 私有 payload；macOS 26 保留连续路径，27+ 尝试 SkyLight HIDEvent，失败再用 SymbolicHotKey | C/T | macOS 版本分支和私有 ownership/phase/velocity 均待真机 |
 | Mission Control / App Exposé | Vertical synthetic/notification/hotkey | C/T | 离散 notification/hotkey 不等于连续系统 rubber-band |
@@ -100,7 +100,7 @@ Apple 的 [Handling Trackpad Events](https://developer.apple.com/library/archive
 | Pan -> transform | 在 2F pan 已开始后，`scale_rel>=0.25` 或角度阈值会发 scroll Ended，再发 pinch/rotate Began | 违反 Apple 文档的 scroll lock；这是为误分类补救的兼容策略，不是 native mode | P1 |
 | 3F dictionary | `Cmd+Ctrl+D` 15ms key pulse，支持 split lift | 不等价于系统 Lookup/data-detector gesture；键盘布局和前台应用会影响结果 | B/T |
 | 3F drag | `0.35mm` engage，鼠标左键保持，async lift/regrip | 原生的三指 identity、pressure、DragLock 仍不可见 | B |
-| 3F drag + 4F Spaces | 进入 `FourFingerLive` 不松左键；macOS 26 保留 DockSwipe，27+ 尝试 HIDEvent/失败后 symbolic hotkey | Apple 没公开并行合同；27+ fallback 是离散跳转，不能持续 rubber-band | C/T |
+| 3F drag + 4F Spaces | 仅从 `DragLocked` 进入 `FourFingerLive` 时不松左键；4F 结束回锁定态，3F 可重抓；macOS 26 保留 DockSwipe，27+ 尝试 HIDEvent/失败后 symbolic hotkey | Apple 没公开并行合同；27+ fallback 是离散跳转，不能持续 rubber-band | C/T |
 | 4F swipe | centroid 累积、finger-count change 重锚、轴锁 3mm | 系统 DockSwipe 私有 ABI；无真机不能验证方向、进度、velocity、连续动画 | C/T |
 | 4F radial gestures | `R/R0 <= 0.72` / `>=1.28` 触发通知或 hotkey | 离散命令不等于 Apple Launchpad/Show Desktop raw gesture | C/T |
 | link/session | 250ms idle cancel、600ms peer quarantine、sender restart reset | 这是项目额外安全层，Apple 硬件没有网络故障这一维 | A/B |

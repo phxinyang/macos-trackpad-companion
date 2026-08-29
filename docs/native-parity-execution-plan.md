@@ -190,6 +190,7 @@
 - [x] J3. Accessibility Zoom 的滚动修饰键支持 Control、Option、Command；`HIDScrollZoomModifierMask` 可从系统偏好或 TOML 选择，且在 `Phase::Began` 锁定到整个 scroll session。
 - [x] J4. Shift + 双指滚动默认保持原始轴向（严格原生）；新增 `[scroll].shift_scroll_horizontal` 兼容开关，只有显式 `true` 才把纯纵向输入转成横向。
 - [x] J5. `companion-tui` 增加 Zoom mask 的 Control/Option/Command 循环和 Shift 兼容开关；补充纯逻辑 modifier/轴向回归测试。
+- [x] J7. 合成的 SymbolicHotKey 与 Control+Arrow 现在保留快捷键自身所需修饰位，并合并用户实时 Shift/Command/Control/Option；内部 Cmd+Ctrl+D 查词脉冲仍使用固定组合，避免被用户键盘状态污染。
 
 #### 不做的推断
 
@@ -204,7 +205,7 @@
 
 ### 阶段 K：三指拖拽与四指切 Space 联合（本轮执行）
 
-目标：三指拖拽已经按住窗口时，加入第四指可以切换 Space；切换期间左键保持按下，进入目标 Space 后继续拖动，最终抬指才释放。该体验以“可靠完成跨桌面拖拽”为目标，不声称能复刻 Apple 私有 multitouch identity。
+目标：三指拖拽已经按住窗口时，完整抬起三指进入锁定态，再用四指切换 Space，抬起后重新落三指继续拖动；该体验以“可靠完成跨桌面拖拽”为目标，不声称能复刻 Apple 私有 multitouch identity。
 
 #### 调研结论
 
@@ -215,8 +216,9 @@
 
 #### 实现与验收状态
 
-- [x] K1. 保留既有 `ThreeFingerDrag -> FourFingerLive` 状态转换；加入第四指时不释放 `drag_button_held`，最终 `Idle`/断链/Drop 统一释放。
+- [x] K1. 将联合拖拽合同收敛为显式 `3F -> 0F -> 4F -> 0F -> 3F` staged 状态机；第四指只有在完整三指抬起后才接管，避免加指时静默抢走 live drag。
 - [x] K1a. 修复真实网络帧的 `3F -> 0F -> 1F/2F -> 4F` re-grip：release-delay 窗口内的 1F/2F 只做重锚定，不提前发送 `leftMouseUp`；原始 deadline 到期由 heartbeat 安全释放并清空旧触点状态。
+- [x] K1c. 增加 `DragLocked` 持久会话：4F Space 阶段结束后返回锁定态，重新落 3F 复用同一左键拖拽；1F/2F 短触摸显式解锁，断链/取消仍强制释放。
 - [x] K2. macOS 26 及更早版本继续使用已存在的动画 DockSwipe payload。
 - [x] K3. macOS 26 的独立四指 swipe 保留连续 DockSwipe；带着三指拖拽切 Space 时自动走 CGS SymbolicHotKey（规避 WindowServer 对第三方 DockSwipe sender 的静默丢弃），macOS 27+ 的独立 `synthetic` swipe 优先通过 SkyLight `SLEventSetIOHIDEvent`，运行时不可用时降级到同一 SymbolicHotKey 状态机。Symbolic 路径横向 Space 阈值 10mm、纵向 Mission Control/App Exposé 阈值 7mm，单次触发后冷却 350ms，不在冷却期累积位移。
 - [x] K4. 增加快速抬指路径（速度阈值 180mm/s，且最后运动距抬指不超过 80ms），避免停住后释放仍误切 Space。
@@ -249,8 +251,9 @@
   采用“3F drag + 4F swipe”的显式状态机，而不是依赖系统设置自动并行识别。参考：
   <https://github.com/cyanyux/trident>。
 
-当前代码与上述合同的对应关系：`src/gesture.rs` 在 `ThreeFingerDrag -> FourFingerLive`
-时保留 `drag_button_held`，四指 `Ended` 后才释放；`src/output.rs` 在 macOS 26 及更早
+当前代码与上述合同的对应关系：`src/gesture.rs` 只有从 `DragLocked` 进入
+`FourFingerLive` 时才保留 `drag_button_held`；四指 `Ended` 后返回 `DragLocked`，再落
+三指恢复移动，显式 1F/2F 短触摸才解锁；`src/output.rs` 在 macOS 26 及更早
 版本走 legacy DockSwipe，macOS 27+ 先尝试 `SLEventSetIOHIDEvent`，失败后进入带阈值、
 350ms 冷却和 flick 保护的 SymbolicHotKey。状态机测试和断链收尾已完成；**K6 的真实
 WindowServer/Dock 消费结果、ownership/timestamp、窗口跨 Space 附着仍待真机**，本轮不
@@ -412,6 +415,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] G5. 对 Xiaomi/Redmi + 支持 163 的 HAL 优先使用系统桌面同款 `HARDWARE_FEEDBACK` 预置效果，其他设备继续走可移植波形。
 - [x] F5c. 为 `companion-net` 增加虚拟输入偏好合并路径：忽略 Mac mini 残留的 `Clicking=0`，默认保留手机 tap-to-click，同时保留显式 TOML 关闭能力。
 - [x] I20. Android 资源消耗收敛为单一平衡方案：QWEA0 玻璃保留完整动态背景、色差、色散、传感器高光和触点光学层，仅在手指交互期间开启动态重绘；背景采样使用 `globalDownsampleFactor=0.5`、`downsampleScale=3`、优化捕获和降采样模糊，色差/色散中间缓冲使用 0.35 降采样；关闭帧统计；壁纸解码最长边限制为 1600px；不增加高质量/省电/兼容三档设置。
+- [x] I21. Android API 31+ 默认切换到自有 `GpuGlassView` 单场景 AGSL 合成器：背景只保留一张半分辨率 Bitmap，单个 RuntimeShader 在一次绘制中完成 SDF 凸面折射、RGB 色散、边缘高光和触点光源；现有 QWEA0 仍作为 API 26–30 兼容回退。触点质心、全屏圆角和自定义折射/色散/饱和度/高光参数均与共享输入和设置链路同步，不新增质量模式。
 
 ### 4.1 本轮验证记录
 
@@ -516,6 +520,11 @@ Ketch 的开源代码检索还核对了 `NavigationSplitView` 在 macOS 设置�
 - I19：已完成（2026-08-29）。修复 Android 连接态紧凑顶栏中全屏按钮因 `LinearLayout` 宽度不足被裁切的问题，加入 44dp 独立命中区和轻量 elevation；全屏进入/退出使用可中断的缩放、淡入和位移过渡。Android 所有模态设置打开时隐藏底层控制中心/全屏入口，Web 控制中心打开时隐藏对应顶栏操作；新增 `HeaderLayoutMetricsTest` 防止紧凑胶囊宽度回退。
 - I20：已完成（2026-08-29）。Android QWEA0 玻璃保留完整动态光学栈，交互期间开启动态背景重绘，抬指后停止常驻循环；全局 0.5 降采样、三级模糊降采样、优化捕获、0.35 色差/色散降采样和关闭帧统计共同控制资源；自定义/内置壁纸解码最长边限制 1600px，Activity 销毁时释放位图。ADB 交互回归显示 CPU 约 11.1%、GPU p50 8ms；主页稳定基线 PSS 187.1MB、Graphics 108.7MB，没有新增质量模式设置。
 
+### I21：Android 单场景 GPU 合成器（2026-08-29）
+
+- 状态：已完成。API 31+ 默认使用 `GpuGlassView` 单次 AGSL 合成，QWEA0 保留为 API 26–30 回退；`TouchPadView` 只增加质心位置回调，输入编码和手势语义不变。
+- 验证：ADB `192.168.3.137:44899` 安装/启动无崩溃；稳定主页基线 PSS `124.8 MB`、Graphics `35.0 MB`、GL mtrack `16.6 MB`、EGL mtrack `18.4 MB`；交互滑动 GPU p50 `6 ms`、90th `13 ms`、janky `0%`（本机瞬时 CPU 快照约 `18%`，受设备后台负载影响）。空闲 3 秒 gfxinfo 帧数保持不变；全屏稳定后渲染器尺寸为 `2712x1220`，无旧边距暗边。
+
 ### 阶段 M：再次全面 native parity 审计（2026-08-29）
 
 审计正文：[`native-parity-audit-2026-08.md`](native-parity-audit-2026-08.md)。本阶段重新核对 Apple 官方事件/设置语义、MultitouchSupport 逆向、Trident/LinearSwipe/Remote Pad 等开源实现、当前代码路径和 Git 历史，并将结论分成 A/B/C/D/T 五级。
@@ -603,3 +612,24 @@ Apple Mac 触控板的公开实现/规范。
 - [x] R4. 移除测试按钮自由布局入口，诊断动作保留固定顺序，避免测试结果受自定义布局影响。
 
 阶段 R：**已完成代码、脚本语法检查和 Android 构建安装；目标 Mac 上的深按按压时延及不同应用消费结果仍属于 M6/M7 真机矩阵。**
+
+### 阶段 S：Android 全屏居中触控面回归（2026-08-29）
+
+- [x] S1. 定位并修复全屏分支清零 `padHost` 外边距、`padFrame` 内填充和玻璃圆角造成的边到边渐变与黑边。
+- [x] S2. 全屏仅隐藏顶部 chrome，触控面继续使用普通模式的居中边距、圆角、内填充和边缘高光。
+- [x] S3. 增加 `PadLayoutMetrics` 回归测试；在 `192.168.3.137:44899` 完成重装、启动和全屏截图检查。
+
+阶段 S：**已完成代码、单元测试、构建、ADB 安装和真机视觉回归。**
+
+### 阶段 T：分阶段拖拽与合成快捷键补全（2026-08-29）
+
+- [x] T1. 将三指拖拽的完整抬手建模为 `DragLocked`，实现
+  `3F -> 0F -> 4F -> 0F -> 3F`：四指阶段不释放左键，目标 Space 再落三指可继续同一拖拽。
+- [x] T2. 明确解锁与安全边界：短 1F/2F 触摸解锁；加入第四指前未完整抬手时释放 live drag；断链、取消和进程退出始终释放按键。
+- [x] T3. 新增 `persistent_drag_lock` 配置及 TUI 中英双语开关；关闭后保留有限
+  `release_delay_ms` 兼容模式，设为 `0` 即严格抬手释放。
+- [x] T4. 修复合成 `SymbolicHotKey` 与 `Control+Arrow` 丢失用户 Shift/Command/Option 的问题；统一合并 Quartz 四个键盘修饰位，固定 Cmd+Ctrl+D 查词脉冲不受污染。
+- [x] T5. 增加状态机、配置映射、TUI 序列化和纯逻辑修饰键回归测试；Linux workspace 测试与 `aarch64-apple-darwin` 交叉检查通过。
+- [ ] T6. 在 MacBook/Magic Trackpad + Mac mini 目标环境实测 staged 拖拽、快捷键组合及不同 WindowServer 版本的实际消费结果。
+
+阶段 T：**代码、自动化回归和文档已完成；T6 依赖 macOS 真机。**

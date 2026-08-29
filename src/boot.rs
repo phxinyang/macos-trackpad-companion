@@ -65,6 +65,7 @@ pub fn gesture_options(cfg: &config::Config) -> gesture::GestureOptions {
         three_finger_drag,
         one_finger_tap_drag,
         release_delay_ms: cfg.gestures.three_finger_drag.release_delay_ms,
+        persistent_drag_lock: cfg.gestures.three_finger_drag.persistent_drag_lock,
         press_and_hold_drag: !matches!(cfg.gestures.press_and_hold_drag.enable, GestureEnable::Off),
     }
 }
@@ -167,5 +168,18 @@ mod tests {
         );
         assert!(options.dynamic_transform_compat);
         assert_eq!(options.surface_width_mm, 50.0);
+    }
+
+    #[test]
+    fn persistent_drag_lock_setting_reaches_gesture_options() {
+        let cfg: config::Config = toml::from_str(
+            r#"
+            [gestures.three_finger_drag]
+            persistent_drag_lock = false
+        "#,
+        )
+        .unwrap();
+        assert!(!gesture_options(&cfg).persistent_drag_lock);
+        assert!(gesture_options(&config::Config::default()).persistent_drag_lock);
     }
 }

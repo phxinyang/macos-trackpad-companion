@@ -249,8 +249,13 @@ enum GestureKind {
     /// (left-button held + accelerated cursor) instead of firing Dock
     /// swipes; four fingers retain the full swipe surface. Survives
     /// asynchronous lifts down to a single finger — native behavior —
-    /// and releases the button when the pad empties.
+    /// and enters [`DragLocked`] when persistent handoff is enabled.
     ThreeFingerDrag,
+    /// A gesture-owned drag whose contacts are temporarily absent. This is
+    /// the explicit handoff state: a later four-finger Space swipe can run
+    /// without releasing the mouse button, and a fresh three-finger grip can
+    /// resume the same drag session.
+    DragLocked,
     FourFingerLive,
     /// Latched after a swipe fires, until all fingers lift.
     SwipeLatched,
@@ -444,12 +449,14 @@ pub struct GestureOptions {
     /// Dock swipes. Four fingers keep the full swipe surface.
     pub three_finger_drag: bool,
     /// Drag-lock style delayed release: how long after the last finger
-    /// leaves before the left button is actually released. Landing a
-    /// finger inside the window cancels the release and continues the
-    /// same drag. Keep this at zero for Apple's Three-Finger Drag mode,
-    /// which stops as soon as the fingers lift; positive values model the
-    /// separate accessibility "With Drag Lock" behavior.
+    /// leaves before the left button is actually released when
+    /// `persistent_drag_lock` is disabled. Persistent mode keeps the
+    /// session until an explicit one/two-finger release tap or cancellation.
     pub release_delay_ms: u64,
+    /// Keep a gesture-owned drag alive across a complete lift. This enables
+    /// the staged handoff contract: 3F drag -> 0F -> 4F Space swipe -> 0F ->
+    /// 3F re-grip. It is a companion feature, not an Apple raw touch stream.
+    pub persistent_drag_lock: bool,
     /// Whether 1-finger double-tap-to-drag is enabled. When disabled
     /// (default, matching macOS when Three-Finger Drag is active),
     /// a quick tap followed by cursor movement moves the cursor normally
@@ -475,6 +482,7 @@ impl Default for GestureOptions {
             surface_width_mm: DEFAULT_SURFACE_WIDTH_MM,
             three_finger_drag: true,
             release_delay_ms: 500,
+            persistent_drag_lock: true,
             one_finger_tap_drag: true,
             press_and_hold_drag: false,
         }
@@ -639,6 +647,13 @@ pub struct State<O: Output> {
     /// baseline is cleared.
     drag_button_held: bool,
     options: GestureOptions,
+    /// True while a gesture-owned drag has been latched across a complete
+    /// lift. Separate from `pending_drag_release`, which is the legacy
+    /// finite grace window.
+    drag_lock_latched: bool,
+    /// Highest contact count observed while the persistent drag lock is
+    /// waiting for either a 3F re-grip, a 4F Space stage, or an unlock tap.
+    drag_lock_contact_peak: usize,
     /// Drag-lock pending release. Set when the pad empties during an
     /// engaged drag; the actual button-up fires via [`State::tick`]
     /// once `release_delay_ms` elapses. Any finger landing inside the
@@ -749,6 +764,8 @@ impl<O: Output> State<O> {
             drag_baseline: None,
             drag_button_held: false,
             options,
+            drag_lock_latched: false,
+            drag_lock_contact_peak: 0,
             pending_drag_release: None,
             pending_motion: None,
             cursor_accel,
@@ -867,6 +884,10 @@ impl<O: Output> State<O> {
         }
 
         let active: Vec<Contact> = frame.contacts.iter().copied().filter(|c| c.tip).collect();
+
+        if self.drag_lock_latched {
+            self.drag_lock_contact_peak = self.drag_lock_contact_peak.max(active.len());
+        }
 
         // Refresh tracked-contact state (prev → current).
         let mut next: HashMap<u8, Tracked> = HashMap::with_capacity(active.len());
@@ -994,6 +1015,8 @@ impl<O: Output> State<O> {
         // A canceled touch must not leave a drag-lock timer armed: the
         // fingers whose return would cancel it are not coming back.
         self.pending_drag_release = None;
+        self.drag_lock_latched = false;
+        self.drag_lock_contact_peak = 0;
         self.contacts.clear();
         self.pending_motion = None;
         self.two_finger_recent = None;
@@ -1031,11 +1054,10 @@ impl<O: Output> State<O> {
                 return;
             }
         }
-        // A re-grip consumes `pending_drag_release` so the 4F handoff can
-        // arrive without the ordinary empty-pad timer firing. Keep a copy
-        // of that original deadline in DragBaseline and enforce it here as
-        // well: if only 1F/2F remains on the pad, it must not strand a
-        // synthetic left-button hold indefinitely.
+        // A legacy finite re-grip consumes `pending_drag_release` and keeps
+        // its original deadline in DragBaseline. Persistent locks do not
+        // use a timer; they end on an explicit unlock tap, link cancellation,
+        // or process teardown.
         if self.drag_button_held {
             let regrip_expired = self
                 .drag_baseline
@@ -1053,6 +1075,8 @@ impl<O: Output> State<O> {
     /// the latter can fire while stale 1F/2F contacts are still reported.
     fn expire_drag_lock(&mut self, now: Timestamp, reason: &'static str) {
         self.pending_drag_release = None;
+        self.drag_lock_latched = false;
+        self.drag_lock_contact_peak = 0;
         if self.drag_button_held {
             log::debug!("3f drag: {reason} — releasing left button");
             self.out.set_event_time(now);
@@ -1103,6 +1127,39 @@ impl<O: Output> State<O> {
     }
 
     fn classify(&self, n: usize) -> GestureKind {
+        // Persistent drag-lock is an explicit session, not a short re-grip
+        // timeout. Keep the 4F stage latched until the pad is empty so a
+        // transient 4F -> 3F report cannot resume drag early; after the
+        // Space swipe ends, the empty pad returns to DragLocked.
+        if self.drag_lock_latched {
+            if matches!(self.kind, GestureKind::FourFingerLive) {
+                return if n == 0 {
+                    GestureKind::DragLocked
+                } else {
+                    GestureKind::FourFingerLive
+                };
+            }
+            if matches!(self.kind, GestureKind::DragLocked)
+                && n == 0
+                && self.drag_lock_contact_peak > 0
+            {
+                return GestureKind::Idle;
+            }
+            if matches!(self.kind, GestureKind::ThreeFingerDrag) && self.drag_button_held {
+                return if n == 0 {
+                    GestureKind::DragLocked
+                } else if n >= 4 {
+                    GestureKind::FourFingerLive
+                } else {
+                    GestureKind::ThreeFingerDrag
+                };
+            }
+            return match n {
+                0..=2 => GestureKind::DragLocked,
+                3 => GestureKind::ThreeFingerDrag,
+                _ => GestureKind::FourFingerLive,
+            };
+        }
         // Drag-lock: while a delayed release is pending, every contact count
         // below five belongs to the same re-grip session. In particular, the
         // network sender can expose a transient 1F/2F frame before the fourth
@@ -1120,9 +1177,9 @@ impl<O: Output> State<O> {
             return GestureKind::SwipeLatched;
         }
         // 三指拖移 mode: an actively engaged drag (mouse button held) outlives
-        // async lifts (3 → 2 → 1 → 0). Keep classifying as ThreeFingerDrag while fingers
-        // are on pad so async lifts do not reclassify to OneFinger!
-        // BUT if user puts down a 4th finger (n >= 4), seamlessly transition to 4-finger desktop swipe!
+        // async lifts (3 → 2 → 1 → 0). A fourth finger is a separate gesture
+        // only after the complete 3F lift has entered DragLocked; adding it
+        // mid-drag must not silently steal the drag session.
         if matches!(self.kind, GestureKind::ThreeFingerDrag) && self.drag_button_held {
             if n >= 4 {
                 return GestureKind::FourFingerLive;
@@ -1578,7 +1635,48 @@ impl<O: Output> State<O> {
                         self.suppress_one_finger_click = true;
                     }
                 }
-                // If transitioning to Idle (all fingers lifted from pad), arm the drag-lock delay.
+                // A persistent lock survives a complete 3F lift. It is the
+                // only route into the staged 3F -> 0F -> 4F -> 0F -> 3F
+                // handoff; the legacy finite grace path remains below.
+                if matches!(new_kind, GestureKind::Idle)
+                    && self.drag_button_held
+                    && self.options.persistent_drag_lock
+                {
+                    self.drag_lock_latched = true;
+                    self.drag_lock_contact_peak = 0;
+                    self.pending_drag_release = None;
+                    self.drag_baseline = None;
+                    self.pending_motion = None;
+                    self.kind = GestureKind::DragLocked;
+                    self.started_at = now;
+                    self.max_move_sq = 0.0;
+                    log::debug!(
+                        "3f drag: fingers lifted — persistent drag lock armed (tap to release)"
+                    );
+                    return;
+                }
+                // After a persistent 3F session has been re-gripped, the
+                // next complete lift is another neutral handoff point. Do
+                // not treat `DragLocked` as an unrelated gesture and release
+                // the button; the user may still be finishing the same drag.
+                if matches!(new_kind, GestureKind::DragLocked)
+                    && self.drag_button_held
+                    && self.drag_lock_latched
+                {
+                    self.pending_drag_release = None;
+                    self.drag_baseline = None;
+                    self.pending_motion = None;
+                    self.kind = GestureKind::DragLocked;
+                    self.started_at = now;
+                    self.max_move_sq = 0.0;
+                    self.drag_lock_contact_peak = 0;
+                    log::debug!(
+                        "3f drag: re-grip lifted — persistent drag lock remains armed"
+                    );
+                    return;
+                }
+                // Legacy finite grace mode: keep the old timeout behavior
+                // when persistent_drag_lock is disabled.
                 if matches!(new_kind, GestureKind::Idle)
                     && self.drag_button_held
                     && self.options.release_delay_ms > 0
@@ -1593,12 +1691,20 @@ impl<O: Output> State<O> {
                     self.pending_drag_release = Some(expiry);
                     return; // keep kind, baselines, held state intact
                 }
-                // If transitioning to FourFingerLive (e.g. 4F swipe to switch desktop),
-                // KEEP the left button held so the dragged window travels across Spaces with the cursor!
+                // A fourth finger added while a live 3F drag is still down
+                // starts an independent swipe and releases the drag. A
+                // carried drag is allowed only from the explicit DragLocked
+                // state after the complete 3F lift.
                 if matches!(new_kind, GestureKind::FourFingerLive) {
-                    if self.drag_button_held {
+                    if self.drag_button_held && self.drag_lock_latched {
                         log::debug!(
-                            "3f drag → 4f swipe: keeping drag button held to carry window across Spaces"
+                            "locked 3f drag → 4f swipe: keeping drag button held to carry window across Spaces"
+                        );
+                    } else if self.drag_button_held {
+                        self.out.set_drag_button_held(false);
+                        self.drag_button_held = false;
+                        log::debug!(
+                            "3f drag → 4f swipe: released live drag; staged handoff requires a full lift"
                         );
                     }
                 } else if self.drag_button_held {
@@ -1613,12 +1719,52 @@ impl<O: Output> State<O> {
                     self.suppress_one_finger_click = true;
                 }
             }
+            GestureKind::DragLocked => {
+                // A locked drag is deliberately inert while 1F/2F contacts
+                // are being acquired. A 3F landing resumes motion and a 4F
+                // landing starts an independent Space stream, both with the
+                // original left button still held.
+                match new_kind {
+                    GestureKind::ThreeFingerDrag | GestureKind::FourFingerLive => {
+                        self.pending_drag_release = None;
+                        log::debug!(
+                            "drag lock: continuing held session as {new_kind:?} (contact_peak={})",
+                            self.drag_lock_contact_peak
+                        );
+                    }
+                    GestureKind::Idle => {
+                        // A short 1F/2F touch while locked is the explicit
+                        // unlock tap. A clean empty frame (peak=0) is kept
+                        // latched so an absent report cannot release the
+                        // drag by itself.
+                        if self.drag_lock_contact_peak > 0
+                            && self.drag_lock_contact_peak < 3
+                        {
+                            if self.drag_button_held {
+                                self.out.set_drag_button_held(false);
+                                self.drag_button_held = false;
+                            }
+                            self.drag_lock_latched = false;
+                            self.drag_lock_contact_peak = 0;
+                            log::debug!("drag lock: unlock tap released left button");
+                        } else {
+                            self.kind = GestureKind::DragLocked;
+                            self.started_at = now;
+                            self.max_move_sq = 0.0;
+                            self.drag_lock_contact_peak = 0;
+                            return;
+                        }
+                    }
+                    _ => {}
+                }
+            }
             GestureKind::ThreeFingerLive | GestureKind::FourFingerLive => {
                 // A carried three-finger drag must finish the Space gesture
                 // before releasing its left button. This matters for the
                 // The symbolic fallback path can commit its final switch on
                 // the Ended frame, after all fingers leave.
                 let release_carried_drag = self.drag_button_held
+                    && !self.drag_lock_latched
                     && matches!(new_kind, GestureKind::Idle | GestureKind::SwipeLatched);
                 let swipe_in_flight = self
                     .multi_baseline
@@ -1655,6 +1801,13 @@ impl<O: Output> State<O> {
                     self.max_move_sq = 0.0;
                     self.two_baseline = None;
                     self.multi_baseline = None;
+                    if self.drag_lock_latched && matches!(new_kind, GestureKind::DragLocked) {
+                        self.kind = GestureKind::DragLocked;
+                        self.drag_lock_contact_peak = 0;
+                        log::debug!(
+                            "4f swipe lift: returning to persistent drag lock; left button remains held"
+                        );
+                    }
                     return;
                 } else if matches!(self.kind, GestureKind::ThreeFingerLive) && !swipe_in_flight {
                     let dur = now - self.started_at;
@@ -1686,6 +1839,18 @@ impl<O: Output> State<O> {
                     self.out.set_drag_button_held(false);
                     self.drag_button_held = false;
                     log::debug!("4f swipe lift: released carried drag button in new Space");
+                }
+                if self.drag_lock_latched && matches!(new_kind, GestureKind::DragLocked) {
+                    self.kind = GestureKind::DragLocked;
+                    self.started_at = now;
+                    self.max_move_sq = 0.0;
+                    self.two_baseline = None;
+                    self.multi_baseline = None;
+                    self.drag_lock_contact_peak = 0;
+                    log::debug!(
+                        "4f swipe lift: returning to persistent drag lock without releasing"
+                    );
+                    return;
                 }
             }
             _ => {}
@@ -1779,12 +1944,13 @@ impl<O: Output> State<O> {
             GestureKind::ThreeFingerDrag => {
                 let cx: f64 = active.iter().map(|c| c.x).sum::<f64>() / active.len() as f64;
                 let cy: f64 = active.iter().map(|c| c.y).sum::<f64>() / active.len() as f64;
+                let continuing_locked_drag = self.drag_lock_latched && self.drag_button_held;
                 log::debug!("3f drag: session start (centroid=({cx:.2},{cy:.2})mm)");
                 self.drag_baseline = Some(DragBaseline {
                     initial_centroid: (cx, cy),
                     last_centroid: (cx, cy),
                     finger_count: active.len(),
-                    engaged: false,
+                    engaged: continuing_locked_drag,
                     regrip_started_at: None,
                     regrip_deadline: None,
                 });
@@ -1967,7 +2133,7 @@ impl<O: Output> State<O> {
 
     fn dispatch(&mut self, active: &[Contact], now: Timestamp, frame_dt: Duration) {
         match self.kind {
-            GestureKind::Idle | GestureKind::SwipeLatched => {}
+            GestureKind::Idle | GestureKind::DragLocked | GestureKind::SwipeLatched => {}
             GestureKind::OneFinger => self.dispatch_one(active, now, frame_dt),
             GestureKind::TwoFingerUnclassified
             | GestureKind::TwoFingerPan
@@ -5557,6 +5723,9 @@ mod tests {
         GestureOptions {
             three_finger_drag: true,
             release_delay_ms: 0,
+            // These tests cover the strict native-style lifecycle where
+            // lifting the last finger releases the drag immediately.
+            persistent_drag_lock: false,
             ..GestureOptions::default()
         }
     }
@@ -5576,6 +5745,16 @@ mod tests {
         GestureOptions {
             three_finger_drag: true,
             release_delay_ms: 260,
+            persistent_drag_lock: true,
+            ..GestureOptions::default()
+        }
+    }
+
+    fn finite_drag_lock_options() -> GestureOptions {
+        GestureOptions {
+            three_finger_drag: true,
+            release_delay_ms: 260,
+            persistent_drag_lock: false,
             ..GestureOptions::default()
         }
     }
@@ -5812,7 +5991,7 @@ mod tests {
     #[test]
     fn drag_lock_regrip_resets_centroid_without_pointer_jump() {
         let r = Recorder::default();
-        let mut s = State::with_options(&r, test_accel(), drag_lock_options());
+        let mut s = State::with_options(&r, test_accel(), finite_drag_lock_options());
         let t0 = Timestamp::now();
         let three = |x: f64| Frame {
             contacts: vec![
@@ -5931,6 +6110,81 @@ mod tests {
     }
 
     #[test]
+    fn persistent_drag_lock_supports_four_finger_stage_then_three_finger_regrip() {
+        let r = Recorder::default();
+        let mut s = State::with_options(&r, test_accel(), drag_lock_options());
+        let t0 = Timestamp::now();
+        let three = |y: f64| {
+            frame(&[
+                (1, 20.0, y),
+                (2, 35.0, y),
+                (3, 50.0, y),
+            ])
+        };
+        let four = |y: f64| {
+            frame(&[
+                (1, 20.0, y),
+                (2, 35.0, y),
+                (3, 50.0, y),
+                (4, 65.0, y),
+            ])
+        };
+
+        // Engage the original drag, then deliberately empty the pad.
+        s.on_frame_at(three(20.0), t0);
+        s.on_frame_at(three(23.0), at(t0, 40));
+        s.on_frame_at(three(25.0), at(t0, 50));
+        s.on_frame_at(frame(&[]), at(t0, 60));
+        // Four fingers switch Space while the synthetic left button stays
+        // down, then the pad is empty again.
+        s.on_frame_at(four(23.0), at(t0, 100));
+        s.on_frame_at(
+            frame(&[(1, 10.0, 23.0), (2, 25.0, 23.0), (3, 40.0, 23.0), (4, 55.0, 23.0)]),
+            at(t0, 130),
+        );
+        s.on_frame_at(frame(&[]), at(t0, 160));
+        // A fresh 3F grip resumes the same drag session in the target Space.
+        s.on_frame_at(three(23.0), at(t0, 220));
+        s.on_frame_at(three(25.0), at(t0, 240));
+        s.on_frame_at(frame(&[]), at(t0, 280));
+
+        let before_unlock = r.pop();
+        assert_eq!(
+            before_unlock
+                .iter()
+                .filter(|line| *line == "set_left_button_held true")
+                .count(),
+            1,
+            "re-grip must reuse the original held button: {before_unlock:?}"
+        );
+        assert!(
+            !before_unlock.iter().any(|line| *line == "set_left_button_held false"),
+            "empty stages must not release the persistent drag: {before_unlock:?}"
+        );
+        assert!(
+            before_unlock.iter().any(|line| line.starts_with("swipe ") && line.contains("Horizontal")),
+            "4F stage must emit a Space swipe: {before_unlock:?}"
+        );
+        assert!(
+            before_unlock.iter().filter(|line| line.starts_with("move ")).count() >= 2,
+            "original and resumed 3F grips must both move the pointer: {before_unlock:?}"
+        );
+
+        // The session ends only when the user makes an explicit short tap.
+        s.on_frame_at(frame(&[(1, 35.0, 25.0)]), at(t0, 300));
+        s.on_frame_at(frame(&[]), at(t0, 340));
+        let unlock = r.pop();
+        assert_eq!(
+            unlock
+                .iter()
+                .filter(|line| *line == "set_left_button_held false")
+                .count(),
+            1,
+            "explicit unlock must release exactly once: {unlock:?}"
+        );
+    }
+
+    #[test]
     fn drag_lock_transient_one_and_two_finger_regrip_keeps_button_held() {
         let r = Recorder::default();
         let mut s = State::with_options(&r, test_accel(), drag_lock_options());
@@ -6002,19 +6256,27 @@ mod tests {
             "4F handoff must still start a Space swipe: {log:?}"
         );
 
-        // The carried drag is released only after the 4F stream ends.
+        // Persistent mode deliberately keeps the drag after the 4F stream;
+        // an explicit 1F/2F tap is the unlock gesture.
         s.on_frame_at(frame(&[]), at(t0, 280));
         let tail = r.pop();
         assert!(
-            tail.iter().any(|line| *line == "set_left_button_held false"),
-            "4F lift must release the carried drag button: {tail:?}"
+            !tail.iter().any(|line| *line == "set_left_button_held false"),
+            "4F lift must return to DragLocked without releasing: {tail:?}"
+        );
+        s.on_frame_at(frame(&[(1, 0.42, 0.50)]), at(t0, 300));
+        s.on_frame_at(frame(&[]), at(t0, 340));
+        let unlock = r.pop();
+        assert!(
+            unlock.iter().any(|line| *line == "set_left_button_held false"),
+            "a short 1F tap must explicitly unlock the carried drag: {unlock:?}"
         );
     }
 
     #[test]
     fn drag_lock_regrip_deadline_releases_a_stranded_one_finger() {
         let r = Recorder::default();
-        let mut s = State::with_options(&r, test_accel(), drag_lock_options());
+        let mut s = State::with_options(&r, test_accel(), finite_drag_lock_options());
         let t0 = Timestamp::now();
 
         s.on_frame_at(
@@ -6496,9 +6758,9 @@ mod tests {
     }
 
     #[test]
-    fn three_finger_drag_to_four_finger_swipe_transition() {
+    fn live_three_finger_drag_releases_before_direct_four_finger_swipe() {
         let r = Recorder::default();
-        let mut s = State::new(&r, test_accel());
+        let mut s = State::with_options(&r, test_accel(), drag_options());
         let t0 = Timestamp::now();
 
         // 3 fingers down and drag window:
@@ -6539,12 +6801,12 @@ mod tests {
         );
 
         let log2 = r.pop();
-        // The window being dragged has to travel with the cursor across
-        // the Space change, so the button stays held through the
-        // transition and is released when the pad finally empties.
+        // A fourth finger added before the complete lift is a separate
+        // gesture. Strict mode releases the live drag instead of guessing
+        // that the user intended a staged cross-Space handoff.
         assert!(
-            !log2.contains(&"set_left_button_held false".to_string()),
-            "4F transition must carry the held button, not drop it: {log2:?}"
+            log2.contains(&"set_left_button_held false".to_string()),
+            "direct 4F transition must release the live drag: {log2:?}"
         );
         assert!(
             log2.iter()
@@ -6555,17 +6817,8 @@ mod tests {
         s.on_frame_at(frame(&[]), at(t0, 130));
         let log3 = r.pop();
         assert!(
-            log3.contains(&"set_left_button_held false".to_string()),
-            "lifting after the carried swipe must release the button: {log3:?}"
-        );
-        let ended_at = log3
-            .iter()
-            .position(|l| l.starts_with("swipe ") && l.contains("Ended"));
-        let released_at = log3.iter().position(|l| l == "set_left_button_held false");
-        assert_eq!(
-            ended_at.map(|i| i < released_at.unwrap_or(usize::MAX)),
-            Some(true),
-            "the Space stream must end before the carried drag button is released: {log3:?}"
+            !log3.contains(&"set_left_button_held false".to_string()),
+            "direct 4F swipe must not release a second time: {log3:?}"
         );
     }
 
@@ -6582,6 +6835,9 @@ mod tests {
             frame(&[(1, 20.0, 23.0), (2, 35.0, 23.0), (3, 50.0, 23.0)]),
             at(t0, 40),
         );
+        // The carried path is only entered after the pad is explicitly
+        // empty; this is the staged handoff contract.
+        s.on_frame_at(frame(&[]), at(t0, 50));
         s.on_frame_at(
             frame(&[
                 (1, 20.0, 23.0),
