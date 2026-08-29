@@ -17,5 +17,6 @@ The scripts create an unsigned `.app`, `.zip`, and `.dmg` under `dist/macos`.
 The DMG includes the conventional `Applications` shortcut for drag-and-drop
 installation.
 Set `CODESIGN_IDENTITY='Developer ID Application: ...'` for a hardened runtime
-signature. Notarization remains a release-pipeline concern and only runs when
-the repository's signing secrets are present.
+signature. Notarization remains a release-pipeline concern: after signing,
+submit the DMG with `xcrun notarytool submit` and staple it with
+`xcrun stapler staple`. Credentials stay outside the repository.

@@ -14,9 +14,11 @@ struct TrackpadCompanionSettingsApp: App {
         WindowGroup {
             SettingsView()
                 .environmentObject(supervisor)
-                .frame(minWidth: 760, minHeight: 520)
+                .frame(minWidth: 820, minHeight: 580)
+                .onOpenURL { url in supervisor.handlePairingURL(url) }
         }
-        .windowResizability(.contentSize)
+        .defaultSize(width: 980, height: 680)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .appSettings) {
                 Button("Toggle Language") { NotificationCenter.default.post(name: .toggleLanguage, object: nil) }
@@ -39,6 +41,14 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
     case english = "English"
     case chinese = "中文"
     var id: String { rawValue }
+
+    static var preferred: AppLanguage {
+        if let saved = UserDefaults.standard.string(forKey: "TrackpadCompanion.language"),
+           let language = AppLanguage(rawValue: saved) {
+            return language
+        }
+        return Locale.current.languageCode?.lowercased().hasPrefix("zh") == true ? .chinese : .english
+    }
 
     func text(_ english: String, _ chinese: String) -> String {
         self == .english ? english : chinese
@@ -243,6 +253,11 @@ final class ServiceSupervisor: ObservableObject {
         NSPasteboard.general.setString(pairingURI, forType: .string)
     }
 
+    func handlePairingURL(_ url: URL) {
+        guard url.scheme == "mtc", url.host == "pair" else { return }
+        message = "Pairing link received. Use it in the Android client on the same LAN."
+    }
+
     func refreshDiagnostics() {
         guard let executable = locate("COMPANION_CONFIG_BIN", bundledName: "companion-config") else {
             diagnostics = "companion-config was not found."
@@ -377,7 +392,9 @@ struct MenuBarView: View {
 
 @MainActor
 final class SettingsModel: ObservableObject {
-    @Published var language: AppLanguage = .chinese
+    @Published var language: AppLanguage = .preferred {
+        didSet { UserDefaults.standard.set(language.rawValue, forKey: "TrackpadCompanion.language") }
+    }
     @Published var selectedSection: SettingsSection = .pointAndClick
     @Published var selectedPath: String?
     @Published var error: String?
@@ -494,9 +511,21 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SettingsSection.allCases, selection: $model.selectedSection) { section in
-                Label(section.title(model.language), systemImage: icon(for: section))
+            VStack(alignment: .leading, spacing: 0) {
+                SidebarHeader(language: model.language, state: supervisor.state)
+                List(SettingsSection.allCases, selection: $model.selectedSection) { section in
+                    Label {
+                        Text(section.title(model.language))
+                    } icon: {
+                        Image(systemName: icon(for: section))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(section == model.selectedSection ? .tint : .secondary)
+                    }
                     .tag(section)
+                    .padding(.vertical, 3)
+                }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
             }
             .navigationTitle(model.language.text("Trackpad", "触控板"))
             .safeAreaInset(edge: .bottom) {
@@ -509,37 +538,59 @@ struct SettingsView: View {
                     Button(model.language.text("Reload", "重载"), systemImage: "arrow.clockwise") { model.reload() }
                         .help(model.language.text("Reload configuration", "从磁盘重载配置"))
                 }
-                .padding(10)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(.bar)
             }
         } detail: {
-            Form {
-                Section {
-                    Text(model.selectedSection.subtitle(model.language))
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+            ZStack {
+                Color(nsColor: .windowBackgroundColor)
+                    .ignoresSafeArea()
+                Form {
+                    Section {
+                        Text(model.selectedSection.subtitle(model.language))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if model.selectedSection == .overview { overview } else { sectionForm(model.selectedSection) }
+                    if let error = model.error {
+                        Section { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
+                    }
+                    Section {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(model.language.text("Configuration file", "配置文件"))
+                                    .font(.caption.weight(.semibold))
+                                Text(model.configPath.isEmpty ? model.language.text("Not available", "不可用") : model.configPath)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        } icon: {
+                            Image(systemName: "doc.text")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
-                if model.selectedSection == .overview { overview } else { sectionForm(model.selectedSection) }
-                if let error = model.error {
-                    Section { Label(error, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
-                }
-                Section {
-                    Text(model.language.text("Changes are written to", "修改将写入"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(model.configPath)
-                        .font(.caption.monospaced())
-                        .textSelection(.enabled)
-                }
+                .formStyle(.grouped)
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
             }
-            .formStyle(.grouped)
             .navigationTitle(model.selectedSection.title(model.language))
             .toolbar {
+                ToolbarItem(placement: .status) {
+                    StatusBadge(state: supervisor.state, language: model.language)
+                }
                 ToolbarItem(placement: .automatic) {
                     Button(model.language.text("Reload", "重载"), systemImage: "arrow.clockwise") { model.reload() }
                         .disabled(model.isSaving)
+                        .help(model.language.text("Reload configuration from disk", "从磁盘重新加载配置"))
                 }
             }
         }
+        .navigationSplitViewStyle(.balanced)
         .onAppear {
             supervisor.refreshPermissions()
             supervisor.start()
@@ -559,6 +610,25 @@ struct SettingsView: View {
 
     private var overview: some View {
         Group {
+            Section {
+                OverviewHero(state: supervisor.state, language: model.language)
+            }
+            Section {
+                HStack(spacing: 12) {
+                    MetricTile(
+                        title: model.language.text("Service", "服务"),
+                        value: serviceLabel,
+                        symbol: supervisor.state.symbol,
+                        tint: statusColor
+                    )
+                    MetricTile(
+                        title: model.language.text("Pairing", "配对"),
+                        value: supervisor.tokenConfigured ? model.language.text("Protected", "已保护") : model.language.text("Manual", "手动"),
+                        symbol: supervisor.tokenConfigured ? "lock.shield" : "lock.open",
+                        tint: supervisor.tokenConfigured ? .green : .orange
+                    )
+                }
+            }
             Section {
                 LabeledContent(model.language.text("Service", "服务")) {
                     Label(model.language.text(supervisor.state == .running ? "Running" : supervisor.state.rawValue.capitalized, supervisor.state == .running ? "运行中" : supervisor.state.rawValue), systemImage: supervisor.state.symbol)
@@ -612,6 +682,40 @@ struct SettingsView: View {
                     Text(supervisor.message).font(.caption.monospaced()).textSelection(.enabled)
                 }
             }
+            Section {
+                Label {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(model.language.text("Works without a physical trackpad", "没有实体触控板也能使用"))
+                            .font(.subheadline.weight(.semibold))
+                        Text(model.language.text("Mac mini does not show Apple's Trackpad pane. Trackpad Companion keeps its own settings here and drives the virtual input surface directly.", "Mac mini 没有 Apple 的触控板设置页。Trackpad Companion 在这里管理自己的参数，直接驱动虚拟输入表面。"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "info.circle.fill")
+                        .foregroundStyle(.tint)
+                }
+            }
+        }
+    }
+
+    private var serviceLabel: String {
+        switch supervisor.state {
+        case .running: return model.language.text("Ready", "就绪")
+        case .starting: return model.language.text("Starting", "启动中")
+        case .waitingForPermission: return model.language.text("Permission", "待授权")
+        case .degraded: return model.language.text("Degraded", "受限")
+        case .failed: return model.language.text("Attention", "需处理")
+        case .stopped: return model.language.text("Stopped", "已停止")
+        }
+    }
+
+    private var statusColor: Color {
+        switch supervisor.state {
+        case .running: return .green
+        case .failed: return .red
+        case .waitingForPermission: return .orange
+        default: return .secondary
         }
     }
 
@@ -669,60 +773,6 @@ struct SettingsView: View {
         case .scrollAndZoom: return "arrow.up.and.down"
         case .moreGestures: return "hand.tap"
         case .companion: return "slider.horizontal.3"
-        }
-    }
-}
-
-struct ToggleRow: View {
-    let path: String; let title: String; let titleCN: String; let description: String; let descriptionCN: String; @ObservedObject var model: SettingsModel
-    var body: some View {
-        Toggle(isOn: Binding(get: { model.toggle(path) }, set: { model.set(path, value: isBooleanPath ? ($0 ? "true" : "false") : ($0 ? "on" : "off")) })) {
-            VStack(alignment: .leading, spacing: 3) { Text(model.language.text(title, titleCN)); Text(model.language.text(description, descriptionCN)).font(.caption).foregroundStyle(.secondary) }
-        }
-    }
-
-    private var isBooleanPath: Bool { path.hasPrefix("scroll.") || path == "macos.sync_system_settings" }
-}
-
-struct UnavailableRow: View {
-    let title: String; let titleCN: String; let description: String; let descriptionCN: String; let language: AppLanguage
-    var body: some View {
-        LabeledContent {
-            Text(language.text("Unavailable", "不可用"))
-                .foregroundStyle(.secondary)
-        } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(language.text(title, titleCN))
-                Text(language.text(description, descriptionCN)).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-struct SliderRow: View {
-    let title: String; let titleCN: String; @Binding var value: Double; let range: ClosedRange<Double>; let language: AppLanguage; var unit = ""
-    @State private var draft: Double = 0
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(language.text(title, titleCN)); Spacer()
-                Text(String(format: "%.1f", draft) + (unit.isEmpty ? "" : " \(unit)")).foregroundStyle(.secondary).monospacedDigit()
-            }
-            Slider(value: $draft, in: range, onEditingChanged: { editing in if !editing { value = draft } })
-        }
-        .onAppear { draft = value }
-        .onChange(of: value) { newValue in draft = newValue }
-    }
-}
-
-struct PickerRow: View {
-    let path: String; let title: String; let titleCN: String; let options: [(String, String, String)]; @ObservedObject var model: SettingsModel
-    var body: some View {
-        Picker(model.language.text(title, titleCN), selection: Binding(get: { model.string(path, default: "0") }, set: { model.set(path, value: $0) })) {
-            ForEach(Array(options.enumerated()), id: \.offset) { item in
-                let option = item.element
-                Text(model.language.text(option.1, option.2)).tag(option.0)
-            }
         }
     }
 }

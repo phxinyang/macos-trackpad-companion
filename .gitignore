@@ -1,4 +1,15 @@
 /target
+/dist/
+/build/
+/DerivedData/
+/macos/**/.build/
+/macos/**/.swiftpm/
+/macos/**/xcuserdata/
+/macos/**/*.xcuserstate
+/macos/**/*.dmg
+/macos/**/*.app
+/macos/**/*.zip
+/macos/**/.DS_Store
 /android/.gradle/
 /android/build/
 /android/app/build/
@@ -10,6 +21,23 @@ __pycache__/
 .playwright-cli/
 /output/
 *.log
+
+# macOS diagnostics are generated on the host and can contain machine names,
+# OS build identifiers, paths, and timing data.
+/diagnostics/*.txt
+/diagnostics/*.json
+
+# Local Apple signing and release material.
+*.p12
+*.mobileprovision
+notarytool-credentials.json
+.env
+.env.*
+
+# Finder and editor metadata.
+.DS_Store
+.idea/
+*.swp
 
 # Local-only wallpaper research assets. These may contain third-party artwork
 # and are intentionally excluded from source distributions.

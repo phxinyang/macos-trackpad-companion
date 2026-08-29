@@ -16,6 +16,19 @@
     <string>Trackpad Companion</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLName</key>
+            <string>Trackpad Companion pairing</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>mtc</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleShortVersionString</key>
     <string>0.1.0</string>
     <key>CFBundleVersion</key>
@@ -24,6 +37,8 @@
     <string>13.0</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Trackpad Companion discovers nearby phones and publishes this Mac on your local network.</string>
+    <key>NSAccessibilityUsageDescription</key>
+    <string>Trackpad Companion uses Accessibility to control the pointer and deliver trackpad gestures.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_mtc-trackpad._tcp</string>

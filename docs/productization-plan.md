@@ -204,8 +204,9 @@
 - [x] 主题层次收尾（2026-08-29）：移除非玻璃主题右下角椭圆落地阴影；经典/编辑器主题改用各自的网格、纸面或低强度纹理背景，触控面只保留主题色表面与边框，Liquid Glass 保留透镜边缘高光。
 - [x] 全屏与弹窗回归（2026-08-29）：Android 紧凑顶栏的全屏按钮扩大为独立 44dp 命中区，修复被父容器裁成窄条的问题；进入/退出全屏加入 170–300ms 的淡入、位移和缩放过渡，弹出控制中心、主题、连接、诊断或深按设置时隐藏底层顶栏入口，关闭后恢复。Web 同步加入全屏阶段缩放动画，并在控制中心打开时隐藏顶栏操作。上一版 APK SHA-256 为 `cd6a3a5c87951b6f7218c8cb30369d09f250c558b1a461761d10742a073971bc`。
 - [x] 按钮触感收敛（2026-08-29）：Web/Android 标准操作按钮统一为 8px/8dp 几何圆角，紧凑顶栏的图标按钮不再使用胶囊；按下反馈统一为 95ms、0.8% 缩放和 0.5px 下沉，Android 额外使用非对称按下/释放插值器与 96% 透明度，连续点按会先取消上一段动画。上一版 Debug APK SHA-256 为 `f7b538b205186e8cf659cae08c11c69a2c8383d4cc15103a1b1f5270c743d5a3`。
-- [x] 深按条几何与语义收敛（2026-08-29）：Web 使用 10px 圆角并在支持的平台启用 squircle；Android 固定 10dp 上限圆角，进度填充裁到同一圆角路径，补齐轻微按下/释放反馈，并为自绘控件增加可聚焦的无障碍语义。最终 Debug APK SHA-256 为 `db55604bb4a1fc37cf068c88633da53e35a57de0bbf9c62eb16a189ef392b76d`。
+- [x] 深按条几何与语义收敛（2026-08-29）：Web 使用 10px 圆角并在支持的平台启用 squircle；Android 固定 10dp 上限圆角，进度填充裁到同一圆角路径，补齐轻微按下/释放反馈，并为自绘控件增加可聚焦的无障碍语义。此前 Debug APK SHA-256 为 `db55604bb4a1fc37cf068c88633da53e35a57de0bbf9c62eb16a189ef392b76d`。
 - [x] Android 资源占用收敛（2026-08-29）：采用单一平衡渲染方案，不增加质量档位；QWEA0 触控面保留完整动态背景、色差、色散和传感器高光，动态重绘只在交互期间开启，背景采样使用 0.5 全局降采样、三级模糊降采样、优化捕获和 0.35 色差/色散降采样；所有壁纸解码最长边限制为 1600px，并在 Activity 销毁时释放位图。ADB 主页稳定基线 PSS `187.1 MB`、Graphics `108.7 MB`、GL mtrack `93.7 MB`，交互期间 CPU 约 `11.1%`、GPU p50 `8 ms`。
+- [x] Android 单场景 GPU 合成（2026-08-29）：API 31+ 默认使用自有 `GpuGlassView`，单张半分辨率背景 Bitmap + 单个 RuntimeShader 一次完成折射、RGB 色散、边缘高光和触点光源；API 26–30 保留 QWEA0 回退。触点质心、全屏圆角和自定义玻璃参数保持同步，不增加质量档位。最终 Debug APK SHA-256 为 `b7486d1a12c4774d00a8b20eeccc064cbfd2bf22cb5794136c82ef9fc40d4da1`；ADB 干净主页 PSS `92.5–93.4 MB`、Graphics `29.6 MB`，交互 GPU p50 `8 ms`，空闲不持续重绘。
 
 ### P4：原生设置与诊断整合
 
@@ -301,3 +302,31 @@
 - [x] R5. 明确移除测试页的测试按钮自由布局实验，避免把诊断卡片变成不稳定的自由画布；测试动作仍保持原有顺序和可重复触发。
 
 阶段 R：**代码完成，Android APK 已通过单元测试/构建并安装到 `192.168.3.137:44899`；深按真机手感和玻璃参数 A/B 仍需目标 Mac 应用矩阵复核。**
+
+### 阶段 S：全屏居中触控面与黑边回归（2026-08-29）
+
+- [x] S1. 修复 Android 全屏将 `padHost`、`padFrame` 和玻璃裁剪清零导致的边到边渐变及系统保留区黑边。
+- [x] S2. 全屏仅隐藏顶栏并保留普通模式的 18dp 外边距、8dp 内填充、30dp 玻璃圆角和边缘高光，保持中间一整块触控面的视觉与命中区域。
+- [x] S3. 增加 `PadLayoutMetrics` 纯逻辑回归测试，锁定全屏使用紧凑居中边距；真机截图确认退出按钮和深按条仍可用。
+
+阶段 S：**代码、单元测试、Debug 构建、ADB 安装和全屏真机截图均已完成。**
+
+### 阶段 T：GitHub 仓库整理与 macOS 原生发行包（2026-08-29）
+
+- [x] T1. 删除已跟踪的机器专属 macOS 诊断快照，增加诊断目录说明，并将
+  SwiftPM/Xcode、DMG、App、签名材料、IDE 元数据和本地环境文件加入忽略规则。
+- [x] T2. 增加 `LICENSE`、`CONTRIBUTING.md`、`SECURITY.md` 和
+  [`docs/architecture.md`](architecture.md)，明确 Rust 核心、SwiftUI、Android、
+  浏览器和打包层的所有权边界。
+- [x] T3. 保留 Rust `companion-config` 作为唯一配置边界；SwiftUI 继续通过
+  helper 读写 TOML，不写 `defaults`，并把可复用设置行与总览组件拆到
+  `macos/.../Views/`。
+- [x] T4. 打磨原生 SwiftUI 窗口：稳定默认尺寸、sidebar 产品头部、状态徽标、
+  总览指标、深浅色系统颜色、语言持久化、Mac mini 无实体触控板说明和配对 URL 处理。
+- [x] T5. 完善 `build-app.sh`/`package-dmg.sh`：版本清洗、可选图标、嵌套 helper
+  签名、DMG 临时目录清理和高压缩，并新增 tag 触发的 macOS Release workflow。
+- [x] T6. README 增加 `.dmg` 安装和 GitHub Release 说明；CI 在 macOS runner 上同时
+  构建 `.app`、ZIP 和 DMG，并验证 bundle 内容。
+
+阶段 T：**代码与发布链路已完成；Linux 环境无法运行 SwiftUI、codesign、hdiutil，
+因此 `.app`/`.dmg` 的实际产物和窗口/权限真机验收交由 macOS CI 与目标 Mac 完成。**

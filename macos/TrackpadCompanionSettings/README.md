@@ -5,6 +5,12 @@ uses the Rust `companion-config` executable for all configuration I/O. The app
 also owns the menu-bar service supervisor, Accessibility guidance, and local
 Bonjour advertisement used by phone clients.
 
+The Swift package is deliberately macOS-only. `main.swift` contains the app,
+service supervisor, and shared configuration model; reusable settings rows and
+overview components are under `Sources/TrackpadCompanionSettings/Views/`. This
+keeps the high-rate Rust input path independent from the UI and makes it safe
+to run the settings app on a Mac mini without a physical trackpad.
+
 From the repository root on a Mac:
 
 ```sh
