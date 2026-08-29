@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#54b5ff"/>
+      <stop offset="0.5" stop-color="#0a84ff"/>
+      <stop offset="1" stop-color="#0059d6"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.18" cy="0.08" r="0.85">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.32"/>
+      <stop offset="0.58" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="squircle">
+      <path d="M285 100h454c102 0 185 83 185 185v454c0 102-83 185-185 185H285c-102 0-185-83-185-185V285c0-102 83-185 185-185z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#glow)"/>
+
+    <g transform="translate(100 100) scale(0.805)">
+
+      <!-- A single, legible trackpad surface. The offset shape is a flat,
+           converter-safe shadow so the icon does not depend on SVG filters. -->
+      <rect x="184" y="226" width="656" height="588" rx="126" fill="#0047ad" opacity="0.26" transform="translate(0 18)"/>
+      <rect x="184" y="226" width="656" height="588" rx="126" fill="#ffffff"/>
+      <rect x="224" y="266" width="576" height="508" rx="96" fill="#e8f4ff"/>
+      <rect x="224" y="266" width="576" height="508" rx="96" fill="none" stroke="#b5ddff" stroke-width="14"/>
+
+      <!-- Multi-touch cue: a point and two smooth movement paths. -->
+      <circle cx="512" cy="532" r="44" fill="#0a84ff"/>
+      <circle cx="512" cy="532" r="17" fill="#ffffff" opacity="0.94"/>
+      <path d="M414 532c0-74 44-126 103-148" fill="none" stroke="#0a84ff" stroke-width="26" stroke-linecap="round"/>
+      <path d="M414 628c0-126 77-218 190-246" fill="none" stroke="#0a84ff" stroke-width="26" stroke-linecap="round" opacity="0.82"/>
+      <path d="M370 700h284" fill="none" stroke="#8bc6f7" stroke-width="18" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>

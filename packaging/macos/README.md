@@ -14,9 +14,17 @@ than reusing `target/release` binaries built on Linux.
 ```
 
 The scripts create an unsigned `.app`, `.zip`, and `.dmg` under `dist/macos`.
-The DMG includes the conventional `Applications` shortcut for drag-and-drop
-installation. `package-dmg.sh` removes older local DMGs first, so opening a
-wildcard after a rebuild cannot select a stale application.
+The DMG uses a Finder icon layout with a branded background, the app icon, and
+the conventional `Applications` shortcut for drag-and-drop installation.
+`package-dmg.sh` removes older local DMGs first, so opening a wildcard after a
+rebuild cannot select a stale application. If `build-app.sh` fails during
+compilation, it removes the previous local app bundle so a following packaging
+step cannot silently package an old build.
+
+`AppIcon.png` is the 1024px source for the generated `.icns`; `build-app.sh`
+creates the standard 1x/2x iconset with macOS `sips` and `iconutil` in the
+ignored `dist/macos` directory. `dmg-background.png` is embedded only in the
+DMG staging volume and is not copied into the installed app.
 Set `CODESIGN_IDENTITY='Developer ID Application: ...'` for a hardened runtime
 signature. Notarization remains a release-pipeline concern: after signing,
 submit the DMG with `xcrun notarytool submit` and staple it with
