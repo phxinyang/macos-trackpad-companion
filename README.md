@@ -181,12 +181,15 @@ secondary_click = "on"    # two-finger secondary click
 smart_zoom = "on"         # two-finger double-tap Smart Zoom
 dictionary_lookup = "on"  # three-finger tap Look Up
 right_edge_swipe = "on"   # two-finger right-edge Notification Center
+dynamic_transform_compat = false # native scroll lock; legacy transition opt-in
 
 [gestures.pinch]
 enable = "on"
+gain = 1.0                 # companion-only magnification response (0.25..4.0x)
 
 [gestures.rotate]
 enable = "on"
+gain = 1.0                 # companion-only rotation response (0.25..4.0x)
 
 [gestures.swipe.horizontal]   # left/right 3F/4F → Spaces / Full-Screen Apps
 enable  = "on"
@@ -504,6 +507,8 @@ separate driver-level project and is outside this userspace bridge.
   `--no-private-gestures` CLI flag. Cursor / click / phased scroll all use
   public CGEvent APIs and won't be affected.
 - **Two-finger ambiguity is resolved by first-significant-motion lock.**
-  Once the centroid moves, the distance changes by 4%, or the angle
-  changes by 6°, that mode wins for the duration of the touch. The
-  thresholds in `gesture.rs` may need tuning once we have hardware.
+  The classifier observes at least two frames, then compares translation,
+  spread, and angle. The current lock references are 4% relative spread,
+  3 degrees, and a 1 mm per-finger motion guard. Once the gesture locks,
+  native mode keeps scroll locked; the legacy Pan-to-transform transition is
+  available only with `gestures.dynamic_transform_compat = true`.

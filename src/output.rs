@@ -2959,25 +2959,14 @@ impl Output for Emitter {
     }
     fn smart_magnify(&self) {
         log::debug!("post: smart zoom via Mac Mouse Fix exact formula (field 55=29, field 110=22)");
-        // 1. Exact Mac Mouse Fix TouchSimulator.m formula:
+        // Keep one event shape and one tap. Mac Mouse Fix's public
+        // TouchSimulator reference uses a type-29 gesture with subtype 22
+        // on the HID tap. Posting additional type-32/session variants can
+        // make Safari/Preview interpret one double-tap more than once.
         if let Some(event) = Event::with_source(self.event_source) {
             event.set_int(55, 29); // NSEventTypeGesture
             event.set_int(110, 22); // kIOHIDEventTypeZoomToggle (22)
             event.post_to(kCGHIDEventTap);
-            event.post_to(kCGSessionEventTap);
-        }
-
-        // 2. Also send raw type 32 with location:
-        if let Some(event) = Event::with_source(self.event_source) {
-            event.set_int(55, 29);
-            event.set_int(110, 22);
-            unsafe {
-                CGEventSetType(event.0, 32);
-                CGEventSetLocation(event.0, self.cursor());
-                CGEventSetFlags(event.0, GESTURE_EVENT_FLAGS);
-            };
-            event.post_to(kCGHIDEventTap);
-            event.post_to(kCGSessionEventTap);
         }
     }
     fn toggle_notification_center(&self) {

@@ -134,8 +134,10 @@ enum SettingId {
     HapticFeedback,
     NaturalScroll,
     Pinch,
+    PinchGain,
     SmartZoom,
     Rotate,
+    RotateGain,
     ScrollSensitivity,
     ScrollEnabled,
     HorizontalScroll,
@@ -153,6 +155,7 @@ enum SettingId {
     HorizontalBackend,
     VerticalBackend,
     ShiftScrollHorizontal,
+    DynamicTransformCompat,
     SyncSystemSettings,
 }
 
@@ -172,8 +175,10 @@ const SCROLL_AND_ZOOM: &[SettingId] = &[
     SettingId::MomentumScroll,
     SettingId::HorizontalScroll,
     SettingId::Pinch,
+    SettingId::PinchGain,
     SettingId::SmartZoom,
     SettingId::Rotate,
+    SettingId::RotateGain,
     SettingId::ModifierZoomMask,
 ];
 const MORE_GESTURES: &[SettingId] = &[
@@ -191,6 +196,7 @@ const COMPANION: &[SettingId] = &[
     SettingId::HorizontalBackend,
     SettingId::VerticalBackend,
     SettingId::ShiftScrollHorizontal,
+    SettingId::DynamicTransformCompat,
     SettingId::SyncSystemSettings,
 ];
 
@@ -215,10 +221,14 @@ impl SettingId {
             (Self::NaturalScroll, Locale::Chinese) => "自然滚动",
             (Self::Pinch, Locale::English) => "Zoom in or out",
             (Self::Pinch, Locale::Chinese) => "放大或缩小",
+            (Self::PinchGain, Locale::English) => "Zoom response",
+            (Self::PinchGain, Locale::Chinese) => "缩放响应",
             (Self::SmartZoom, Locale::English) => "Smart zoom",
             (Self::SmartZoom, Locale::Chinese) => "智能缩放",
             (Self::Rotate, Locale::English) => "Rotate",
             (Self::Rotate, Locale::Chinese) => "旋转",
+            (Self::RotateGain, Locale::English) => "Rotation response",
+            (Self::RotateGain, Locale::Chinese) => "旋转响应",
             (Self::ScrollSensitivity, Locale::English) => "Scroll sensitivity",
             (Self::ScrollSensitivity, Locale::Chinese) => "滚动灵敏度",
             (Self::ScrollEnabled, Locale::English) => "Trackpad scrolling",
@@ -253,6 +263,8 @@ impl SettingId {
             (Self::VerticalBackend, Locale::Chinese) => "垂直轻扫后端",
             (Self::ShiftScrollHorizontal, Locale::English) => "Shift scroll compatibility",
             (Self::ShiftScrollHorizontal, Locale::Chinese) => "Shift 滚动兼容",
+            (Self::DynamicTransformCompat, Locale::English) => "Scroll-to-transform compatibility",
+            (Self::DynamicTransformCompat, Locale::Chinese) => "滚动转变换兼容",
             (Self::SyncSystemSettings, Locale::English) => "Sync macOS settings",
             (Self::SyncSystemSettings, Locale::Chinese) => "同步 macOS 设置",
         }
@@ -290,10 +302,22 @@ impl SettingId {
             (Self::NaturalScroll, Locale::Chinese) => "让窗口内容与手指移动方向一致。",
             (Self::Pinch, Locale::English) => "Pinch with two fingers to zoom.",
             (Self::Pinch, Locale::Chinese) => "用两个手指捏合来缩放。",
+            (Self::PinchGain, Locale::English) => {
+                "Companion-only multiplier for magnification deltas; macOS has no native slider."
+            }
+            (Self::PinchGain, Locale::Chinese) => {
+                "仅限 Companion 的缩放增量倍率；macOS 没有原生滑块。"
+            }
             (Self::SmartZoom, Locale::English) => "Double-tap with two fingers to zoom.",
             (Self::SmartZoom, Locale::Chinese) => "用两个手指轻点两下以智能缩放。",
             (Self::Rotate, Locale::English) => "Rotate items with two fingers.",
             (Self::Rotate, Locale::Chinese) => "用两个手指旋转屏幕上的项目。",
+            (Self::RotateGain, Locale::English) => {
+                "Companion-only multiplier for rotation deltas; macOS has no native slider."
+            }
+            (Self::RotateGain, Locale::Chinese) => {
+                "仅限 Companion 的旋转增量倍率；macOS 没有原生滑块。"
+            }
             (Self::ScrollSensitivity, Locale::English) => "Tune the virtual scroll response.",
             (Self::ScrollSensitivity, Locale::Chinese) => "调整虚拟滚动的响应速度。",
             (Self::ScrollEnabled, Locale::English) => "Emit two-finger scroll events.",
@@ -354,6 +378,12 @@ impl SettingId {
             (Self::ShiftScrollHorizontal, Locale::Chinese) => {
                 "可选兼容转换；原生模式保留手指的原始滚动轴。"
             }
+            (Self::DynamicTransformCompat, Locale::English) => {
+                "Allow an established scroll to become pinch or rotate; off matches native scroll lock."
+            }
+            (Self::DynamicTransformCompat, Locale::Chinese) => {
+                "允许已开始的滚动转为缩放或旋转；关闭时遵循原生滚动锁定。"
+            }
             (Self::SyncSystemSettings, Locale::English) => {
                 "Use available macOS preferences as startup defaults."
             }
@@ -373,8 +403,10 @@ impl SettingId {
             Self::HapticFeedback => &["macos", "haptic_feedback"],
             Self::NaturalScroll => &["scroll", "natural"],
             Self::Pinch => &["gestures", "pinch", "enable"],
+            Self::PinchGain => &["gestures", "pinch", "gain"],
             Self::SmartZoom => &["gestures", "smart_zoom"],
             Self::Rotate => &["gestures", "rotate", "enable"],
+            Self::RotateGain => &["gestures", "rotate", "gain"],
             Self::ScrollSensitivity => &["scroll", "sensitivity"],
             Self::ScrollEnabled => &["scroll", "enable"],
             Self::HorizontalScroll => &["scroll", "horizontal"],
@@ -392,6 +424,7 @@ impl SettingId {
             Self::HorizontalBackend => &["gestures", "swipe", "horizontal", "backend"],
             Self::VerticalBackend => &["gestures", "swipe", "vertical", "backend"],
             Self::ShiftScrollHorizontal => &["scroll", "shift_scroll_horizontal"],
+            Self::DynamicTransformCompat => &["gestures", "dynamic_transform_compat"],
             Self::SyncSystemSettings => &["macos", "sync_system_settings"],
         }
     }
@@ -479,8 +512,10 @@ impl App {
             },
             SettingId::NaturalScroll => bool_text(self.cfg.scroll.natural, self.locale),
             SettingId::Pinch => enable_text(&self.cfg.gestures.pinch.enable, self.locale),
+            SettingId::PinchGain => format!("{:.2}x", self.cfg.gestures.pinch.gain),
             SettingId::SmartZoom => enable_text(&self.cfg.gestures.smart_zoom, self.locale),
             SettingId::Rotate => enable_text(&self.cfg.gestures.rotate.enable, self.locale),
+            SettingId::RotateGain => format!("{:.2}x", self.cfg.gestures.rotate.gain),
             SettingId::ScrollSensitivity => format!("{:.1} px/mm", self.cfg.scroll.sensitivity),
             SettingId::ScrollEnabled => bool_text(self.cfg.scroll.enable, self.locale),
             SettingId::HorizontalScroll => bool_text(self.cfg.scroll.horizontal, self.locale),
@@ -527,6 +562,9 @@ impl App {
             SettingId::ShiftScrollHorizontal => {
                 bool_text(self.cfg.scroll.shift_scroll_horizontal, self.locale)
             }
+            SettingId::DynamicTransformCompat => {
+                bool_text(self.cfg.gestures.dynamic_transform_compat, self.locale)
+            }
             SettingId::SyncSystemSettings => {
                 bool_text(self.cfg.macos.sync_system_settings, self.locale)
             }
@@ -567,8 +605,16 @@ impl App {
             }
             SettingId::NaturalScroll => self.cfg.scroll.natural = !self.cfg.scroll.natural,
             SettingId::Pinch => toggle_enable(&mut self.cfg.gestures.pinch.enable),
+            SettingId::PinchGain => {
+                self.cfg.gestures.pinch.gain =
+                    (self.cfg.gestures.pinch.gain + signed * 0.1).clamp(0.25, 4.0)
+            }
             SettingId::SmartZoom => toggle_enable(&mut self.cfg.gestures.smart_zoom),
             SettingId::Rotate => toggle_enable(&mut self.cfg.gestures.rotate.enable),
+            SettingId::RotateGain => {
+                self.cfg.gestures.rotate.gain =
+                    (self.cfg.gestures.rotate.gain + signed * 0.1).clamp(0.25, 4.0)
+            }
             SettingId::ScrollSensitivity => {
                 self.cfg.scroll.sensitivity =
                     (self.cfg.scroll.sensitivity + signed).clamp(5.0, 80.0)
@@ -615,6 +661,10 @@ impl App {
             }
             SettingId::ShiftScrollHorizontal => {
                 self.cfg.scroll.shift_scroll_horizontal = !self.cfg.scroll.shift_scroll_horizontal
+            }
+            SettingId::DynamicTransformCompat => {
+                self.cfg.gestures.dynamic_transform_compat =
+                    !self.cfg.gestures.dynamic_transform_compat
             }
             SettingId::SyncSystemSettings => {
                 self.cfg.macos.sync_system_settings = !self.cfg.macos.sync_system_settings
@@ -689,8 +739,10 @@ impl App {
             ),
             SettingId::NaturalScroll => toml::Value::Boolean(self.cfg.scroll.natural),
             SettingId::Pinch => enable_value(&self.cfg.gestures.pinch.enable),
+            SettingId::PinchGain => toml::Value::Float(self.cfg.gestures.pinch.gain),
             SettingId::SmartZoom => enable_value(&self.cfg.gestures.smart_zoom),
             SettingId::Rotate => enable_value(&self.cfg.gestures.rotate.enable),
+            SettingId::RotateGain => toml::Value::Float(self.cfg.gestures.rotate.gain),
             SettingId::ScrollSensitivity => toml::Value::Float(self.cfg.scroll.sensitivity),
             SettingId::ScrollEnabled => toml::Value::Boolean(self.cfg.scroll.enable),
             SettingId::HorizontalScroll => toml::Value::Boolean(self.cfg.scroll.horizontal),
@@ -723,6 +775,9 @@ impl App {
             )),
             SettingId::ShiftScrollHorizontal => {
                 toml::Value::Boolean(self.cfg.scroll.shift_scroll_horizontal)
+            }
+            SettingId::DynamicTransformCompat => {
+                toml::Value::Boolean(self.cfg.gestures.dynamic_transform_compat)
             }
             SettingId::SyncSystemSettings => {
                 toml::Value::Boolean(self.cfg.macos.sync_system_settings)
