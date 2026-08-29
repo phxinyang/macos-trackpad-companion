@@ -4,7 +4,7 @@
 //! Keeping TOML ownership here means TUI, GUI, and companion-net all use the
 //! same parser and atomic writer.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use macos_trackpad_companion::config;
 use serde_json::json;
@@ -105,6 +105,8 @@ fn doctor(path: Option<&Path>) -> Result<()> {
             json!({
                 "listen_ip": cfg.net.listen_ip,
                 "port": cfg.net.port,
+                "web_enabled": cfg.net.web_enabled,
+                "phone_enabled": cfg.net.phone_enabled,
                 "token_configured": cfg.net.token.as_ref().is_some_and(|token| !token.is_empty()),
                 "sync_system_settings": cfg.macos.sync_system_settings,
                 "haptic_feedback": format!("{:?}", cfg.macos.haptic_feedback),

@@ -43,15 +43,17 @@ Android / browser / USB PTP
 same TOML file used by `companion-net` and exposes JSON for the GUI/TUI. Swift
 does not parse TOML and does not write macOS `defaults`; this keeps Mac mini
 installations (where the Trackpad pane is absent) fully supported and avoids a
-second source of truth.
+second source of truth. `[net].web_enabled` controls the TCP page/WebSocket;
+`[net].phone_enabled` controls native UDP input. The helper never binds a
+disabled transport, and exits without opening a port when both are false.
 
 ## Runtime ownership
 
 The Swift app owns the user-facing lifecycle: it starts/stops the network
-helper, publishes Bonjour metadata, checks Accessibility permission, and shows
-diagnostics. The Rust helper owns all high-rate input and event synthesis. A
-future login-item helper can reuse the same Rust binary without changing the
-gesture protocol.
+helper, publishes Bonjour metadata for the phone transport, checks Accessibility
+permission, and shows diagnostics. The Rust helper owns all high-rate input and
+event synthesis. A future login-item helper can reuse the same Rust binary
+without changing the gesture protocol.
 
 ## Release boundary
 

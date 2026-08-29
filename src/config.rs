@@ -13,9 +13,10 @@
 //! # pid = 0x5678
 //!
 //! [net]                   # companion-net network input transport
-//! # listen_ip = "0.0.0.0" # UDP+TCP bind address
-//! # port      = 4242      # UDP frames arrive here; the touchpad web
-//!                         # page is served over TCP on the same port
+//! # listen_ip = "0.0.0.0" # bind address for enabled services
+//! # port      = 4242      # shared discovery port
+//! # web_enabled = true    # browser page + WebSocket
+//! # phone_enabled = true  # native phone UDP input
 //! # token     = "..."     # optional bearer token for network clients
 //!
 //! [log]
@@ -158,10 +159,13 @@ fn collect_explicit_paths(value: &toml::Value, prefix: &str, paths: &mut BTreeSe
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Net {
-    /// Bind address for both the UDP frame port and the TCP listener
-    /// that serves the touchpad web page + WebSocket endpoint.
+    /// Bind address for the enabled network transports.
     pub listen_ip: Option<String>,
     pub port: u16,
+    /// Expose the browser touchpad page and WebSocket endpoint.
+    pub web_enabled: bool,
+    /// Expose the native phone UDP input endpoint.
+    pub phone_enabled: bool,
     /// Optional bearer token. When set, WebSocket clients must provide
     /// `Authorization: Bearer <token>` or `?token=<token>` and UDP clients
     /// must wrap ATP1 in the documented ATK1 envelope.
@@ -173,6 +177,8 @@ impl Default for Net {
         Self {
             listen_ip: None,
             port: 4242,
+            web_enabled: true,
+            phone_enabled: true,
             token: None,
         }
     }
@@ -832,17 +838,23 @@ mod tests {
         let cfg = toml::from_str::<Config>("").unwrap();
         assert_eq!(cfg.net.port, 4242);
         assert!(cfg.net.listen_ip.is_none());
+        assert!(cfg.net.web_enabled);
+        assert!(cfg.net.phone_enabled);
 
         let cfg = toml::from_str::<Config>(
             r#"
             [net]
             port = 5000
             listen_ip = "127.0.0.1"
+            web_enabled = false
+            phone_enabled = true
         "#,
         )
         .unwrap();
         assert_eq!(cfg.net.listen_ip.as_deref(), Some("127.0.0.1"));
         assert_eq!(cfg.net.port, 5000);
+        assert!(!cfg.net.web_enabled);
+        assert!(cfg.net.phone_enabled);
         assert!(cfg.net.token.is_none());
     }
 

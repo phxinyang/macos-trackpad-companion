@@ -25,6 +25,34 @@ struct ToggleRow: View {
     private var isBooleanPath: Bool { path.hasPrefix("scroll.") || path == "macos.sync_system_settings" }
 }
 
+struct ConnectionToggleRow: View {
+    let path: String
+    let title: String
+    let titleCN: String
+    let description: String
+    let descriptionCN: String
+    @ObservedObject var model: SettingsModel
+    let onChange: (Bool) -> Void
+
+    var body: some View {
+        Toggle(isOn: Binding(
+            get: { model.toggle(path, default: true) },
+            set: { enabled in
+                if model.set(path, value: enabled ? "true" : "false") {
+                    onChange(enabled)
+                }
+            }
+        )) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.language.text(title, titleCN))
+                Text(model.language.text(description, descriptionCN))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 struct UnavailableRow: View {
     let title: String
     let titleCN: String

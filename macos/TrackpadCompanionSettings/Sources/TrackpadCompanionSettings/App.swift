@@ -56,12 +56,13 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case overview, pointAndClick, scrollAndZoom, moreGestures, companion
+    case overview, connections, pointAndClick, scrollAndZoom, moreGestures, companion
     var id: String { rawValue }
 
     func title(_ language: AppLanguage) -> String {
         switch self {
         case .overview: return language.text("Overview", "总览")
+        case .connections: return language.text("Connections", "连接")
         case .pointAndClick: return language.text("Point & Click", "点按与点击")
         case .scrollAndZoom: return language.text("Scroll & Zoom", "滚动与缩放")
         case .moreGestures: return language.text("More Gestures", "更多手势")
@@ -72,6 +73,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     func subtitle(_ language: AppLanguage) -> String {
         switch self {
         case .overview: return language.text("Service status, pairing, and permissions", "服务状态、配对与权限")
+        case .connections: return language.text("Choose which local services are available", "选择要开放的本地服务")
         case .pointAndClick: return language.text("Pointer tracking, clicking, lookup, and haptic feedback", "指针跟踪、点击、查词与触觉反馈")
         case .scrollAndZoom: return language.text("Natural scrolling, zooming, rotation, and momentum", "自然滚动、缩放、旋转与惯性")
         case .moreGestures: return language.text("Pages, Spaces, Mission Control, and Notification Center", "页面、Space、调度中心与通知中心")
@@ -98,7 +100,7 @@ enum ServiceState: String {
 final class BonjourAdvertiser: NSObject, NetServiceDelegate {
     private var service: NetService?
 
-    func publish(port: Int, serviceID: String, authenticated: Bool) {
+    func publish(port: Int, serviceID: String, authenticated: Bool, webEnabled: Bool, phoneEnabled: Bool) {
         stop()
         let name = "Trackpad Companion - \(Host.current().localizedName ?? ProcessInfo.processInfo.hostName)"
         let service = NetService(domain: "local.", type: "_mtc-trackpad._tcp.", name: name, port: Int32(port))
@@ -108,6 +110,8 @@ final class BonjourAdvertiser: NSObject, NetServiceDelegate {
             "proto": Data("atp1".utf8),
             "auth": Data((authenticated ? "token" : "none").utf8),
             "id": Data(serviceID.utf8),
+            "web": Data((webEnabled ? "1" : "0").utf8),
+            "phone": Data((phoneEnabled ? "1" : "0").utf8),
         ]))
         service.publish(options: [.listenForConnections])
         self.service = service
@@ -127,8 +131,11 @@ final class BonjourAdvertiser: NSObject, NetServiceDelegate {
 final class ServiceSupervisor: ObservableObject {
     @Published private(set) var state: ServiceState = .stopped
     @Published private(set) var message = ""
-    @Published private(set) var endpoint = "http://localhost:4242/"
+    @Published private(set) var endpoint = ""
     @Published private(set) var pairingURI = ""
+    @Published private(set) var webEnabled = true
+    @Published private(set) var phoneEnabled = true
+    @Published private(set) var boundPort: Int?
     @Published private(set) var accessibilityGranted = false
     @Published private(set) var tokenConfigured = false
     @Published private(set) var diagnostics = ""
@@ -169,6 +176,15 @@ final class ServiceSupervisor: ObservableObject {
 
     func start() {
         guard process?.isRunning != true else { return }
+        preparePairing()
+        guard webEnabled || phoneEnabled else {
+            bonjour.stop()
+            endpoint = ""
+            pairingURI = ""
+            state = .stopped
+            message = "No connections are enabled."
+            return
+        }
         refreshPermissions()
         guard accessibilityGranted else {
             state = .waitingForPermission
@@ -176,7 +192,6 @@ final class ServiceSupervisor: ObservableObject {
             requestAccessibility()
             return
         }
-        preparePairing()
         guard let executable = locate("COMPANION_NET_BIN", bundledName: "companion-net") else {
             state = .failed
             message = "companion-net was not found. Build the Rust daemon or set COMPANION_NET_BIN."
@@ -211,12 +226,18 @@ final class ServiceSupervisor: ObservableObject {
                     self.message = status
                 }
                 if let port = self.port(from: status) {
-                    self.endpoint = "http://\(ProcessInfo.processInfo.hostName):\(port)/"
-                    self.publishBonjour(port: port)
+                    self.boundPort = port
+                    self.updateEndpoint(port: port)
+                    if self.phoneEnabled {
+                        self.publishBonjour(port: port)
+                    } else {
+                        self.bonjour.stop()
+                        self.pairingURI = ""
+                    }
                 }
                 if text.localizedCaseInsensitiveContains("accessibility permission required") {
                     self.state = .waitingForPermission
-                } else if text.contains("listening on") {
+                } else if text.contains("listening on") || text.contains("[net] ready web=") {
                     self.state = .running
                 }
             }
@@ -227,6 +248,10 @@ final class ServiceSupervisor: ObservableObject {
                 self.process = nil
                 self.outputPipe?.fileHandleForReading.readabilityHandler = nil
                 self.outputPipe = nil
+                self.boundPort = nil
+                self.endpoint = ""
+                self.pairingURI = ""
+                self.bonjour.stop()
                 if process.terminationStatus == 0 || self.state == .stopped {
                     self.state = .stopped
                 } else {
@@ -259,12 +284,18 @@ final class ServiceSupervisor: ObservableObject {
         outputPipe = nil
         guard let process, process.isRunning else {
             bonjour.stop()
+            boundPort = nil
+            endpoint = ""
+            pairingURI = ""
             state = .stopped
             return
         }
         state = .stopped
         message = "Service stopped"
         bonjour.stop()
+        boundPort = nil
+        endpoint = ""
+        pairingURI = ""
         process.terminate()
         self.process = nil
     }
@@ -301,6 +332,34 @@ final class ServiceSupervisor: ObservableObject {
         NSPasteboard.general.setString(pairingURI, forType: .string)
     }
 
+    func copyWebURL() {
+        guard !endpoint.isEmpty else { return }
+        var value = endpoint
+        if let token = pairingToken, tokenConfigured,
+           var components = URLComponents(string: endpoint) {
+            components.queryItems = [URLQueryItem(name: "token", value: token)]
+            value = components.string ?? endpoint
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    /// Apply a changed net.* switch without starting a service that the user
+    /// had stopped. A running helper is restarted so the socket boundary is
+    /// updated immediately.
+    func applyConnectionConfiguration() {
+        let wasRunning = process?.isRunning == true
+        if wasRunning {
+            restart()
+        } else {
+            refreshConnectionSettings()
+        }
+    }
+
+    func refreshConnectionSettings() {
+        preparePairing()
+    }
+
     func handlePairingURL(_ url: URL) {
         guard url.scheme == "mtc", url.host == "pair" else { return }
         message = "Pairing link received. Use it in the Android client on the same LAN."
@@ -324,13 +383,20 @@ final class ServiceSupervisor: ObservableObject {
     }
 
     private func publishBonjour(port: Int) {
-        bonjour.publish(port: port, serviceID: serviceID, authenticated: tokenConfigured)
+        guard phoneEnabled else {
+            bonjour.stop()
+            pairingURI = ""
+            return
+        }
+        bonjour.publish(port: port, serviceID: serviceID, authenticated: tokenConfigured, webEnabled: webEnabled, phoneEnabled: phoneEnabled)
         var components = URLComponents()
         components.scheme = "mtc"
         components.host = "pair"
         components.queryItems = [
             URLQueryItem(name: "host", value: ProcessInfo.processInfo.hostName),
             URLQueryItem(name: "port", value: String(port)),
+            URLQueryItem(name: "web", value: webEnabled ? "1" : "0"),
+            URLQueryItem(name: "phone", value: phoneEnabled ? "1" : "0"),
         ]
         if let token = pairingToken {
             components.queryItems?.append(URLQueryItem(name: "token", value: token))
@@ -340,19 +406,46 @@ final class ServiceSupervisor: ObservableObject {
 
     private var pairingToken: String?
 
+    private func updateEndpoint(port: Int) {
+        guard webEnabled else {
+            endpoint = ""
+            return
+        }
+        endpoint = "http://\(ProcessInfo.processInfo.hostName):\(port)/"
+    }
+
     private func preparePairing() {
         guard let executable = locate("COMPANION_CONFIG_BIN", bundledName: "companion-config") else {
+            webEnabled = true
+            phoneEnabled = true
             tokenConfigured = false
             pairingToken = nil
             return
         }
         do {
-            _ = try run(executable: executable, arguments: ["ensure-token"])
             let data = try run(executable: executable, arguments: ["dump"])
             guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let config = root["config"] as? [String: Any],
-                  let net = config["net"] as? [String: Any],
-                  let token = net["token"] as? String, !token.isEmpty else {
+                  let net = config["net"] as? [String: Any] else {
+                webEnabled = true
+                phoneEnabled = true
+                tokenConfigured = false
+                pairingToken = nil
+                return
+            }
+            webEnabled = net["web_enabled"] as? Bool ?? true
+            phoneEnabled = net["phone_enabled"] as? Bool ?? true
+            guard webEnabled || phoneEnabled else {
+                tokenConfigured = false
+                pairingToken = nil
+                return
+            }
+            _ = try run(executable: executable, arguments: ["ensure-token"])
+            let refreshed = try run(executable: executable, arguments: ["dump"])
+            let refreshedRoot = try JSONSerialization.jsonObject(with: refreshed) as? [String: Any]
+            let refreshedConfig = refreshedRoot?["config"] as? [String: Any]
+            let refreshedNet = refreshedConfig?["net"] as? [String: Any]
+            guard let token = refreshedNet?["token"] as? String, !token.isEmpty else {
                 tokenConfigured = false
                 pairingToken = nil
                 return
@@ -367,7 +460,11 @@ final class ServiceSupervisor: ObservableObject {
     }
 
     private func port(from status: String) -> Int? {
-        let marker = "touchpad page at "
+        if let marker = status.range(of: "port=") {
+            let digits = status[marker.upperBound...].prefix { $0.isNumber }
+            if let value = Int(digits), value > 0 { return value }
+        }
+        let marker = status.contains("phone input at ") ? "phone input at " : "touchpad page at "
         guard let start = status.range(of: marker)?.upperBound else { return nil }
         let suffix = status[start...]
         guard let colon = suffix.lastIndex(of: ":") else { return nil }
@@ -419,6 +516,9 @@ struct MenuBarView: View {
         Button("Open Settings", systemImage: "gearshape") {
             NSApp.activate(ignoringOtherApps: true)
             NSApp.sendAction(#selector(NSWindow.makeKeyAndOrderFront(_:)), to: nil, from: nil)
+        }
+        if !supervisor.endpoint.isEmpty {
+            Button("Copy Web URL", systemImage: "safari") { supervisor.copyWebURL() }
         }
         Button("Copy Pairing Link", systemImage: "doc.on.doc") { supervisor.copyPairingURI() }
             .disabled(supervisor.pairingURI.isEmpty)
@@ -489,14 +589,18 @@ final class SettingsModel: ObservableObject {
         return fallback
     }
 
-    func set(_ path: String, value: String) {
+    @discardableResult
+    func set(_ path: String, value: String) -> Bool {
         isSaving = true
         do {
             _ = try runHelper(["set", "--path", path, "--value", value])
             values[path] = scalar(value)
             error = nil
+            isSaving = false
+            return true
         } catch { self.error = error.localizedDescription }
         isSaving = false
+        return false
     }
 
     private func scalar(_ value: String) -> Any {
@@ -648,6 +752,7 @@ struct SettingsView: View {
             // Load after StateObject installation. Mutating @Published values
             // from SettingsModel.init re-enters SwiftUI's AttributeGraph.
             model.reload()
+            supervisor.refreshConnectionSettings()
         }
     }
 
@@ -655,6 +760,7 @@ struct SettingsView: View {
     private func sectionForm(_ section: SettingsSection) -> some View {
         switch section {
         case .overview: overview
+        case .connections: connections
         case .pointAndClick: pointAndClick
         case .scrollAndZoom: scrollAndZoom
         case .moreGestures: moreGestures
@@ -706,9 +812,11 @@ struct SettingsView: View {
                     )
                     MetricTile(
                         title: model.language.text("Pairing", "配对"),
-                        value: supervisor.tokenConfigured ? model.language.text("Protected", "已保护") : model.language.text("Manual", "手动"),
-                        symbol: supervisor.tokenConfigured ? "lock.shield" : "lock.open",
-                        tint: supervisor.tokenConfigured ? .green : .orange
+                        value: supervisor.phoneEnabled
+                            ? (supervisor.tokenConfigured ? model.language.text("Protected", "已保护") : model.language.text("Manual", "手动"))
+                            : model.language.text("Off", "已关闭"),
+                        symbol: supervisor.phoneEnabled ? (supervisor.tokenConfigured ? "lock.shield" : "lock.open") : "minus.circle",
+                        tint: supervisor.phoneEnabled ? (supervisor.tokenConfigured ? .green : .orange) : .secondary
                     )
                 }
             }
@@ -717,10 +825,14 @@ struct SettingsView: View {
                     Label(model.language.text(supervisor.state == .running ? "Running" : supervisor.state.rawValue.capitalized, supervisor.state == .running ? "运行中" : supervisor.state.rawValue), systemImage: supervisor.state.symbol)
                         .foregroundStyle(supervisor.state == .failed ? .red : supervisor.state == .running ? .green : .secondary)
                 }
-                LabeledContent(model.language.text("Endpoint", "连接地址")) {
-                    Text(supervisor.endpoint).font(.caption.monospaced()).textSelection(.enabled)
+                LabeledContent(model.language.text("Web", "Web")) {
+                    if supervisor.webEnabled && !supervisor.endpoint.isEmpty {
+                        Text(supervisor.endpoint).font(.caption.monospaced()).textSelection(.enabled)
+                    } else {
+                        Text(model.language.text("Off", "已关闭")).foregroundStyle(.secondary)
+                    }
                 }
-                if !supervisor.pairingURI.isEmpty {
+                if supervisor.phoneEnabled && !supervisor.pairingURI.isEmpty {
                     LabeledContent(model.language.text("Pairing link", "配对链接")) {
                         Text(supervisor.pairingURI).font(.caption.monospaced()).textSelection(.enabled)
                     }
@@ -779,6 +891,106 @@ struct SettingsView: View {
                         .foregroundStyle(.tint)
                 }
             }
+        }
+    }
+
+    private var connections: some View {
+        Group {
+            Section {
+                Text(model.language.text(
+                    "Choose which services this Mac exposes on the local network. Changes apply immediately when the helper is running.",
+                    "选择这台 Mac 要在局域网开放的服务。服务运行中修改会立即生效。"
+                ))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+            Section(model.language.text("Services", "服务")) {
+                ConnectionToggleRow(
+                    path: "net.web_enabled",
+                    title: "Web access",
+                    titleCN: "Web 访问",
+                    description: "Serve the browser touchpad and WebSocket input.",
+                    descriptionCN: "提供浏览器触控板页面和 WebSocket 输入。",
+                    model: model,
+                    onChange: { _ in supervisor.applyConnectionConfiguration() }
+                )
+                ConnectionToggleRow(
+                    path: "net.phone_enabled",
+                    title: "Phone access",
+                    titleCN: "手机连接",
+                    description: "Accept the native phone app over authenticated UDP.",
+                    descriptionCN: "允许手机应用通过受保护的 UDP 连接。",
+                    model: model,
+                    onChange: { _ in supervisor.applyConnectionConfiguration() }
+                )
+            }
+            Section(model.language.text("Web", "Web")) {
+                connectionStatus(
+                    title: model.language.text("Browser touchpad", "浏览器触控板"),
+                    enabled: supervisor.webEnabled,
+                    active: supervisor.webEnabled && supervisor.boundPort != nil,
+                    symbol: "safari",
+                    detail: supervisor.webEnabled && !supervisor.endpoint.isEmpty
+                        ? supervisor.endpoint
+                        : model.language.text("Not available", "未开放")
+                )
+                if supervisor.webEnabled && !supervisor.endpoint.isEmpty {
+                    Button(model.language.text("Copy Web URL", "复制 Web 地址"), systemImage: "doc.on.doc") {
+                        supervisor.copyWebURL()
+                    }
+                }
+            }
+            Section(model.language.text("Phone", "手机")) {
+                connectionStatus(
+                    title: model.language.text("Native phone connection", "手机触控板"),
+                    enabled: supervisor.phoneEnabled,
+                    active: supervisor.phoneEnabled && supervisor.boundPort != nil,
+                    symbol: "iphone",
+                    detail: supervisor.phoneEnabled
+                        ? (supervisor.tokenConfigured
+                            ? model.language.text("Protected and discoverable", "已保护，可被发现"): model.language.text("Available without a token", "可用，但未配置 Token"))
+                        : model.language.text("Not available", "未开放")
+                )
+                if supervisor.phoneEnabled && !supervisor.pairingURI.isEmpty {
+                    Button(model.language.text("Copy pairing link", "复制配对链接"), systemImage: "qrcode") {
+                        supervisor.copyPairingURI()
+                    }
+                }
+            }
+            Section(model.language.text("Security", "安全")) {
+                Label(
+                    model.language.text(
+                        supervisor.tokenConfigured ? "A pairing token protects both enabled services." : "No token is configured; anyone on the bound network can connect.",
+                        supervisor.tokenConfigured ? "配对 Token 会保护所有已开放的服务。" : "未配置 Token；绑定网络上的设备都可以连接。"
+                    ),
+                    systemImage: supervisor.tokenConfigured ? "lock.shield" : "exclamationmark.shield"
+                )
+                .foregroundStyle(supervisor.tokenConfigured ? .green : .orange)
+                if !supervisor.tokenConfigured && (supervisor.webEnabled || supervisor.phoneEnabled) {
+                    Button(model.language.text("Create a pairing token", "创建配对 Token"), systemImage: "key.fill") {
+                        supervisor.refreshConnectionSettings()
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func connectionStatus(title: String, enabled: Bool, active: Bool, symbol: String, detail: String) -> some View {
+        LabeledContent {
+            VStack(alignment: .trailing, spacing: 3) {
+                Label(
+                    active ? model.language.text("Listening", "监听中") : enabled ? model.language.text("Enabled", "已启用") : model.language.text("Off", "已关闭"),
+                    systemImage: active ? "checkmark.circle.fill" : enabled ? "circle" : "minus.circle"
+                )
+                .foregroundStyle(active ? .green : enabled ? .secondary : .tertiary)
+                Text(detail)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        } label: {
+            Label(title, systemImage: symbol)
         }
     }
 
@@ -852,6 +1064,7 @@ struct SettingsView: View {
     private func icon(for section: SettingsSection) -> String {
         switch section {
         case .overview: return "rectangle.3.group"
+        case .connections: return "point.3.connected.trianglepath.dotted"
         case .pointAndClick: return "cursorarrow"
         case .scrollAndZoom: return "arrow.up.and.down"
         case .moreGestures: return "hand.tap"

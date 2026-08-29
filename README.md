@@ -97,10 +97,22 @@ The app bundle contains `companion-net` and `companion-config` under
 
 ## Connect a phone or browser
 
-`companion-net` serves the browser client and accepts the same ATP1 frames over
-UDP and WebSocket. The Android app discovers `_mtc-trackpad._tcp` through
-Bonjour when the network allows multicast DNS. You can also paste a manual
-address or an `mtc://pair?...` link from the macOS app.
+The macOS app's **Connections** page has two independent switches:
+
+- **Web access** exposes the browser page and WebSocket on TCP.
+- **Phone access** exposes the Android/native client on UDP and publishes the
+  Bonjour pairing service.
+
+Both are enabled by default for backwards compatibility. Turning one off
+stops its socket entirely and leaves the other connection path untouched. If
+both are off, the helper exits without opening a port. The Android app reads
+the capability flags from Bonjour/`mtc://pair` and can connect to a UDP-only
+Mac without requiring a TCP health probe.
+
+`companion-net` accepts ATP1 frames over the enabled transports. The Android
+app discovers `_mtc-trackpad._tcp` through Bonjour when the network allows
+multicast DNS. You can also paste a manual address or an `mtc://pair?...` link
+from the macOS app.
 
 ```sh
 ./target/release/companion-net --port 4242 -v
@@ -164,6 +176,10 @@ Use the GUI or TUI for interactive editing. For scripts, use the JSON helper:
 ./target/release/companion-config set \
   --path cursor.sensitivity --value 28
 ./target/release/companion-config doctor
+
+# Disable one transport without opening the GUI
+./target/release/companion-config set --path net.web_enabled --value false
+./target/release/companion-config set --path net.phone_enabled --value true
 ```
 
 A compact configuration example:
@@ -171,6 +187,8 @@ A compact configuration example:
 ```toml
 [net]
 port = 4242
+web_enabled = true
+phone_enabled = true
 # listen_ip = "192.168.1.20"
 # token = "replace-with-a-random-token"
 

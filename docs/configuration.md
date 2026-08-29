@@ -19,6 +19,8 @@ that the editor did not change.
 [net]
 # listen_ip = "0.0.0.0"
 port = 4242
+web_enabled = true       # browser touchpad page + WebSocket
+phone_enabled = true     # native phone UDP input
 # token = "replace-with-a-random-token"
 
 [log]
@@ -140,6 +142,12 @@ companion-config set --path gestures.pinch.gain --value 1.1
 companion-config doctor
 companion-config ensure-token
 ```
+
+`web_enabled` and `phone_enabled` control real socket bindings. When both are
+false, `companion-net` exits without opening a network port. When only one is
+enabled, only that transport is bound; the shared port number remains usable
+for Bonjour and pairing. The macOS settings app applies these two switches by
+restarting the helper when it is already running.
 
 Restart the daemon after changing configuration. System preference sync is
 startup-only as well.
