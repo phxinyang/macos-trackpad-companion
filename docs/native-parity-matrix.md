@@ -62,7 +62,7 @@ Mac mini 没有受支持的“强行显示” Trackpad pane 接口：深链只�
 | 查词与数据检测器 | `TrackpadThreeFingerTapGesture = 2` | `gestures.dictionary_lookup` | 默认开启，三指轻点调用词典 |
 | 三指拖移 | `TrackpadThreeFingerDrag = 1` | `[gestures.three_finger_drag] enable` | 默认 `on`，三指按住左键拖拽 |
 | 拖移锁定与换把悬停 (Drag Lock) | `Dragging` / `DragLock` | `[gestures.one_finger_tap_drag]` 与三指 `release_delay_ms` 分开配置 | `DragLock` 仅记录诊断，不覆盖三指 500ms 换把；三指悬停请直接设置 `release_delay_ms` |
-| 四指轻扫切换全屏 App / 桌面 | `TrackpadFourFingerHorizSwipeGesture = 2` | `[gestures.swipe.horizontal] backend = "synthetic"` | 默认 `synthetic`；私有 DockSwipe，待 macOS 版本实测 |
+| 四指轻扫切换全屏 App / 桌面 | `TrackpadFourFingerHorizSwipeGesture = 2` | `[gestures.swipe.horizontal] backend = "synthetic"` | 默认 `synthetic`；独立四指在 macOS 26 走 legacy DockSwipe，携带左键拖拽时走 SymbolicHotKey；私有路径仍待版本实测 |
 | 四指调度中心 (Mission Control) | `TrackpadFourFingerVertSwipeGesture = 2` | `[gestures.swipe.vertical] backend = "synthetic"` | 默认按配置；私有 DockSwipe，待 macOS 版本实测 |
 | 四指捏合启动台 (Launchpad) | `TrackpadFourFingerPinchGesture = 2` | 触控区识别 + Dock 命令 | 仅记录设置；离散命令，待真机 |
 | 四指张开显示桌面 (Show Desktop) | `TrackpadFourFingerPinchGesture = 2` | 触控区识别 + Dock 命令 | 仅记录设置；离散命令，待真机 |

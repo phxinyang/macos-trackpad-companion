@@ -26,6 +26,10 @@ use objc2_app_kit::{
 };
 use std::cell::Cell;
 use std::ffi::c_void;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::Duration;
 
 use crate::time::Timestamp;
@@ -273,7 +277,6 @@ const kCGEventGesturePhase: u32 = 132;
 const kCGEventGesturePhaseDuplicate: u32 = 134;
 const kCGEventScrollGestureFlagBits: u32 = 135;
 const kCGEventGestureInvertedFromDevice: u32 = 136;
-const kCGEventGestureConst138: u32 = 138;
 const kCGEventGestureZoomDeltaX: u32 = 139;
 const kCGEventGestureSwipeMotionDuplicate: u32 = 165;
 const kCGEventGestureMarker: u32 = 41;
@@ -373,6 +376,12 @@ const SWIPE_VERTICAL_COMMIT_PROGRESS: f64 = 0.2;
 /// past the natural feel without changing slow ones at all. Tunable.
 const SWIPE_END_VELOCITY_MAX: f64 = 8.0;
 
+/// Dock can drop an Ended event while WindowServer is busy. Reposting the
+/// terminal frame after the short and long delays used by Mac Mouse Fix
+/// makes the stream self-healing without changing the live animation.
+const DOCK_SWIPE_RESEND_DELAYS: [Duration; 2] =
+    [Duration::from_millis(200), Duration::from_millis(500)];
+
 /// Magic CGEventFlags value calftrail's gesture synthesizer sets on the
 /// envelope event before serialization (`CGEventSetFlags(e, 256)`).
 /// `0x100` is `NX_NONCOALSESCEDMASK` in IOHIDSystem private headers —
@@ -426,6 +435,7 @@ unsafe extern "C" {
     fn CGEventCreateFromData(allocator: *const c_void, data: *const c_void) -> CGEventRef;
     fn CGEventPost(tap: u32, event: CGEventRef);
     fn CGEventSourceCreate(state: i32) -> CGEventSourceRef;
+    fn CFRetain(cf: *const c_void) -> *const c_void;
     fn CFRelease(cf: *const c_void);
     fn CFDataCreateMutableCopy(
         allocator: *const c_void,
@@ -479,6 +489,24 @@ impl Event {
     fn set_dbl(&self, field: u32, value: f64) {
         unsafe { CGEventSetDoubleValueField(self.0, field, value) };
     }
+
+    /// Write one value using the legacy DockSwipe field's expected CGEvent
+    /// storage slot. The Dock's field reader is typed; writing a value into
+    /// the other slot leaves the event looking populated in diagnostics while
+    /// the Dock sees zero.
+    fn set_legacy_dock_field(&self, field: u32, value: f64) {
+        match legacy_dock_field_storage(field) {
+            LegacyDockFieldStorage::Double => self.set_dbl(field, value),
+            LegacyDockFieldStorage::Integer => {
+                let integer = if field == kCGEventScrollGestureFlagBits {
+                    legacy_progress_bits(value)
+                } else {
+                    value as i64
+                };
+                self.set_int(field, integer);
+            }
+        }
+    }
     fn apply_modifiers(&self, mods: u64) {
         // Keep non-keyboard event bits (for example the gesture
         // non-coalescing flag), but replace the four keyboard modifiers with
@@ -517,6 +545,23 @@ impl Event {
 impl Drop for Event {
     fn drop(&mut self) {
         unsafe { CFRelease(self.0 as *const c_void) };
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LegacyDockFieldStorage {
+    Integer,
+    Double,
+}
+
+fn legacy_dock_field_storage(field: u32) -> LegacyDockFieldStorage {
+    match field {
+        // Field 135 is the Float32 progress bit pattern carried in the
+        // integer slot. Field 136 is the integer inversion flag.
+        kCGEventScrollGestureFlagBits | kCGEventGestureInvertedFromDevice => {
+            LegacyDockFieldStorage::Integer
+        }
+        _ => LegacyDockFieldStorage::Double,
     }
 }
 
@@ -1236,6 +1281,9 @@ pub struct Emitter {
     /// gesture, sparing the Dock a stuck rubber-band. None when no
     /// swipe is active.
     swipe_axis: Cell<Option<SwipeAxis>>,
+    /// Monotonically increasing handoff generation. Delayed DockSwipe Ended
+    /// frames from an earlier gesture are discarded once a new Began arrives.
+    swipe_generation: Arc<AtomicU64>,
     /// Host-aligned scan timestamp for the frame currently being
     /// processed by the gesture engine. Set via `set_event_time` at
     /// the top of `on_frame_at`; consulted by every per-frame emit
@@ -1328,6 +1376,7 @@ impl Emitter {
                 began_posted: Cell::new(false),
             }),
             swipe_axis: Cell::new(None),
+            swipe_generation: Arc::new(AtomicU64::new(0)),
             event_time: Cell::new(None),
             left_button_held: Cell::new(None),
             symbolic_swipe_active: Cell::new(false),
@@ -1782,18 +1831,35 @@ impl Emitter {
         velocity_mm_per_sec: f64,
         phase: Phase,
     ) {
+        if matches!(phase, Phase::Began) {
+            self.swipe_generation.fetch_add(1, Ordering::Relaxed);
+        }
+        // macOS 26 can silently reject a third-party DockSwipe when it is
+        // carrying a synthesized mouse drag. Mac Mouse Fix's tested
+        // compatibility path uses WindowServer SymbolicHotKeys for this
+        // exact modified-drag case. Keep standalone 4F swipes on the native
+        // continuous path, but make the 3F-drag handoff reliable and avoid a
+        // second Space switch if DockSwipe happens to be accepted.
+        if !macos_27_or_later()
+            && self.left_button_held.get().is_some()
+            && !self.symbolic_swipe_active.get()
+        {
+            self.swipe_axis.set(None);
+            self.swipe_symbolic_fallback(axis, signed_progress, velocity_mm_per_sec, phase);
+            return;
+        }
         // macOS 27+ rejects third-party DockSwipe payloads, so route that
         // release through the system's symbolic hot-key registry. macOS 26
-        // keeps the original continuous path. On 27+, use SkyLight's
-        // SLEventSetIOHIDEvent when available and fall back to a hot-key if
-        // the private setter is unavailable. The left-button state is
-        // untouched in either case, so a three-finger window drag remains
-        // attached while Spaces changes.
+        // keeps the original continuous path for standalone swipes. On 27+,
+        // use SkyLight's SLEventSetIOHIDEvent when available and fall back to
+        // a hot-key if the private setter is unavailable. The left-button
+        // state is untouched in either case, so a three-finger window drag
+        // remains attached while Spaces changes.
         // Keep trying the continuous DockSwipe/HIDEvent path until it
         // actually fails. On macOS 27+ the first frame must reach
         // `post_dock_swipe_pair`; only its false return arms the symbolic
-        // fallback for the rest of this gesture. macOS 26 and earlier never
-        // enter this branch unless a previous fallback is still active.
+        // fallback for the rest of this gesture. Standalone macOS 26 swipes
+        // never enter this branch; carried drags are routed above.
         if self.symbolic_swipe_active.get() {
             // SymbolicHotKey gestures have no DockSwipe stream to cancel on
             // Drop. Clear any legacy axis left behind by a failed macOS 27
@@ -1858,6 +1924,16 @@ impl Emitter {
             velocity,
             self.event_timestamp(),
         );
+        if posted && !macos_27_or_later() && matches!(phase, Phase::Ended) {
+            schedule_dock_swipe_resends(
+                self.event_source,
+                motion,
+                origin_offset,
+                velocity,
+                Arc::clone(&self.swipe_generation),
+                self.swipe_generation.load(Ordering::Relaxed),
+            );
+        }
         if !posted && macos_27_or_later() {
             // Keep a usable cross-Space drag when a future 27.x build moves
             // or removes the private HID setter. The Began call initializes
@@ -2579,27 +2655,27 @@ fn post_dock_swipe_pair(
     // Both generations use the DockControl envelope type. The remaining
     // fields are generation-specific: macOS 27+ consumes the attached
     // HIDEvent and should not receive the pre-27 opaque field layout.
-    event.set_int(kCGSEventTypeField, kCGSEventDockControl);
+    // The legacy Dock reader consumes these header/axis/phase fields from
+    // their floating-point slots. Only fields 135 and 136 are integer-slot
+    // values; matching the public Mac Mouse Fix/dockswipe recipe here is
+    // required on macOS 26 and earlier.
+    event.set_legacy_dock_field(kCGSEventTypeField, kCGSEventDockControl as f64);
     if !modern {
-        event.set_int(kCGEventGestureHIDType, kIOHIDEventTypeDockSwipe);
-        event.set_int(kCGEventGesturePhase, phase);
-        event.set_int(kCGEventGesturePhaseDuplicate, phase);
-        event.set_int(
-            kCGEventScrollGestureFlagBits,
-            legacy_progress_bits(progress),
-        );
-        event.set_int(kCGEventGestureSwipeMotion, motion);
-        event.set_int(kCGEventGestureSwipeMotionDuplicate, motion);
-        event.set_int(kCGEventGestureInvertedFromDevice, 0);
-        event.set_int(kCGEventGestureConst138, 3);
+        event.set_legacy_dock_field(kCGEventGestureHIDType, kIOHIDEventTypeDockSwipe as f64);
+        event.set_legacy_dock_field(kCGEventGesturePhase, phase as f64);
+        event.set_legacy_dock_field(kCGEventGesturePhaseDuplicate, phase as f64);
+        event.set_legacy_dock_field(kCGEventScrollGestureFlagBits, progress);
+        event.set_legacy_dock_field(kCGEventGestureSwipeMotion, motion as f64);
+        event.set_legacy_dock_field(kCGEventGestureSwipeMotionDuplicate, motion as f64);
+        event.set_legacy_dock_field(kCGEventGestureInvertedFromDevice, 0.0);
         let axis_marker = legacy_axis_marker(motion);
-        event.set_dbl(kCGEventGestureScrollY, axis_marker);
-        event.set_dbl(kCGEventGestureZoomDeltaX, axis_marker);
-        event.set_dbl(kCGEventGestureMarker, 33231.0);
-        event.set_dbl(kCGEventGestureSwipeProgress, progress);
+        event.set_legacy_dock_field(kCGEventGestureScrollY, axis_marker);
+        event.set_legacy_dock_field(kCGEventGestureZoomDeltaX, axis_marker);
+        event.set_legacy_dock_field(kCGEventGestureMarker, 33231.0);
+        event.set_legacy_dock_field(kCGEventGestureSwipeProgress, progress);
         if let Some((vx, vy)) = velocity {
-            event.set_dbl(kCGEventGestureSwipeVelocityX, vx);
-            event.set_dbl(kCGEventGestureSwipeVelocityY, vy);
+            event.set_legacy_dock_field(kCGEventGestureSwipeVelocityX, vx);
+            event.set_legacy_dock_field(kCGEventGestureSwipeVelocityY, vy);
         }
     }
     unsafe { CGEventSetTimestamp(event.0, ts.as_nanos()) };
@@ -2621,12 +2697,64 @@ fn post_dock_swipe_pair(
         let Some(companion) = Event::with_source(source) else {
             return true;
         };
-        companion.set_int(kCGSEventTypeField, kCGEventGesture as i64);
+        companion.set_dbl(kCGSEventTypeField, kCGEventGesture as f64);
         companion.set_dbl(kCGEventGestureMarker, 33231.0);
         unsafe { CGEventSetTimestamp(companion.0, ts.as_nanos()) };
         companion.post_to(kCGSessionEventTap);
     }
     true
+}
+
+/// Repost the terminal legacy DockSwipe frame at the delays used by the
+/// established Mac Mouse Fix implementation. Each worker retains the event
+/// source until it exits; a later swipe generation invalidates stale workers
+/// before they can send an Ended frame into a new gesture.
+fn schedule_dock_swipe_resends(
+    source: CGEventSourceRef,
+    motion: i64,
+    progress: f64,
+    velocity: Option<(f64, f64)>,
+    generation: Arc<AtomicU64>,
+    expected_generation: u64,
+) {
+    for delay in DOCK_SWIPE_RESEND_DELAYS {
+        let source_addr = if source.is_null() {
+            0
+        } else {
+            unsafe { CFRetain(source as *const c_void) as usize }
+        };
+        let generation = Arc::clone(&generation);
+        let spawn = std::thread::Builder::new()
+            .name("dock-swipe-resend".into())
+            .spawn(move || {
+                std::thread::sleep(delay);
+                if generation.load(Ordering::Relaxed) == expected_generation {
+                    let posted = post_dock_swipe_pair(
+                        source_addr as CGEventSourceRef,
+                        motion,
+                        kCGSGesturePhaseEnded,
+                        progress,
+                        velocity,
+                        Timestamp::now(),
+                    );
+                    log::debug!(
+                        "DockSwipe Ended resend after {}ms posted={posted} progress={progress:+.3}",
+                        delay.as_millis()
+                    );
+                } else {
+                    log::trace!(
+                        "DockSwipe Ended resend after {}ms skipped (stale generation)",
+                        delay.as_millis()
+                    );
+                }
+                if source_addr != 0 {
+                    unsafe { CFRelease(source_addr as *const c_void) };
+                }
+            });
+        if spawn.is_err() && source_addr != 0 {
+            unsafe { CFRelease(source_addr as *const c_void) };
+        }
+    }
 }
 
 /// Post a single phased scroll event. Exactly one of `scroll_phase` and
@@ -2848,6 +2976,10 @@ extern "C" fn momentum_tick(_timer: CFRunLoopTimerRef, info: *mut c_void) {
 
 impl Drop for Emitter {
     fn drop(&mut self) {
+        // Invalidate detached Ended-resend workers before releasing the
+        // emitter's event source. Their retained source is released by the
+        // worker after it observes this generation change.
+        self.swipe_generation.fetch_add(1, Ordering::Relaxed);
         // Invalidate the timer before the Momentum box is dropped so
         // an in-flight callback can't dereference a freed pointer.
         // `cancel` may post a final MomentumPhase::Ended via the event
@@ -3004,6 +3136,46 @@ impl Output for Emitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_dock_swipe_uses_capture_field_storage_slots() {
+        for field in [
+            kCGSEventTypeField,
+            kCGEventGestureHIDType,
+            kCGEventGesturePhase,
+            kCGEventGesturePhaseDuplicate,
+            kCGEventGestureSwipeMotion,
+            kCGEventGestureSwipeMotionDuplicate,
+            kCGEventGestureScrollY,
+            kCGEventGestureZoomDeltaX,
+            kCGEventGestureMarker,
+            kCGEventGestureSwipeProgress,
+            kCGEventGestureSwipeVelocityX,
+            kCGEventGestureSwipeVelocityY,
+        ] {
+            assert_eq!(
+                legacy_dock_field_storage(field),
+                LegacyDockFieldStorage::Double,
+                "legacy DockSwipe field {field} must use its double slot"
+            );
+        }
+        for field in [
+            kCGEventScrollGestureFlagBits,
+            kCGEventGestureInvertedFromDevice,
+        ] {
+            assert_eq!(
+                legacy_dock_field_storage(field),
+                LegacyDockFieldStorage::Integer,
+                "legacy DockSwipe field {field} must use its integer slot"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_progress_keeps_float_bits_in_integer_slot() {
+        assert_eq!(legacy_progress_bits(0.178), (0.178_f32).to_bits() as i64);
+        assert_eq!(legacy_progress_bits(-0.413), (-0.413_f32).to_bits() as i64);
+    }
 
     #[test]
     fn policy_on_admits_without_calling_lookup() {

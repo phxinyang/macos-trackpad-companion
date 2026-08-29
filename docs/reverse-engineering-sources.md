@@ -107,7 +107,13 @@ numbers as a useful comparison profile, not as defaults.
 - **dockswipe**
   (<https://github.com/oomol-lab/dockswipe>) independently documents the
   type-29/type-30 private event split and version fragility. It is useful for
-  the Dock path, but it contains no transform sensitivity parameter.
+  the Dock path, but it contains no transform sensitivity parameter. Its
+  macOS 26 recipe also makes the typed-field boundary explicit: type/phase/
+  axis/progress/velocity fields use `CGEventSetDoubleValueField`, while field
+  135 carries the Float32 progress bit pattern through the integer slot and
+  field 136 is the integer inversion flag. It resends the terminal `Ended`
+  event after 200 ms (and optionally 500 ms) because WindowServer can drop a
+  terminal frame under load.
 
 ### Community reports: sensitivity is perceived behavior, not a readable key
 
@@ -431,7 +437,9 @@ physical gesture at the target macOS version and verifies the consuming app.
     end delta.
 - Use in companion: Smart Zoom subtype, DockSwipe version split, progress and
   velocity handling. Ownership and opaque field offsets remain versioned and
-  must be revalidated on each macOS major release.
+  must be revalidated on each macOS major release. For a macOS 26 carried
+  mouse drag, the companion uses the SymbolicHotKey path described by PR
+  #1875; standalone swipes can still use the legacy continuous stream.
 - License: repository reports `Other`/MMF License metadata. Do not copy source
   without reviewing that license.
 

@@ -218,7 +218,7 @@
 - [x] K1. 保留既有 `ThreeFingerDrag -> FourFingerLive` 状态转换；加入第四指时不释放 `drag_button_held`，最终 `Idle`/断链/Drop 统一释放。
 - [x] K1a. 修复真实网络帧的 `3F -> 0F -> 1F/2F -> 4F` re-grip：release-delay 窗口内的 1F/2F 只做重锚定，不提前发送 `leftMouseUp`；原始 deadline 到期由 heartbeat 安全释放并清空旧触点状态。
 - [x] K2. macOS 26 及更早版本继续使用已存在的动画 DockSwipe payload。
-- [x] K3. macOS 26 保留连续 DockSwipe；macOS 27+ 的 `synthetic` swipe 优先通过 SkyLight `SLEventSetIOHIDEvent`，运行时不可用时降级到同一 CGS SymbolicHotKey 状态机。Symbolic 路径横向 Space 阈值 10mm、纵向 Mission Control/App Exposé 阈值 7mm，单次触发后冷却 350ms，不在冷却期累积位移。
+- [x] K3. macOS 26 的独立四指 swipe 保留连续 DockSwipe；带着三指拖拽切 Space 时自动走 CGS SymbolicHotKey（规避 WindowServer 对第三方 DockSwipe sender 的静默丢弃），macOS 27+ 的独立 `synthetic` swipe 优先通过 SkyLight `SLEventSetIOHIDEvent`，运行时不可用时降级到同一 SymbolicHotKey 状态机。Symbolic 路径横向 Space 阈值 10mm、纵向 Mission Control/App Exposé 阈值 7mm，单次触发后冷却 350ms，不在冷却期累积位移。
 - [x] K4. 增加快速抬指路径（速度阈值 180mm/s，且最后运动距抬指不超过 80ms），避免停住后释放仍误切 Space。
 - [x] K5. 取消/断链/进程退出不会发送错误的 DockSwipe 取消包，也不会留下按键粘连。
 - [ ] K6. macOS 真机矩阵：MacBook/Magic Trackpad + Finder、Preview、Safari、Numbers；分别验证 3F→4F 加指、左右多 Space、切换中反向、目标 Space 抬指、Mission Control/App Exposé，以及 macOS 25/26/27 的事件日志和窗口结果。
@@ -402,6 +402,7 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - [x] J1-J5. 完成 Shift/Command/Control/Option 的 Quartz flags 传递、Zoom modifier session latch、Shift 兼容开关和 TUI 配置入口；系统合成热键改走保留 flags 的派发路径。
 - [x] J6. 修正横向滚动总开关优先级：`horizontal = false` 现在同时抑制原生横向分量和 Shift 兼容映射。
 - [x] K1-K5. 实现三指拖拽进入四指切 Space 时的按键保持、macOS 26 DockSwipe 与 macOS 27+ HIDEvent 优先/SymbolicHotKey fallback、阈值/冷却/flick 防误触，以及取消/断链安全收尾。
+- [x] K1b. 修正 macOS 26 legacy DockSwipe 的字段类型契约（header/phase/axis 使用 double 槽，进度编码与 inverted 标记使用 integer 槽），并按 Mac Mouse Fix 的 200/500ms 策略重发 Ended；generation 令牌会在新手势或进程退出时取消旧重发。
 - [ ] K6. 在 macOS 25/26/27 的真实 MacBook/Magic Trackpad 与 Finder/Preview/Safari/Numbers 上完成联合拖拽验收。
 - [ ] F5. 在目标 macOS 版本用真实 MacBook/Magic Trackpad 验证 performer 是否可用、触发时机和系统“触控反馈”开关；未完成前不宣称硬件 click parity。
 - [x] G1. 通过 AnySearch + Ketch 完成 Android/Apple/开源触觉检索，确认本机 primitives 能力与系统强度约束。
@@ -422,7 +423,8 @@ Microsoft 的 [Windows Precision Touchpad Collection](https://learn.microsoft.co
 - Shift 兼容边界回归审查：映射在横向总开关之后生效，`[scroll].horizontal = false` 不会被兼容模式绕过。
 - 联合拖拽回归审查：现有 `three_finger_drag_to_four_finger_swipe` 和 `link_timeout_releases_drag_button_carried_into_four_finger_swipe` 通过；输出层新增 SymbolicHotKey 阈值、350ms 冷却、80ms flick 保护和 Drop 时 fallback 状态隔离，macOS 行为仍待真机。
 - 联合拖拽追加回归：配置的拖拽锁定窗口内，3F 全抬起后快速落 4F 会继续保持左键并启动 Space swipe；显式 `release_delay_ms=0` 会立即结束拖拽；五指/掌托接触不会推进四指 Space 手势。
-- 2026-08-29 修订：根据 Mac Mouse Fix 后续运行时版本修订，macOS 26 保留连续 DockSwipe，macOS 27+ 将 `SLEventSetIOHIDEvent`/`HIDEvent` 作为优先路径，仅在不可用时切换 SymbolicHotKey，避免 26.5.x 用户被错误降级为离散跳桌面。
+- 2026-08-29 K1b 修订：Mac Mouse Fix 与 dockswipe 的 macOS 26 配方显示 DockControl 的 header/phase/axis 字段必须写 double 槽；本项目此前写入 integer 槽，导致日志显示事件已发出但 Dock 不消费。已按来源修正，并加入 200/500ms Ended 重发；重发由手势 generation 取消，避免旧 Ended 取消新一轮橡皮筋动画。K1b 同时将“携带左键拖拽”的 macOS 26 Space handoff 自动路由到 SymbolicHotKey，独立四指 swipe 仍保留连续 DockSwipe。
+- 2026-08-29 修订：根据 Mac Mouse Fix 后续运行时版本修订，macOS 26 的独立 swipe 保留连续 DockSwipe；携带左键拖拽的 handoff 使用 SymbolicHotKey 规避 sender 校验，macOS 27+ 将 `SLEventSetIOHIDEvent`/`HIDEvent` 作为独立 swipe 的优先路径，仅在不可用时切换 SymbolicHotKey。
 - red-green：临时移除 `policy_for_mode(..., virtual_input=true)` 的隔离时，`virtual_input_keeps_tap_to_click_default` 按预期失败（`Off` vs `On`）；恢复后虚拟输入两项回归均通过。
 - `android/./gradlew test`（工作目录 `android/`）：通过，Gradle `BUILD SUCCESSFUL`。
 - `android/./gradlew assembleDebug`：通过；`adb install -r android/app/build/outputs/apk/debug/app-debug.apk` 返回 `Success`，已在设备 `192.168.3.131:34743` 启动 `com.mtc.touchpad/.MainActivity`。
