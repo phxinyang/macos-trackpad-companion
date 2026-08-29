@@ -131,6 +131,16 @@ internal object HeaderLayoutMetrics {
     const val CONTENT_MIN_WIDTH_DP = 223
 }
 
+internal object PadLayoutMetrics {
+    const val SIDE_MARGIN_DP = 18
+    const val COMPACT_TOP_MARGIN_DP = 18
+    const val EXPANDED_TOP_MARGIN_DP = 68
+    const val BOTTOM_MARGIN_DP = 18
+
+    fun topMargin(fullscreen: Boolean, connected: Boolean, headerExpanded: Boolean): Int =
+        if (fullscreen || (connected && !headerExpanded)) COMPACT_TOP_MARGIN_DP else EXPANDED_TOP_MARGIN_DP
+}
+
 internal object InteractionMetrics {
     const val BUTTON_RADIUS_DP = 8
     const val PRESS_SCALE = 0.992f
@@ -1883,12 +1893,16 @@ class MainActivity : Activity() {
         if (!::padHost.isInitialized) return
         val lp = (padHost.layoutParams as? FrameLayout.LayoutParams)
             ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-        if (isFullscreenMode) {
-            lp.setMargins(0, 0, 0, 0)
-        } else {
-            val top = if (isConnected && !headerExpanded) dp(18) else dp(68)
-            lp.setMargins(dp(18), top, dp(18), dp(18))
-        }
+        // Fullscreen hides chrome, but keeps the same centered touch surface.
+        // Keeping the outer inset also masks gesture/navigation reserve areas
+        // that some Android skins paint as a dark strip at the display edge.
+        val top = PadLayoutMetrics.topMargin(isFullscreenMode, isConnected, headerExpanded)
+        lp.setMargins(
+            dp(PadLayoutMetrics.SIDE_MARGIN_DP),
+            dp(top),
+            dp(PadLayoutMetrics.SIDE_MARGIN_DP),
+            dp(PadLayoutMetrics.BOTTOM_MARGIN_DP),
+        )
         padHost.layoutParams = lp
     }
 
@@ -1940,25 +1954,13 @@ class MainActivity : Activity() {
         if (::padHost.isInitialized) {
             val lp = (padHost.layoutParams as? FrameLayout.LayoutParams)
                 ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            if (fullscreen) {
-                lp.setMargins(0, 0, 0, 0)
-                padHost.layoutParams = lp
-                if (padHost is LiquidGlassView) {
-                    (padHost as LiquidGlassView).cornerRadius = 0f
-                    (padHost as LiquidGlassView).enableEdgeHighlight = false
-                }
-                padFrame.setPadding(0, 0, 0, 0)
-                padFrame.background = android.graphics.drawable.ColorDrawable(Color.TRANSPARENT)
-            } else {
-                applyPadChromeInsets()
-                padHost.layoutParams = lp
-                if (padHost is LiquidGlassView) {
-                    (padHost as LiquidGlassView).cornerRadius = dp(30).toFloat()
-                    (padHost as LiquidGlassView).enableEdgeHighlight = true
-                }
-                padFrame.setPadding(dp(8), dp(8), dp(8), dp(8))
-                padFrame.background = normalPadFrameBackground
+            applyPadChromeInsets()
+            if (padHost is LiquidGlassView) {
+                (padHost as LiquidGlassView).cornerRadius = dp(30).toFloat()
+                (padHost as LiquidGlassView).enableEdgeHighlight = true
             }
+            padFrame.setPadding(dp(8), dp(8), dp(8), dp(8))
+            padFrame.background = normalPadFrameBackground
             padHost.alpha = if (fullscreen) .88f else .90f
             padHost.scaleX = if (fullscreen) .965f else .975f
             padHost.scaleY = if (fullscreen) .965f else .975f
