@@ -60,14 +60,16 @@ tell application "Finder"
     set toolbar visible of container window to false
     set statusbar visible of container window to false
     set bounds of container window to {120, 120, 900, 620}
-    set viewOptions to the icon view options of container window
-    set icon size of viewOptions to 128
-    set arrangement of viewOptions to not arranged
-    if exists file ".background:dmg-background.png" then
-      set background picture of viewOptions to file ".background:dmg-background.png"
-    end if
-    set position of item "Trackpad Companion.app" to {210, 250}
-    set position of item "Applications" to {570, 250}
+    set viewOptions to icon view options of container window
+    tell viewOptions
+      set icon size to 128
+      set arrangement to not arranged
+      if exists file ".background:dmg-background.png" then
+        set background picture to file ".background:dmg-background.png"
+      end if
+    end tell
+    set position of item "Trackpad Companion.app" of container window to {210, 250}
+    set position of item "Applications" of container window to {570, 250}
     close
     open
     update without registering applications
