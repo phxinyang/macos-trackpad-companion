@@ -49,6 +49,12 @@
     --pad-shadow: transparent;
     --pad-texture: none;
     --backdrop-photo: none;
+    --backdrop-opacity: 1;
+    --backdrop-saturation: 1;
+    --backdrop-brightness: 1;
+    --backdrop-contrast: 1;
+    --surface-opacity: 100%;
+    --material-opacity: 1;
     --backdrop-image: linear-gradient(132deg, rgba(34,132,255,.74) 0%, rgba(34,132,255,.22) 34%, transparent 56%), linear-gradient(318deg, rgba(255,126,86,.62) 0%, rgba(255,126,86,.16) 32%, transparent 58%), linear-gradient(148deg, rgba(44,213,205,.30), transparent 46% 62%, rgba(255,93,172,.24));
     --glass-shadow: 0 14px 44px rgba(33, 37, 44, .16), 0 2px 8px rgba(33, 37, 44, .10);
     --pad-glass: rgba(255,255,255,.24);
@@ -158,7 +164,7 @@
   html[data-theme="solarized-dark"] { color-scheme: dark; --canvas:#002b36; --surface:#073642; --surface-raised:#0a4050; --chrome:#073642; --chrome-solid:#073642; --separator:#586e75; --label:#fdf6e3; --label-secondary:#93a1a1; --label-tertiary:#657b83; --accent:#2aa198; --glass-edge:#586e75; --pad-glass:#002b36; --pad-shadow:transparent; --pad-texture: repeating-linear-gradient(90deg, rgba(42,161,152,.075) 0 1px, transparent 1px 56px); --backdrop-image: linear-gradient(180deg, #073642 0%, #002b36 100%), var(--pad-texture); }
   html[data-theme="catppuccin-mocha"] { color-scheme: dark; --canvas:#1e1e2e; --surface:#313244; --surface-raised:#45475a; --chrome:#313244; --chrome-solid:#313244; --separator:#585b70; --label:#cdd6f4; --label-secondary:#bac2de; --label-tertiary:#7f849c; --accent:#89b4fa; --glass-edge:#585b70; --pad-glass:#1e1e2e; --pad-shadow:transparent; --pad-texture: radial-gradient(circle at 14% 20%, rgba(137,180,250,.16) 0 1px, transparent 2px), radial-gradient(circle at 74% 64%, rgba(245,194,231,.12) 0 1px, transparent 2px); --backdrop-image: linear-gradient(160deg, #313244 0%, #1e1e2e 70%), var(--pad-texture); }
   html[data-theme="monokai"] { color-scheme: dark; --canvas:#272822; --surface:#3e3d32; --surface-raised:#49483e; --chrome:#3e3d32; --chrome-solid:#3e3d32; --separator:#75715e; --label:#f8f8f2; --label-secondary:#cfcfc2; --label-tertiary:#a6a69b; --accent:#a6e22e; --glass-edge:#75715e; --pad-glass:#272822; --pad-shadow:transparent; --pad-texture: repeating-linear-gradient(90deg, rgba(166,226,46,.055) 0 1px, transparent 1px 64px), repeating-linear-gradient(0deg, rgba(249,38,114,.04) 0 1px, transparent 1px 32px); --backdrop-image: linear-gradient(180deg, #3e3d32 0%, #272822 100%), var(--pad-texture); }
-  html[data-material="solid"] #pad-container { background-image: var(--backdrop-photo), var(--backdrop-image); background-size: cover, auto; background-position: center, center; background-repeat: no-repeat, repeat; }
+  html[data-material="solid"] #pad-container { background-image: none; }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
@@ -171,16 +177,24 @@
   #pad-container {
     position: fixed; inset: 0;
     background-color: var(--canvas);
-    background-image: var(--backdrop-photo), var(--backdrop-image);
-    background-size: cover, auto;
-    background-position: center, center;
-    background-repeat: no-repeat, repeat;
     cursor: none;
     contain: layout paint;
     isolation: isolate;
   }
+  #pad-container::before {
+    content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background-image: var(--backdrop-image);
+    background-size: auto; background-position: center; background-repeat: repeat;
+    filter: saturate(var(--backdrop-saturation)) brightness(var(--backdrop-brightness)) contrast(var(--backdrop-contrast));
+    opacity: var(--backdrop-opacity);
+    transition: opacity 180ms var(--ease), filter 180ms var(--ease);
+  }
+  html[data-background]:not([data-background="none"]) #pad-container::before {
+    background-image: var(--backdrop-photo);
+    background-size: cover; background-position: center; background-repeat: no-repeat;
+  }
   #pad-canvas {
-    position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none;
+    position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; pointer-events: none;
   }
   #pad-frame {
     position: absolute; left: 18px; right: 18px; top: 72px; bottom: 24px;
@@ -188,7 +202,7 @@
     background: linear-gradient(120deg, rgba(255,255,255,.055), rgba(255,255,255,.012) 36%, rgba(255,255,255,.04) 70%, rgba(255,255,255,.012));
     backdrop-filter: blur(10px) saturate(1.48) brightness(.98); -webkit-backdrop-filter: blur(10px) saturate(1.48) brightness(.98);
     box-shadow: inset 0 0 0 1px rgba(255,255,255,.30), inset 0 -30px 64px rgba(0, 0, 0, 0.08), 0 14px 40px rgba(28,37,46,.10);
-    pointer-events: none; --lens-x: 50%; --lens-y: 50%; transform-origin: 50% 50%;
+    pointer-events: none; z-index: 1; opacity: var(--material-opacity); --lens-x: 50%; --lens-y: 50%; transform-origin: 50% 50%;
     transition-property: transform, opacity, filter, border-radius; transition-duration: 300ms; transition-timing-function: var(--ease);
     contain: paint;
   }
@@ -197,10 +211,19 @@
   #pad-frame::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(112deg, transparent 0 42%, var(--glass-caustic) 49%, transparent 56% 100%), linear-gradient(180deg, rgba(255,255,255,.18), transparent 18% 82%, rgba(255,255,255,.12)); opacity: .58; mix-blend-mode: screen; transition: opacity 160ms var(--ease), filter 180ms var(--ease); }
   #pad-frame[data-active="true"]::after { background: radial-gradient(circle at var(--lens-x) var(--lens-y), rgba(255,255,255,.44), transparent 24%), linear-gradient(112deg, transparent 0 42%, var(--glass-caustic) 49%, transparent 56% 100%), linear-gradient(180deg, rgba(255,255,255,.20), transparent 18% 82%, rgba(255,255,255,.14)); opacity: .94; filter: brightness(1.12) saturate(1.10); }
   #pad-frame[data-active="true"] { box-shadow: inset 0 0 0 1px rgba(255,255,255,.48), inset 0 -30px 64px rgba(0, 0, 0, 0.08), 0 14px 40px rgba(28,37,46,.10), 0 0 0 3px rgba(255,255,255,.10); }
-  html[data-fullscreen="true"] #pad-frame { inset: 0; border-radius: 0; border: 0; box-shadow: none; }
-  html[data-fullscreen="true"] #pad-frame::before, html[data-fullscreen="true"] #pad-frame::after { border-radius: 0; }
-  html[data-fullscreen-phase="enter"] #pad-frame { transform: scale(.965); opacity: .84; filter: brightness(1.04) saturate(1.06); }
-  html[data-fullscreen-phase="exit"] #pad-frame { transform: scale(.975); opacity: .90; filter: brightness(1.02) saturate(1.04); }
+  /* Fullscreen is a chrome mode, not a material mode. Keep the same
+     centered, rounded touch plane so the wallpaper and lens do not jump. */
+  html[data-fullscreen="true"] #pad-frame {
+    border-radius: var(--radius-lg); border: 1px solid rgba(255, 255, 255, .14);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.30), inset 0 -30px 64px rgba(0,0,0,.08), 0 14px 40px rgba(28,37,46,.10);
+  }
+  html[data-fullscreen="true"] #pad-frame::before, html[data-fullscreen="true"] #pad-frame::after { border-radius: inherit; }
+  html[data-fullscreen-phase="enter"] #pad-frame {
+    transform: scale(.985); opacity: var(--material-opacity); filter: brightness(1.01) saturate(1.02);
+  }
+  html[data-fullscreen-phase="exit"] #pad-frame {
+    transform: scale(.995); opacity: var(--material-opacity); filter: brightness(1.005) saturate(1.01);
+  }
   html[data-chrome="compact"]:not([data-fullscreen="true"]) #pad-frame { top: 18px; }
   html[data-theme^="classic-"] #pad-frame, html[data-theme="high-contrast"] #pad-frame { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--separator); background-color: var(--pad-glass); background-image: var(--pad-texture); }
   html[data-theme="tokyo-night"] #pad-frame,
@@ -252,7 +275,8 @@
   .brand-mark { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; color: var(--accent); background: rgba(10, 132, 255, 0.14); position: relative; }
   .brand-mark::before { content: ""; width: 14px; height: 10px; border: 1.5px solid currentColor; border-radius: 3px; position: absolute; top: 8px; left: 7px; }
   .brand-mark::after { content: ""; width: 8px; height: 1.5px; border-radius: 2px; background: currentColor; position: absolute; top: 20px; left: 10px; }
-  .status-stack { display: grid; gap: 1px; min-width: 0; }
+  .status-stack { display: grid; gap: 1px; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; appearance: none; -webkit-appearance: none; }
+  .status-stack:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(10, 132, 255, .32); border-radius: 6px; }
   .eyebrow { color: var(--label-tertiary); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
   #dot { width: 8px; height: 8px; border-radius: 50%; background: var(--label-tertiary); flex: none; transition: background 180ms var(--ease), box-shadow 180ms var(--ease); }
   #dot.on { background: var(--success); box-shadow: 0 0 0 4px rgba(48, 209, 88, .14); }
@@ -283,21 +307,23 @@
   .btn-label { white-space: nowrap; }
   #float-btn {
     position: fixed; right: 16px; top: calc(env(safe-area-inset-top) + 14px);
-    min-height: 42px; border-radius: var(--radius-md); padding: 0 15px; font-size: 12px;
+    width: 42px; min-width: 42px; min-height: 42px; border-radius: var(--radius-md); padding: 0; font-size: 20px; line-height: 1;
     background: var(--chrome); border: 1px solid var(--separator);
     color: var(--label); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-    z-index: 99; opacity: 0.6;
+    z-index: 99; opacity: 0; visibility: hidden; pointer-events: none;
+    transform: translateY(-8px) scale(.92); transform-origin: top right;
     transition-property: opacity, transform, background-color, box-shadow;
-    transition-duration: 160ms;
+    transition-duration: 220ms;
     transition-timing-function: var(--ease);
   }
+  #float-btn[data-visible="true"] { opacity: .86; visibility: visible; pointer-events: auto; transform: translateY(0) scale(1); }
   #float-btn:active { opacity: .92; transform: translateY(.5px) scale(var(--press-scale)); }
   #edge-hint {
     position: absolute; right: 0; top: 28%; bottom: 28%; width: 4px;
     border-radius: 4px 0 0 4px;
     background: rgba(10, 132, 255, .7);
     pointer-events: none;
-    opacity: .55;
+    opacity: .55; z-index: 4;
   }
   #deep-press {
     position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%);
@@ -353,12 +379,12 @@
   #settings-close { width: 100%; margin-top: 16px; justify-content: center; }
   html[data-theme^="classic-"] #settings-sheet, html[data-theme="high-contrast"] #settings-sheet { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--chrome-solid); }
   #action-dock {
-    min-width: 0; min-height: 48px; padding: 8px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px;
-    background: var(--surface); border: 1px solid var(--separator); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.10); --lens-x: 50%; --lens-y: 50%;
+    min-width: 0; min-height: 48px; padding: 8px 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px;
+    background: transparent; border-top: 1px solid var(--separator); border-bottom: 1px solid var(--separator); border-radius: 0; box-shadow: none; --lens-x: 50%; --lens-y: 50%;
     overflow: visible; overscroll-behavior: contain;
   }
   #action-dock .dock-group { flex: 1 1 180px; min-width: 170px; justify-content: flex-start; }
-  #action-dock .dock-divider { display: block; }
+  #action-dock .dock-divider { display: none; }
   #action-dock > .dock-btn { flex: 0 1 auto; }
   html[data-theme^="classic-"] #bar,
   html[data-theme="high-contrast"] #bar, html[data-theme="high-contrast"] #action-dock {
@@ -453,9 +479,13 @@
   }
   @media (prefers-reduced-transparency: reduce) {
     #bar, #action-dock, #float-btn, #theme-menu, #pad-frame { background: var(--chrome-solid); backdrop-filter: none; -webkit-backdrop-filter: none; filter: none !important; }
+    #pad-frame { opacity: 1 !important; }
   }
-  html[data-material="solid"] #pad-container { background-image: var(--backdrop-photo); background-size: cover; background-position: center; background-repeat: no-repeat; }
   html[data-material="solid"] #pad-frame { background-color: var(--pad-glass); background-image: var(--pad-texture); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--separator); }
+  @supports (background: color-mix(in srgb, white 50%, transparent)) {
+    html[data-material="solid"] #pad-frame { background-color: color-mix(in srgb, var(--pad-glass) var(--surface-opacity), transparent); }
+  }
+  html[data-material="solid"][data-background]:not([data-background="none"]) #pad-frame { background-image: none; }
   html[data-material="solid"] #pad-frame::before, html[data-material="solid"] #pad-frame::after { display: none; }
   html[data-material="solid"] #bar, html[data-material="solid"] #action-dock, html[data-material="solid"] #theme-menu, html[data-material="solid"] #command-palette, html[data-material="solid"] #settings-sheet { backdrop-filter: none; -webkit-backdrop-filter: none; }
   html[data-material="solid"] #theme-menu, html[data-material="solid"] #command-palette, html[data-material="solid"] #settings-sheet { background: var(--chrome-solid); }
@@ -503,7 +533,7 @@
 <div id="bar" data-collapsed="false">
   <div class="brand-mark" aria-hidden="true"></div>
   <span id="dot" aria-hidden="true"></span>
-  <div class="status-stack"><span class="eyebrow">Mac touchpad</span><span id="st">连接中…</span></div>
+  <button class="status-stack" id="connection-btn" type="button" aria-label="取消连接" title="点击取消连接"><span class="eyebrow">Mac touchpad</span><span id="st">连接中…</span></button>
   <span class="sp"></span>
   <span id="host-hint"></span>
   <div class="bar-actions">
@@ -512,7 +542,7 @@
   </div>
 </div>
 
-<button id="float-btn" style="display:none;" aria-label="退出全屏">设置</button>
+<button id="float-btn" data-visible="false" aria-label="退出全屏并显示控制栏" title="退出全屏并显示控制栏"><span aria-hidden="true">×</span></button>
 <button id="deep-press" type="button" aria-pressed="false"><span id="deep-press-label">深按</span></button>
 <div id="settings-backdrop" data-open="false"></div>
 <aside id="settings-sheet" role="dialog" aria-modal="true" tabindex="-1" aria-label="触控板控制中心" data-open="false" aria-hidden="true">
@@ -616,6 +646,22 @@
       <button class="btn" id="background-file-btn" type="button">选择</button>
       <input id="background-file" type="file" accept="image/*" hidden />
     </div>
+    <div class="setting-row">
+      <div><label for="background-opacity-range">背景可见度</label><small id="background-opacity-label">100%</small></div>
+      <input id="background-opacity-range" type="range" min="0" max="100" step="1" value="100" />
+    </div>
+    <div class="setting-row">
+      <div><label for="background-saturation-range">背景饱和度</label><small id="background-saturation-label">100%</small></div>
+      <input id="background-saturation-range" type="range" min="60" max="140" step="1" value="100" />
+    </div>
+    <div class="setting-row">
+      <div><label for="background-brightness-range">背景亮度</label><small id="background-brightness-label">100%</small></div>
+      <input id="background-brightness-range" type="range" min="70" max="130" step="1" value="100" />
+    </div>
+    <div class="setting-row">
+      <div><label for="surface-opacity-range">触控面透明度</label><small id="surface-opacity-label">92%</small></div>
+      <input id="surface-opacity-range" type="range" min="55" max="100" step="1" value="92" />
+    </div>
     <button class="btn" id="background-reset" type="button">恢复主题背景</button>
   </section>
   <section class="sheet-section" aria-labelledby="tools-heading">
@@ -664,7 +710,7 @@
   // with the phone's CSS pixel width.
   const VIRTUAL_SURFACE_WIDTH_MM = 65;
   const $ = id => document.getElementById(id);
-  const dot = $("dot"), st = $("st"), bar = $("bar"), dock = $("action-dock"), floatBtn = $("float-btn");
+  const dot = $("dot"), st = $("st"), bar = $("bar"), dock = $("action-dock"), floatBtn = $("float-btn"), connectionBtn = $("connection-btn");
   const hostHint = $("host-hint"), padStatusBtn = $("pad-status-btn"), padFrame = $("pad-frame");
   const canvas = $("pad-canvas"), ctx = canvas.getContext("2d");
   const themeBtn = $("theme-btn"), themeMenu = $("theme-menu");
@@ -678,6 +724,10 @@
   const backgroundSelect = $("background-select"), backgroundFile = $("background-file");
   const backgroundFileBtn = $("background-file-btn"), backgroundFileLabel = $("background-file-label");
   const backgroundReset = $("background-reset");
+  const backgroundOpacityRange = $("background-opacity-range"), backgroundOpacityLabel = $("background-opacity-label");
+  const backgroundSaturationRange = $("background-saturation-range"), backgroundSaturationLabel = $("background-saturation-label");
+  const backgroundBrightnessRange = $("background-brightness-range"), backgroundBrightnessLabel = $("background-brightness-label");
+  const surfaceOpacityRange = $("surface-opacity-range"), surfaceOpacityLabel = $("surface-opacity-label");
   const deepHoldRange = $("deep-hold-range"), deepHoldLabel = $("deep-hold-label");
   const deepWidthRange = $("deep-width-range"), deepWidthLabel = $("deep-width-label");
   const deepPositionRange = $("deep-position-range"), deepPositionLabel = $("deep-position-label");
@@ -746,9 +796,41 @@
   });
   const storedBackground = localStorage.getItem("atp_background") || "none";
   let customBackground = localStorage.getItem("atp_custom_background") || "";
+  const readPercent = (key, fallback, min, max) => {
+    const stored = localStorage.getItem(key);
+    const value = stored === null ? NaN : Number(stored);
+    return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+  };
+  let backgroundOpacity = readPercent("atp_background_opacity", 100, 0, 100);
+  let backgroundSaturation = readPercent("atp_background_saturation", 100, 60, 140);
+  let backgroundBrightness = readPercent("atp_background_brightness", 100, 70, 130);
+  let surfaceOpacity = readPercent("atp_surface_opacity", 92, 55, 100);
+  function syncAppearanceControls() {
+    backgroundOpacityRange.value = String(backgroundOpacity);
+    backgroundSaturationRange.value = String(backgroundSaturation);
+    backgroundBrightnessRange.value = String(backgroundBrightness);
+    surfaceOpacityRange.value = String(surfaceOpacity);
+    backgroundOpacityLabel.textContent = `${backgroundOpacity}%`;
+    backgroundSaturationLabel.textContent = `${backgroundSaturation}%`;
+    backgroundBrightnessLabel.textContent = `${backgroundBrightness}%`;
+    surfaceOpacityLabel.textContent = `${surfaceOpacity}%`;
+    const root = document.documentElement;
+    root.style.setProperty("--backdrop-opacity", String(backgroundOpacity / 100));
+    root.style.setProperty("--backdrop-saturation", String(backgroundSaturation / 100));
+    root.style.setProperty("--backdrop-brightness", String(backgroundBrightness / 100));
+    root.style.setProperty("--surface-opacity", `${surfaceOpacity}%`);
+    root.style.setProperty("--material-opacity", String(surfaceOpacity / 100));
+  }
+  function persistAppearance() {
+    localStorage.setItem("atp_background_opacity", String(backgroundOpacity));
+    localStorage.setItem("atp_background_saturation", String(backgroundSaturation));
+    localStorage.setItem("atp_background_brightness", String(backgroundBrightness));
+    localStorage.setItem("atp_surface_opacity", String(surfaceOpacity));
+  }
   function applyBackground(key, persist = true) {
     const url = key === "custom" ? customBackground : BACKGROUND_URLS[key];
     document.documentElement.style.setProperty("--backdrop-photo", url ? `url(\"${url}\")` : "none");
+    document.documentElement.dataset.background = url ? key : "none";
     if (backgroundSelect) backgroundSelect.value = key === "custom" ? (customBackground ? "custom" : "none") : key;
     if (backgroundFileLabel) backgroundFileLabel.textContent = customBackground ? "已选择本地图片" : "选择一张图片";
     if (persist) {
@@ -760,6 +842,7 @@
   if (theme === "custom-glass" && storedBackground === "none" && !customBackground) {
     applyBackground("anime", false);
   }
+  syncAppearanceControls();
   function syncThemeMenu() {
     themeMenu.querySelectorAll("[data-theme-choice]").forEach(button => {
       button.setAttribute("aria-checked", String(button.dataset.themeChoice === document.documentElement.dataset.theme));
@@ -937,6 +1020,15 @@
     localStorage.removeItem("atp_custom_background");
     applyBackground("none");
   };
+  function updateAppearanceValue(input, assign) {
+    assign(Math.round(Number(input.value)));
+    syncAppearanceControls();
+    persistAppearance();
+  }
+  backgroundOpacityRange.addEventListener("input", () => updateAppearanceValue(backgroundOpacityRange, value => { backgroundOpacity = Math.min(100, Math.max(0, value)); }));
+  backgroundSaturationRange.addEventListener("input", () => updateAppearanceValue(backgroundSaturationRange, value => { backgroundSaturation = Math.min(140, Math.max(60, value)); }));
+  backgroundBrightnessRange.addEventListener("input", () => updateAppearanceValue(backgroundBrightnessRange, value => { backgroundBrightness = Math.min(130, Math.max(70, value)); }));
+  surfaceOpacityRange.addEventListener("input", () => updateAppearanceValue(surfaceOpacityRange, value => { surfaceOpacity = Math.min(100, Math.max(55, value)); }));
 
   const hapticBtn = $("haptic-btn");
   const updateHapticBtn = () => {
@@ -1104,9 +1196,12 @@
   });
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") {
-      if (settingsSheet.dataset.open === "true") setSettingsOpen(false);
+      // Dismiss the visually topmost surface first. The command palette can
+      // be launched from the control center, so checking the sheet first
+      // would leave its backdrop intercepting input after one Escape press.
+      if (commandPalette.dataset.open === "true") setCommandOpen(false);
       else if (!themeMenu.hidden) { themeMenu.hidden = true; themeBtn.setAttribute("aria-expanded", "false"); }
-      else if (commandPalette.dataset.open === "true") setCommandOpen(false);
+      else if (settingsSheet.dataset.open === "true") setSettingsOpen(false);
     }
   });
   let sheetPointer = null;
@@ -1213,6 +1308,10 @@
   // Fullscreen toggle. The phase attribute gives the touch plane a short,
   // interruptible zoom while the browser changes viewport mode.
   let fullscreenPhaseTimer = 0;
+  let cssFullscreenFallback = false;
+  function setFloatVisible(visible) {
+    floatBtn.dataset.visible = String(visible);
+  }
   function setFullscreenPhase(phase) {
     clearTimeout(fullscreenPhaseTimer);
     if (phase) document.documentElement.dataset.fullscreenPhase = phase;
@@ -1224,26 +1323,40 @@
       setFullscreenPhase("enter");
       document.documentElement.dataset.fullscreen = "true";
       bar.classList.add("hidden");
-      floatBtn.style.display = "block";
+      setFloatVisible(true);
       try {
-        const request = document.documentElement.requestFullscreen();
+        const requestFullscreen = document.documentElement.requestFullscreen;
+        if (typeof requestFullscreen !== "function") {
+          // iOS Safari and embedded web views may not expose the Fullscreen
+          // API. Keep the same useful chrome-only mode instead of reverting
+          // the user's action entirely.
+          cssFullscreenFallback = true;
+          return;
+        }
+        const request = requestFullscreen.call(document.documentElement);
         if (request && typeof request.catch === "function") request.catch(() => {
           document.documentElement.dataset.fullscreen = "false";
           bar.classList.remove("hidden");
-          floatBtn.style.display = "none";
+          setFloatVisible(false);
           setFullscreenPhase("");
         });
       } catch (_) {
         document.documentElement.dataset.fullscreen = "false";
         bar.classList.remove("hidden");
-        floatBtn.style.display = "none";
+        setFloatVisible(false);
         setFullscreenPhase("");
       }
     } else {
       setFullscreenPhase("exit");
       bar.classList.remove("hidden");
-      floatBtn.style.display = "none";
+      setFloatVisible(false);
       setChromeCollapsed(dot.classList.contains("on"));
+      if (cssFullscreenFallback) {
+        cssFullscreenFallback = false;
+        document.documentElement.dataset.fullscreen = "false";
+        setFullscreenPhase("");
+        return;
+      }
       try {
         if (document.fullscreenElement) document.exitFullscreen();
         else {
@@ -1263,7 +1376,7 @@
     document.documentElement.dataset.fullscreen = String(active);
     setFullscreenPhase(active ? "enter" : "exit");
     bar.classList.toggle("hidden", active);
-    floatBtn.style.display = active ? "block" : "none";
+    setFloatVisible(active);
     if (!active) setChromeCollapsed(dot.classList.contains("on"));
   });
 
@@ -1457,13 +1570,16 @@
   }
 
   // ---- WebSocket ------------------------------------------------------
-  let ws = null, wsTimer = 0, backoff = 1000;
+  let ws = null, wsTimer = 0, backoff = 1000, connectionGeneration = 0;
   function setStatus(state) {
     dot.className = state === "on" ? "on" : state === "off" ? "off" : "";
     st.textContent = state === "on" ? "已连接" : state === "off" ? "断开" : "连接中…";
     padStatusBtn.textContent = state === "on" ? "已连接" : state === "off" ? "重试连接" : "连接中";
     padStatusBtn.setAttribute("aria-label", state === "off" ? "重试连接" : "连接状态");
     padStatusBtn.dataset.state = state;
+    connectionBtn.setAttribute("aria-label", state === "wait" ? "取消连接" : state === "off" ? "重新连接 Mac" : "连接状态");
+    connectionBtn.title = state === "wait" ? "点击取消连接" : state === "off" ? "点击重新连接" : "连接状态";
+    connectionBtn.dataset.state = state;
     setChromeCollapsed(state === "on");
   }
   function setChromeCollapsed(collapsed) {
@@ -1472,6 +1588,14 @@
     document.documentElement.dataset.chrome = compact ? "compact" : "expanded";
   }
   function connect() {
+    const generation = ++connectionGeneration;
+    clearTimeout(wsTimer); wsTimer = 0;
+    if (ws) {
+      const previous = ws;
+      ws = null;
+      previous.onopen = previous.onclose = previous.onerror = null;
+      try { previous.close(); } catch (_) {}
+    }
     setStatus("wait");
     // When the server has [net].token enabled, pass the bearer token from
     // the page URL through to the WebSocket handshake. Keeping it in the
@@ -1480,19 +1604,53 @@
     const token = new URLSearchParams(location.search).get("token");
     const authQuery = token ? `?token=${encodeURIComponent(token)}` : "";
     const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws" + authQuery;
-    try { ws = new WebSocket(url); } catch (e) { retry(); return; }
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => { setStatus("on"); backoff = 1000; };
-    ws.onclose = () => { setStatus("off"); ws = null; retry(); };
-    ws.onerror = () => { try { ws && ws.close(); } catch (_) {} };
+    let socket;
+    try { socket = new WebSocket(url); } catch (e) { scheduleRetry(generation); return; }
+    ws = socket;
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => {
+      if (generation !== connectionGeneration) { try { socket.close(); } catch (_) {} ; return; }
+      setStatus("on"); backoff = 1000;
+    };
+    socket.onclose = () => {
+      if (generation !== connectionGeneration) return;
+      if (ws === socket) ws = null;
+      setStatus("off"); scheduleRetry(generation);
+    };
+    socket.onerror = () => { try { socket.close(); } catch (_) {} };
   }
-  function retry() { clearTimeout(wsTimer); wsTimer = setTimeout(connect, backoff); backoff = Math.min(5000, backoff * 1.5); }
+  function scheduleRetry(generation) {
+    if (generation !== connectionGeneration) return;
+    clearTimeout(wsTimer);
+    wsTimer = setTimeout(() => {
+      wsTimer = 0;
+      if (generation === connectionGeneration) connect();
+    }, backoff);
+    backoff = Math.min(5000, backoff * 1.5);
+  }
+  function cancelConnection() {
+    connectionGeneration += 1;
+    clearTimeout(wsTimer); wsTimer = 0;
+    if (ws) {
+      const socket = ws;
+      ws = null;
+      socket.onopen = socket.onclose = socket.onerror = null;
+      try { socket.close(); } catch (_) {}
+    }
+    backoff = 1000;
+    setStatus("off");
+  }
   function sendRaw(data) { if (ws && ws.readyState === 1) { try { ws.send(data); } catch (_) {} } }
 
   connect();
   hostHint.textContent = location.host;
   padStatusBtn.onclick = () => {
-    if (padStatusBtn.dataset.state === "off") connect();
+    if (padStatusBtn.dataset.state === "wait") cancelConnection();
+    else if (padStatusBtn.dataset.state === "off") connect();
+  };
+  connectionBtn.onclick = () => {
+    if (connectionBtn.dataset.state === "wait") cancelConnection();
+    else if (connectionBtn.dataset.state === "off") connect();
   };
   setInterval(() => sendRaw("p"), 15000);            // keepalive text ping
 
