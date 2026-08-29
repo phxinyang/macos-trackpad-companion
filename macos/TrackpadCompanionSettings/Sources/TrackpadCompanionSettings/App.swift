@@ -531,13 +531,15 @@ struct SettingsView: View {
             .navigationTitle(model.language.text("Trackpad", "触控板"))
             .safeAreaInset(edge: .bottom) {
                 HStack {
-                    Picker(model.language.text("Language", "语言"), selection: $model.language) {
-                        ForEach(AppLanguage.allCases) { language in Text(language.rawValue).tag(language) }
-                    }
-                    .pickerStyle(.menu)
+                    languageMenu
                     Spacer()
-                    Button(model.language.text("Reload", "重载"), systemImage: "arrow.clockwise") { model.reload() }
-                        .help(model.language.text("Reload configuration", "从磁盘重载配置"))
+                    Button {
+                        model.reload()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel(model.language.text("Reload", "重载"))
+                    .help(model.language.text("Reload configuration", "从磁盘重载配置"))
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -612,6 +614,35 @@ struct SettingsView: View {
         case .moreGestures: moreGestures
         case .companion: companion
         }
+    }
+
+    private var languageMenu: some View {
+        Menu {
+            ForEach(AppLanguage.allCases) { option in
+                Button {
+                    model.language = option
+                } label: {
+                    HStack {
+                        Text(option.rawValue)
+                        Spacer(minLength: 18)
+                        if model.language == option {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "globe")
+                Text(model.language.rawValue)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 76, alignment: .leading)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize(horizontal: true, vertical: false)
+        .help(model.language.text("Choose language", "选择语言"))
+        .accessibilityLabel(model.language.text("Language", "语言"))
     }
 
     private var overview: some View {
