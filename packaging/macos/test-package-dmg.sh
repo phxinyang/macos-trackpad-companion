@@ -51,6 +51,10 @@ contains 'MOUNT_NAME=${MOUNT##*/}' || {
   echo "DMG layout must bind the AppleScript to the mounted volume name" >&2
   exit 1
 }
+if contains 'hdiutil attach "$RW_DMG" -readwrite -nobrowse'; then
+  echo "DMG layout must not attach the image as non-browsable" >&2
+  exit 1
+fi
 if contains 'printf %s\\n ".hidden"' || contains "printf '%s\\n' \".hidden\""; then
   echo "helper .hidden manifest must not be created in the DMG staging tree" >&2
   exit 1
