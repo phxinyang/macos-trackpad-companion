@@ -21,7 +21,7 @@ class DeepPressBarView(context: Context) : View(context) {
     init {
         isClickable = true
         isFocusable = true
-        contentDescription = "深按，按住发送左键"
+        contentDescription = I18n.tr("Deep press, hold to send left-click", "深按，按住发送左键")
     }
 
     var holdDurationMs: Long = 650L
@@ -109,7 +109,7 @@ class DeepPressBarView(context: Context) : View(context) {
             }
         }
         canvas.drawRoundRect(bounds, radius, radius, strokePaint)
-        val label = if (deepPressed) "按下" else "深按"
+        val label = if (deepPressed) I18n.tr("Pressed", "按下") else I18n.tr("Deep Press", "深按")
         val baseline = height / 2f - (textPaint.ascent() + textPaint.descent()) / 2f
         canvas.drawText(label, width / 2f, baseline, textPaint)
     }

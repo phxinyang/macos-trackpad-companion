@@ -43,33 +43,42 @@ private val CURATED_THEME_KEYS = setOf(
     "classic-light", "classic-dark", "high-contrast",
 )
 
-private enum class ThemeMode(val key: String, val title: String, val detail: String) {
-    LIGHT_GLASS("light-glass", "晨曦玻璃", "明亮、通透，默认外观"),
-    DARK_GLASS("dark-glass", "夜幕玻璃", "深色背景与半透明控制层"),
-    OCEAN_GLASS("ocean-glass", "海洋玻璃", "蓝青色场与更强折射"),
-    SUNSET_GLASS("sunset-glass", "日落玻璃", "暖色场与柔和彩边"),
-    AURORA_GLASS("aurora-glass", "极光玻璃", "青绿与紫色动态光场"),
-    GRAPHITE_GLASS("graphite-glass", "石墨玻璃", "低亮度深色液态玻璃"),
-    CUSTOM_GLASS("custom-glass", "自定义液态玻璃", "可替换壁纸与可调折射"),
-    DROPLET_GLASS("droplet-glass", "凝露水滴", "局部凸面折射与边缘高光"),
-    RIPPLE_WATER("ripple-water", "触控水波", "触摸时才出现的局部波纹"),
-    RAIN_GLASS("rain-glass", "雨痕玻璃", "低密度滑落水滴与冷色玻璃"),
-    PRISM_CRYSTAL("prism-crystal", "棱镜晶体", "彩色边缘、晶体折射与闪光"),
-    GEL_SURFACE("gel-surface", "软胶表面", "轻微弹性形变与柔和高光"),
-    LIQUID_METAL("liquid-metal", "液态金属", "镜面金属、流动高光与深色底"),
-    PAPER_TEXTURE("paper-texture", "纸张纹理", "温暖纸面与细颗粒纤维"),
-    HOLOGRAPHIC("holographic", "全息彩膜", "随角度变化的虹彩薄膜"),
-    RETRO_LCD("retro-lcd", "复古 LCD", "扫描线、像素网格与荧光绿"),
-    CERAMIC("ceramic", "陶瓷白", "不透明陶瓷、柔和阴影与清晰边界"),
-    TOKYO_NIGHT("tokyo-night", "Tokyo Night", "蓝紫色编辑器主题"),
-    NORD("nord", "Nord", "冷色北欧编辑器主题"),
-    DRACULA("dracula", "Dracula", "紫色高对比编辑器主题"),
-    SOLARIZED_DARK("solarized-dark", "Solarized Dark", "青色低对比编辑器主题"),
-    CATPPUCCIN_MOCHA("catppuccin-mocha", "Catppuccin Mocha", "柔和深色编辑器主题"),
-    MONOKAI("monokai", "Monokai", "经典代码编辑器主题"),
-    CLASSIC_LIGHT("classic-light", "经典浅色", "纯色表面，关闭玻璃层"),
-    CLASSIC_DARK("classic-dark", "经典深色", "纯色深色，低干扰"),
-    HIGH_CONTRAST("high-contrast", "高对比", "黑白边界，优先可读性");
+private enum class ThemeMode(
+    val key: String,
+    private val titleZh: String,
+    private val detailZh: String,
+    private val titleEn: String = titleZh,
+    private val detailEn: String = detailZh,
+) {
+    LIGHT_GLASS("light-glass", "晨曦玻璃", "明亮、通透，默认外观", "Morning Glass", "Bright, translucent default appearance"),
+    DARK_GLASS("dark-glass", "夜幕玻璃", "深色背景与半透明控制层", "Midnight Glass", "Dark background with translucent controls"),
+    OCEAN_GLASS("ocean-glass", "海洋玻璃", "蓝青色场与更强折射", "Ocean Glass", "Cyan field with stronger refraction"),
+    SUNSET_GLASS("sunset-glass", "日落玻璃", "暖色场与柔和彩边", "Sunset Glass", "Warm field with soft color edges"),
+    AURORA_GLASS("aurora-glass", "极光玻璃", "青绿与紫色动态光场", "Aurora Glass", "Teal and purple dynamic optical field"),
+    GRAPHITE_GLASS("graphite-glass", "石墨玻璃", "低亮度深色液态玻璃", "Graphite Glass", "Low-brightness dark liquid glass"),
+    CUSTOM_GLASS("custom-glass", "自定义液态玻璃", "可替换壁纸与可调折射", "Custom Glass", "Custom wallpaper with tunable refraction"),
+    DROPLET_GLASS("droplet-glass", "凝露水滴", "局部凸面折射与边缘高光", "Droplet Glass", "Convex droplet refraction with edge highlights"),
+    RIPPLE_WATER("ripple-water", "触控水波", "触摸时才出现的局部波纹", "Ripple Water", "Localized ripples reacting to touches"),
+    RAIN_GLASS("rain-glass", "雨痕玻璃", "低密度滑落水滴与冷色玻璃", "Rain Glass", "Sliding raindrops on cool-toned glass"),
+    PRISM_CRYSTAL("prism-crystal", "棱镜晶体", "彩色边缘、晶体折射与闪光", "Prism Crystal", "Chromatic dispersion and crystal sparkle"),
+    GEL_SURFACE("gel-surface", "软胶表面", "轻微弹性形变与柔和高光", "Gel Surface", "Elastic deformation with soft highlights"),
+    LIQUID_METAL("liquid-metal", "液态金属", "镜面金属、流动高光与深色底", "Liquid Metal", "Mirror metal, fluid specular, dark base"),
+    PAPER_TEXTURE("paper-texture", "纸张纹理", "温暖纸面与细颗粒纤维", "Paper Texture", "Warm paper surface with fine fibers"),
+    HOLOGRAPHIC("holographic", "全息彩膜", "随角度变化的虹彩薄膜", "Holographic", "Angle-shifting iridescent film"),
+    RETRO_LCD("retro-lcd", "复古 LCD", "扫描线、像素网格与荧光绿", "Retro LCD", "Scanlines, pixel grid, and phosphor green"),
+    CERAMIC("ceramic", "陶瓷白", "不透明陶瓷、柔和阴影与清晰边界", "Ceramic White", "Opaque ceramic with soft clean shadows"),
+    TOKYO_NIGHT("tokyo-night", "Tokyo Night", "蓝紫色编辑器主题", "Tokyo Night", "Deep blue-purple editor theme"),
+    NORD("nord", "Nord", "冷色北欧编辑器主题", "Nord", "Cool-toned arctic editor theme"),
+    DRACULA("dracula", "Dracula", "紫色高对比编辑器主题", "Dracula", "High-contrast purple editor theme"),
+    SOLARIZED_DARK("solarized-dark", "Solarized Dark", "青色低对比编辑器主题", "Solarized Dark", "Low-contrast cyan editor theme"),
+    CATPPUCCIN_MOCHA("catppuccin-mocha", "Catppuccin Mocha", "柔和深色编辑器主题", "Catppuccin Mocha", "Soothing dark pastel editor theme"),
+    MONOKAI("monokai", "Monokai", "经典代码编辑器主题", "Monokai", "Classic retro code editor theme"),
+    CLASSIC_LIGHT("classic-light", "经典浅色", "纯色表面，关闭玻璃层", "Classic Light", "Solid light surface with no glass layer"),
+    CLASSIC_DARK("classic-dark", "经典深色", "纯色深色，低干扰", "Classic Dark", "Solid dark surface with minimal distractions"),
+    HIGH_CONTRAST("high-contrast", "高对比", "黑白边界，优先可读性", "High Contrast", "Black and white boundaries for maximum readability");
+
+    val title: String get() = if (I18n.isZh) titleZh else titleEn
+    val detail: String get() = if (I18n.isZh) detailZh else detailEn
 
     companion object {
         fun from(key: String?): ThemeMode = values().firstOrNull { it.key == key && it.key in CURATED_THEME_KEYS } ?: LIGHT_GLASS
@@ -774,7 +783,7 @@ class MainActivity : Activity() {
             // Resting surfaces are static. Only the water theme starts a
             // short-lived animation from an actual touch via pulse().
             startMaterialMotion(false)
-            contentDescription = "触控面材质"
+            contentDescription = I18n.tr("Touch surface material", "触控面材质")
         }
         pad.onTouchPulse = { x, y ->
             if (::materialSurface.isInitialized) materialSurface.pulse(x, y)
@@ -851,11 +860,11 @@ class MainActivity : Activity() {
                 setColor(palette.secondary)
             }
             background = d
-            contentDescription = "连接状态"
+            contentDescription = I18n.tr("Connection status", "连接状态")
             layoutParams = LinearLayout.LayoutParams(dp(9), dp(9)).apply { gravity = Gravity.CENTER_VERTICAL }
         }
         status = TextView(this).apply {
-            text = "未连接"
+            text = I18n.tr("Not connected", "未连接")
             setTextColor(palette.secondary)
             textSize = 12f
             includeFontPadding = false
@@ -895,7 +904,7 @@ class MainActivity : Activity() {
                     typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
                 })
                 addView(TextView(this@MainActivity).apply {
-                    text = "Mac 触控板"
+                    text = I18n.tr("Mac Trackpad", "Mac 触控板")
                     setTextColor(palette.label)
                     textSize = 15f
                     includeFontPadding = false
@@ -904,17 +913,17 @@ class MainActivity : Activity() {
                 addView(status)
             }
             addView(headerInfo)
-            connectButton = actionButton("连接 Mac", true) {
+            connectButton = actionButton(I18n.tr("Connect Mac", "连接 Mac"), true) {
                 if (isConnecting) {
                     cancelMacConnection()
                 } else if (isConnected) {
                     disconnectFromMac()
-                    android.widget.Toast.makeText(this@MainActivity, "已断开连接", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(this@MainActivity, I18n.tr("Disconnected", "已断开连接"), android.widget.Toast.LENGTH_SHORT).show()
                 } else {
                     showConnectionDialog()
                 }
             }.apply {
-                contentDescription = "配置并连接 Mac"
+                contentDescription = I18n.tr("Configure and connect to Mac", "配置并连接 Mac")
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40))
             }
             addView(connectButton)
@@ -925,25 +934,25 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(2), dp(14), dp(4))
 
-            val quickDisconnectBtn = actionButton("断开连接") {
+            val quickDisconnectBtn = actionButton(I18n.tr("Disconnect", "断开连接")) {
                 disconnectFromMac()
-                android.widget.Toast.makeText(this@MainActivity, "已断开与 Mac 的连接", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(this@MainActivity, I18n.tr("Disconnected from Mac", "已断开与 Mac 的连接"), android.widget.Toast.LENGTH_SHORT).show()
             }.apply {
                 setTextColor(0xFFFF453A.toInt())
-                contentDescription = "断开当前连接"
+                contentDescription = I18n.tr("Disconnect current session", "断开当前连接")
             }
             addView(quickDisconnectBtn)
 
             lateinit var hapticBtn: Button
             val hapticsOn = prefs.getBoolean(KEY_HAPTIC, true)
             pad.haptics.enabled = hapticsOn
-            hapticBtn = actionButton(if (hapticsOn) "震动开" else "震动关") {
+            hapticBtn = actionButton(if (hapticsOn) I18n.tr("Haptics On", "震动开") else I18n.tr("Haptics Off", "震动关")) {
                 val next = !prefs.getBoolean(KEY_HAPTIC, true)
                 pad.haptics.enabled = next
                 prefs.edit().putBoolean(KEY_HAPTIC, next).apply()
-                hapticBtn.text = if (next) "震动开" else "震动关"
+                hapticBtn.text = if (next) I18n.tr("Haptics On", "震动开") else I18n.tr("Haptics Off", "震动关")
                 if (next) pad.haptics.click()
-            }.apply { contentDescription = "切换触觉反馈" }
+            }.apply { contentDescription = I18n.tr("Toggle haptic feedback", "切换触觉反馈") }
             addView(hapticBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginStart = dp(8) })
 
             lateinit var touchPointsBtn: Button
@@ -951,31 +960,31 @@ class MainActivity : Activity() {
                 KEY_TOUCH_POINTS,
                 prefs.getBoolean(KEY_VISUAL_EFFECTS, true),
             )
-            touchPointsBtn = actionButton(if (touchPointsOn) "触点开" else "触点关") {
+            touchPointsBtn = actionButton(if (touchPointsOn) I18n.tr("Touch Points On", "触点开") else I18n.tr("Touch Points Off", "触点关")) {
                 val next = !prefs.getBoolean(
                     KEY_TOUCH_POINTS,
                     prefs.getBoolean(KEY_VISUAL_EFFECTS, true),
                 )
                 prefs.edit().putBoolean(KEY_TOUCH_POINTS, next).remove(KEY_VISUAL_EFFECTS).apply()
                 pad.visualEffectsEnabled = next
-                touchPointsBtn.text = if (next) "触点开" else "触点关"
-            }.apply { contentDescription = "显示或隐藏触点" }
+                touchPointsBtn.text = if (next) I18n.tr("Touch Points On", "触点开") else I18n.tr("Touch Points Off", "触点关")
+            }.apply { contentDescription = I18n.tr("Show or hide touch points", "显示或隐藏触点") }
             addView(touchPointsBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginStart = dp(8) })
 
-            addView(actionButton("深按条") { showDeepPressSettingsDialog() }.apply {
-                contentDescription = "深按条设置"
+            addView(actionButton(I18n.tr("Deep Press", "深按条")) { showDeepPressSettingsDialog() }.apply {
+                contentDescription = I18n.tr("Deep press bar settings", "深按条设置")
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginStart = dp(8) }
             })
-            addView(actionButton("测试") { showGestureTestDialog() }.apply {
-                contentDescription = "打开手势测试"
+            addView(actionButton(I18n.tr("Test", "测试")) { showGestureTestDialog() }.apply {
+                contentDescription = I18n.tr("Open gesture test panel", "打开手势测试")
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginStart = dp(8) }
             })
-            addView(actionButton("全屏") { toggleFullscreen(true) }.apply {
-                contentDescription = "进入全屏触控模式"
+            addView(actionButton(I18n.tr("Fullscreen", "全屏")) { toggleFullscreen(true) }.apply {
+                contentDescription = I18n.tr("Enter fullscreen touch mode", "进入全屏触控模式")
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginStart = dp(8) }
             })
-            addView(actionButton("外观") { showThemeDialog() }.apply {
-                contentDescription = "切换界面主题"
+            addView(actionButton(I18n.tr("Themes", "外观")) { showThemeDialog() }.apply {
+                contentDescription = I18n.tr("Switch UI theme", "切换界面主题")
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginStart = dp(8) }
             })
         }
@@ -1002,13 +1011,13 @@ class MainActivity : Activity() {
         padFrame.clipToOutline = true
         padFrame.setPadding(dp(8), dp(8), dp(8), dp(8))
         normalPadFrameBackground = padFrame.background
-        controlsRail = actionButton("控制中心") { showControlCenterDialog() }.apply {
-            contentDescription = "打开触控板控制中心"
+        controlsRail = actionButton(I18n.tr("Control Center", "控制中心")) { showControlCenterDialog() }.apply {
+            contentDescription = I18n.tr("Open trackpad control center", "打开触控板控制中心")
             minWidth = dp(82)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)).apply { marginStart = dp(6) }
         }
         headerToggle = actionButton("⛶") { toggleFullscreen(true) }.apply {
-            contentDescription = "进入全屏触控模式"
+            contentDescription = I18n.tr("Enter fullscreen touch mode", "进入全屏触控模式")
             minWidth = dp(44)
             layoutParams = LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(6) }
         }
@@ -1023,7 +1032,7 @@ class MainActivity : Activity() {
                 setMargins(0, dp(12), dp(12), 0)
             }
             layoutParams = lp
-            contentDescription = "退出全屏并打开设置"
+            contentDescription = I18n.tr("Exit fullscreen and show controls", "退出全屏并打开设置")
         }
 
         val backdropLayer = object : FrameLayout(this) {
@@ -1234,7 +1243,7 @@ class MainActivity : Activity() {
             .putBoolean(KEY_WEB_ENABLED, probeWeb)
             .apply()
         isConnecting = true
-        setStatus(false, "连接中…")
+        setStatus(false, I18n.tr("Connecting…", "连接中…"))
         sender.connect(host, port, tokenText.ifEmpty { null }, probeWeb, object : UdpSender.Listener {
             override fun onState(connected: Boolean, message: String) =
                 runOnUiThread {
@@ -1247,14 +1256,14 @@ class MainActivity : Activity() {
         if (!isConnecting) return
         connectionAttemptSerial += 1
         sender.cancelConnect()
-        setStatus(false, "已取消连接")
+        setStatus(false, I18n.tr("Connection canceled", "已取消连接"))
     }
 
     private fun disconnectFromMac() {
         connectionAttemptSerial += 1
         isConnecting = false
         sender.cancelConnect()
-        setStatus(false, "已断开连接")
+        setStatus(false, I18n.tr("Disconnected", "已断开连接"))
     }
 
     private fun themePalette(): ThemePalette {
@@ -1344,19 +1353,19 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(18), dp(20), dp(18))
         }
         container.addView(TextView(this).apply {
-            text = "外观主题"
+            text = I18n.tr("Themes", "外观主题")
             setTextColor(palette.label)
             textSize = 20f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         })
         container.addView(TextView(this).apply {
-            text = "玻璃只用于功能层，触控面保持清晰。选择后立即重载界面。"
+            text = I18n.tr("Glass applies only to chrome; the touch surface stays clean. Reloads immediately upon selection.", "玻璃只用于功能层，触控面保持清晰。选择后立即重载界面。")
             setTextColor(palette.secondary)
             textSize = 13f
             setPadding(0, dp(5), 0, dp(12))
         })
         if (selected == ThemeMode.CUSTOM_GLASS) {
-            container.addView(actionSheetButton("调整液态玻璃参数", false) {
+            container.addView(actionSheetButton(I18n.tr("Customize Liquid Glass", "调整液态玻璃参数"), false) {
                 dialog.dismiss()
                 showCustomGlassDialog()
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply {
@@ -1371,8 +1380,8 @@ class MainActivity : Activity() {
                 MaterialKind.LIQUID_GLASS -> "Liquid Glass"
                 MaterialKind.DROPLET_GLASS, MaterialKind.RIPPLE_WATER, MaterialKind.RAIN_GLASS,
                 MaterialKind.PRISM_CRYSTAL, MaterialKind.GEL_SURFACE, MaterialKind.LIQUID_METAL,
-                MaterialKind.PAPER_TEXTURE, MaterialKind.HOLOGRAPHIC, MaterialKind.RETRO_LCD -> "材质实验室"
-                MaterialKind.CERAMIC -> if (mode.key in setOf("classic-light", "classic-dark", "high-contrast")) "经典与辅助" else "编辑器主题"
+                MaterialKind.PAPER_TEXTURE, MaterialKind.HOLOGRAPHIC, MaterialKind.RETRO_LCD -> I18n.tr("Material Lab", "材质实验室")
+                MaterialKind.CERAMIC -> if (mode.key in setOf("classic-light", "classic-dark", "high-contrast")) I18n.tr("Classic & Accessibility", "经典与辅助") else I18n.tr("Editor Themes", "编辑器主题")
             }
             if (category != lastCategory) {
                 container.addView(TextView(this).apply {
@@ -1436,18 +1445,18 @@ class MainActivity : Activity() {
             })
         }
         container.addView(TextView(this).apply {
-            text = "背景壁纸"
+            text = I18n.tr("Wallpaper", "背景壁纸")
             setTextColor(palette.secondary)
             textSize = 11f
             letterSpacing = 0.08f
             setPadding(dp(4), dp(12), dp(4), dp(6))
         })
         val wallpaperChoices = listOf(
-            "主题背景" to "none",
-            "晨光山野" to "mountain",
-            "霓虹夜城" to "night",
-            "荒野公路" to "canyon",
-            "二次元红幕" to "anime",
+            I18n.tr("Theme Default", "主题背景") to "none",
+            I18n.tr("Morning Peak", "晨光山野") to "mountain",
+            I18n.tr("Neon Night", "霓虹夜城") to "night",
+            I18n.tr("Canyon Road", "荒野公路") to "canyon",
+            I18n.tr("Crimson Silk", "二次元红幕") to "anime",
         )
         wallpaperChoices.chunked(2).forEach { pair ->
             val row = LinearLayout(this).apply {
@@ -1462,14 +1471,14 @@ class MainActivity : Activity() {
             if (pair.size == 1) row.addView(View(this), LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
             container.addView(row)
         }
-        container.addView(actionSheetButton("从相册选择自定义壁纸", false) {
+        container.addView(actionSheetButton(I18n.tr("Choose Custom Wallpaper from Gallery", "从相册选择自定义壁纸"), false) {
             dialog.dismiss()
             pickWallpaper()
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply {
             bottomMargin = dp(6)
         })
         container.addView(TextView(this).apply {
-            text = "背景外观"
+            text = I18n.tr("Backdrop Adjustments", "背景外观")
             setTextColor(palette.secondary)
             textSize = 11f
             letterSpacing = 0.08f
@@ -1507,11 +1516,11 @@ class MainActivity : Activity() {
             row.addView(seek, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
             container.addView(row)
         }
-        appearanceSlider("背景可见度", 0, 100, pendingWallpaperOpacity) { pendingWallpaperOpacity = it }
-        appearanceSlider("背景饱和度", 60, 140, pendingWallpaperSaturation) { pendingWallpaperSaturation = it }
-        appearanceSlider("背景亮度", 70, 130, pendingWallpaperBrightness) { pendingWallpaperBrightness = it }
-        appearanceSlider("触控面透明度", 55, 100, pendingSurfaceOpacity) { pendingSurfaceOpacity = it }
-        container.addView(actionSheetButton("应用背景外观", true) {
+        appearanceSlider(I18n.tr("Backdrop Opacity", "背景可见度"), 0, 100, pendingWallpaperOpacity) { pendingWallpaperOpacity = it }
+        appearanceSlider(I18n.tr("Backdrop Saturation", "背景饱和度"), 60, 140, pendingWallpaperSaturation) { pendingWallpaperSaturation = it }
+        appearanceSlider(I18n.tr("Backdrop Brightness", "背景亮度"), 70, 130, pendingWallpaperBrightness) { pendingWallpaperBrightness = it }
+        appearanceSlider(I18n.tr("Surface Opacity", "触控面透明度"), 55, 100, pendingSurfaceOpacity) { pendingSurfaceOpacity = it }
+        container.addView(actionSheetButton(I18n.tr("Apply Backdrop Settings", "应用背景外观"), true) {
             prefs.edit()
                 .putInt(KEY_WALLPAPER_OPACITY, pendingWallpaperOpacity)
                 .putInt(KEY_WALLPAPER_SATURATION, pendingWallpaperSaturation)
@@ -1524,7 +1533,7 @@ class MainActivity : Activity() {
             topMargin = dp(8)
             bottomMargin = dp(6)
         })
-        val cancel = actionSheetButton("取消", false) { dialog.dismiss() }
+        val cancel = actionSheetButton(I18n.tr("Cancel", "取消"), false) { dialog.dismiss() }
         container.addView(cancel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply {
             topMargin = dp(4)
         })
@@ -1558,13 +1567,13 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(18), dp(20), dp(18))
         }
         container.addView(TextView(this).apply {
-            text = "自定义液态玻璃"
+            text = I18n.tr("Custom Liquid Glass", "自定义液态玻璃")
             setTextColor(palette.label)
             textSize = 20f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         })
         container.addView(TextView(this).apply {
-            text = "调整折射、饱和度、柔化和边缘高光。应用后重载触控面。"
+            text = I18n.tr("Adjust refraction, saturation, softness, and edge highlights. Touch surface reloads after applying.", "调整折射、饱和度、柔化和边缘高光。应用后重载触控面。")
             setTextColor(palette.secondary)
             textSize = 13f
             setPadding(0, dp(5), 0, dp(12))
@@ -1603,17 +1612,17 @@ class MainActivity : Activity() {
         var saturation = base.saturation.toInt()
         var blur = (base.blurAmount * 1000f).toInt()
         var highlight = base.highlightOpacity.toInt()
-        slider("折射高度", 120, 520, refraction, { "$it" }) { refraction = it }
-        slider("玻璃饱和度", 90, 210, saturation, { "$it%" }) { saturation = it }
-        slider("柔化程度", 0, 100, blur, { "${it / 10f} px" }) { blur = it }
-        slider("边缘高光", 35, 140, highlight, { "$it%" }) { highlight = it }
+        slider(I18n.tr("Refraction Height", "折射高度"), 120, 520, refraction, { "$it" }) { refraction = it }
+        slider(I18n.tr("Glass Saturation", "玻璃饱和度"), 90, 210, saturation, { "$it%" }) { saturation = it }
+        slider(I18n.tr("Blur / Softness", "柔化程度"), 0, 100, blur, { "${it / 10f} px" }) { blur = it }
+        slider(I18n.tr("Edge Highlight", "边缘高光"), 35, 140, highlight, { "$it%" }) { highlight = it }
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
         }
-        actions.addView(actionSheetButton("取消", false) { dialog.dismiss() }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
-        actions.addView(actionSheetButton("应用", true) {
+        actions.addView(actionSheetButton(I18n.tr("Cancel", "取消"), false) { dialog.dismiss() }, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
+        actions.addView(actionSheetButton(I18n.tr("Apply", "应用"), true) {
             prefs.edit()
                 .putFloat(KEY_GLASS_REFRACTION, refraction.toFloat())
                 .putFloat(KEY_GLASS_SATURATION, saturation.toFloat())
@@ -1650,20 +1659,20 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(18), dp(20), dp(18))
         }
         container.addView(TextView(this).apply {
-            text = "控制中心"
+            text = I18n.tr("Control Center", "控制中心")
             setTextColor(palette.label)
             textSize = 20f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         })
         container.addView(TextView(this).apply {
-            text = "常用触控板操作"
+            text = I18n.tr("Quick controls and preferences", "常用触控板操作")
             setTextColor(palette.secondary)
             textSize = 13f
             setPadding(0, dp(5), 0, dp(14))
         })
 
         val sectionLabel = TextView(this).apply {
-            text = "快速控制"
+            text = I18n.tr("Quick Controls", "快速控制")
             setTextColor(palette.secondary)
             textSize = 11f
             letterSpacing = .08f
@@ -1672,10 +1681,10 @@ class MainActivity : Activity() {
         container.addView(sectionLabel)
 
         if (isConnected || isConnecting) {
-            val disconnectBtn = actionSheetButton("断开与 Mac 的连接", false) {
+            val disconnectBtn = actionSheetButton(I18n.tr("Disconnect from Mac", "断开与 Mac 的连接"), false) {
                 disconnectFromMac()
                 dialog.dismiss()
-                android.widget.Toast.makeText(this@MainActivity, "已断开连接", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(this@MainActivity, I18n.tr("Disconnected", "已断开连接"), android.widget.Toast.LENGTH_SHORT).show()
             }.apply {
                 setTextColor(0xFFFF453A.toInt())
             }
@@ -1687,11 +1696,11 @@ class MainActivity : Activity() {
         val hapticsOn = prefs.getBoolean(KEY_HAPTIC, true)
         pad.haptics.enabled = hapticsOn
         lateinit var hapticButton: Button
-        hapticButton = actionSheetButton(if (hapticsOn) "震动开" else "震动关", false) {
+        hapticButton = actionSheetButton(if (hapticsOn) I18n.tr("Haptics On", "震动开") else I18n.tr("Haptics Off", "震动关"), false) {
             val next = !prefs.getBoolean(KEY_HAPTIC, true)
             pad.haptics.enabled = next
             prefs.edit().putBoolean(KEY_HAPTIC, next).apply()
-            hapticButton.text = if (next) "震动开" else "震动关"
+            hapticButton.text = if (next) I18n.tr("Haptics On", "震动开") else I18n.tr("Haptics Off", "震动关")
             if (next) pad.haptics.click()
         }
         val touchPointsOn = prefs.getBoolean(
@@ -1699,14 +1708,14 @@ class MainActivity : Activity() {
             prefs.getBoolean(KEY_VISUAL_EFFECTS, true),
         )
         lateinit var touchPointsButton: Button
-        touchPointsButton = actionSheetButton(if (touchPointsOn) "触点开" else "触点关", false) {
+        touchPointsButton = actionSheetButton(if (touchPointsOn) I18n.tr("Touch Points On", "触点开") else I18n.tr("Touch Points Off", "触点关"), false) {
             val next = !prefs.getBoolean(
                 KEY_TOUCH_POINTS,
                 prefs.getBoolean(KEY_VISUAL_EFFECTS, true),
             )
             prefs.edit().putBoolean(KEY_TOUCH_POINTS, next).remove(KEY_VISUAL_EFFECTS).apply()
             pad.visualEffectsEnabled = next
-            touchPointsButton.text = if (next) "触点开" else "触点关"
+            touchPointsButton.text = if (next) I18n.tr("Touch Points On", "触点开") else I18n.tr("Touch Points Off", "触点关")
         }
         val toggleRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1716,7 +1725,7 @@ class MainActivity : Activity() {
         container.addView(toggleRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
 
         container.addView(TextView(this).apply {
-            text = "更多"
+            text = I18n.tr("More", "更多")
             setTextColor(palette.secondary)
             textSize = 11f
             letterSpacing = .08f
@@ -1724,20 +1733,20 @@ class MainActivity : Activity() {
         })
         val secondaryRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(actionSheetButton("深按条", false) { showDeepPressSettingsDialog() }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
-            addView(actionSheetButton("测试", false) { showGestureTestDialog() }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
+            addView(actionSheetButton(I18n.tr("Deep Press Bar", "深按条"), false) { showDeepPressSettingsDialog() }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
+            addView(actionSheetButton(I18n.tr("Test Gestures", "测试"), false) { showGestureTestDialog() }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
         }
         container.addView(secondaryRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
         val appearanceRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(actionSheetButton("外观", false) { showThemeDialog() }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
-            addView(actionSheetButton("全屏", true) {
+            addView(actionSheetButton(I18n.tr("Themes", "外观"), false) { showThemeDialog() }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
+            addView(actionSheetButton(I18n.tr("Fullscreen", "全屏"), true) {
                 dialog.dismiss()
                 toggleFullscreen(true)
             }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
         }
         container.addView(appearanceRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
-        container.addView(actionSheetButton("完成", false) { dialog.dismiss() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(10) })
+        container.addView(actionSheetButton(I18n.tr("Done", "完成"), false) { dialog.dismiss() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(10) })
 
         val scroll = android.widget.ScrollView(this).apply {
             isFillViewport = true
@@ -1764,7 +1773,7 @@ class MainActivity : Activity() {
 
     private fun applyPairingTarget(target: PairingTarget): Boolean {
         if (!target.phoneEnabled) {
-            Toast.makeText(this, "该 Mac 未开放手机连接。", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, I18n.tr("This Mac has disabled Phone access.", "该 Mac 未开放手机连接。"), Toast.LENGTH_LONG).show()
             return false
         }
         prefs.edit()
@@ -1792,13 +1801,13 @@ class MainActivity : Activity() {
             setPadding(dp(22), dp(20), dp(22), dp(22))
         }
         val title = TextView(this).apply {
-            text = "连接到 Mac"
+            text = I18n.tr("Connect to Mac", "连接到 Mac")
             setTextColor(palette.label)
             textSize = 20f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         }
         val subtitle = TextView(this).apply {
-            text = "选择附近的 Mac，或使用下方的手动地址。"
+            text = I18n.tr("Choose a nearby Mac or enter the address below.", "选择附近的 Mac，或使用下方的手动地址。")
             setTextColor(palette.secondary)
             textSize = 13f
             setPadding(0, dp(5), 0, dp(16))
@@ -1808,10 +1817,10 @@ class MainActivity : Activity() {
 
         if (sender.target != null || isConnecting) {
             val connectedHost = sender.target?.hostAddress ?: prefs.getString(KEY_HOST, "") ?: ""
-            val disconnectBtn = actionSheetButton("断开当前连接 ($connectedHost)", false) {
+            val disconnectBtn = actionSheetButton(I18n.tr("Disconnect current session ($connectedHost)", "断开当前连接 ($connectedHost)"), false) {
                 disconnectFromMac()
                 dialog.dismiss()
-                Toast.makeText(this@MainActivity, "已断开与 Mac 的连接", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MainActivity, I18n.tr("Disconnected from Mac", "已断开与 Mac 的连接"), Toast.LENGTH_SHORT).show()
             }.apply {
                 setTextColor(0xFFFF453A.toInt()) // Apple Red
             }
@@ -1820,13 +1829,13 @@ class MainActivity : Activity() {
             })
         }
 
-        container.addView(actionSheetButton("扫描二维码", true) {
+        container.addView(actionSheetButton(I18n.tr("Scan QR Code", "扫描二维码"), true) {
             startQrScanner(dialog)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)).apply {
             bottomMargin = dp(14)
         })
         container.addView(TextView(this).apply {
-            text = "推荐：扫描 Mac 设置页里的二维码，自动带入地址、端口和 Token。"
+            text = I18n.tr("Recommended: Scan the QR code in Mac Settings to auto-fill address, port, and token.", "推荐：扫描 Mac 设置页里的二维码，自动带入地址、端口和 Token。")
             setTextColor(palette.secondary)
             textSize = 12f
             setPadding(0, 0, 0, dp(10))
@@ -1835,7 +1844,7 @@ class MainActivity : Activity() {
         val nearby = discovery.snapshot()
         if (nearby.isNotEmpty()) {
             container.addView(TextView(this).apply {
-                text = "附近的 Mac"
+                text = I18n.tr("Nearby Macs", "附近的 Mac")
                 setTextColor(palette.label)
                 textSize = 14f
                 typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
@@ -1843,7 +1852,7 @@ class MainActivity : Activity() {
             })
             nearby.forEach { endpoint ->
                 val row = Button(this).apply {
-                    val transportLabel = if (endpoint.webEnabled) "Web + 手机" else "仅手机 UDP"
+                    val transportLabel = if (endpoint.webEnabled) I18n.tr("Web + Phone", "Web + 手机") else I18n.tr("Phone UDP only", "仅手机 UDP")
                     text = "${endpoint.name}\n${endpoint.host.hostAddress}:${endpoint.port} · $transportLabel"
                     isAllCaps = false
                     gravity = Gravity.START or Gravity.CENTER_VERTICAL
@@ -1857,7 +1866,7 @@ class MainActivity : Activity() {
                     setOnClickListener {
                         val token = prefs.getString(KEY_TOKEN, "") ?: ""
                         if (endpoint.authentication == "token" && token.isEmpty()) {
-                            Toast.makeText(this@MainActivity, "该 Mac 需要配对 Token，请扫描二维码。", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this@MainActivity, I18n.tr("This Mac requires a pairing token, please scan the QR code.", "该 Mac 需要配对 Token，请扫描二维码。"), Toast.LENGTH_LONG).show()
                             startQrScanner(dialog)
                         } else {
                             prefs.edit().putBoolean(KEY_WEB_ENABLED, endpoint.webEnabled).apply()
@@ -1871,14 +1880,14 @@ class MainActivity : Activity() {
                 })
             }
             container.addView(TextView(this).apply {
-                text = "找不到 Mac？确认两台设备在同一 Wi-Fi，或继续手动输入。"
+                text = I18n.tr("Can't find your Mac? Ensure both devices are on the same Wi-Fi, or enter the address manually.", "找不到 Mac？确认两台设备在同一 Wi-Fi，或继续手动输入。")
                 setTextColor(palette.secondary)
                 textSize = 12f
                 setPadding(0, 0, 0, dp(10))
             })
         } else {
             container.addView(TextView(this).apply {
-                text = "正在搜索附近的 Mac；也可以直接手动输入地址。"
+                text = I18n.tr("Searching for nearby Macs; you can also enter the address manually.", "正在搜索附近的 Mac；也可以直接手动输入地址。")
                 setTextColor(palette.secondary)
                 textSize = 12f
                 setPadding(0, 0, 0, dp(12))
@@ -1911,27 +1920,27 @@ class MainActivity : Activity() {
         }
 
         container.addView(TextView(this).apply {
-            text = "IP 连接（备用）"
+            text = I18n.tr("IP Connection (Backup)", "IP 连接（备用）")
             setTextColor(palette.label)
             textSize = 14f
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
             setPadding(0, dp(6), 0, dp(8))
         })
-        val host = input("Mac IP 地址或主机名", prefs.getString(KEY_HOST, "") ?: "")
-        val port = input("端口（默认 4242）", prefs.getString(KEY_PORT, "4242") ?: "4242").apply {
+        val host = input(I18n.tr("Mac IP address or hostname", "Mac IP 地址或主机名"), prefs.getString(KEY_HOST, "") ?: "")
+        val port = input(I18n.tr("Port (default 4242)", "端口（默认 4242）"), prefs.getString(KEY_PORT, "4242") ?: "4242").apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
-        val token = input("配对 Token（二维码会自动带入）", prefs.getString(KEY_TOKEN, "") ?: "", true)
+        val token = input(I18n.tr("Pairing Token (QR code auto-fills)", "配对 Token（二维码会自动带入）"), prefs.getString(KEY_TOKEN, "") ?: "", true)
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
         }
-        val cancel = actionSheetButton("取消", false) { dialog.dismiss() }
-        val connect = actionSheetButton("连接", true) {
+        val cancel = actionSheetButton(I18n.tr("Cancel", "取消"), false) { dialog.dismiss() }
+        val connect = actionSheetButton(I18n.tr("Connect", "连接"), true) {
             val address = host.text.toString().trim()
             if (address.isEmpty()) {
-                host.error = "请输入 Mac IP 地址"
+                host.error = I18n.tr("Please enter Mac IP address", "请输入 Mac IP 地址")
                 return@actionSheetButton
             }
             connectToMac(address, port.text.toString().trim().ifEmpty { "4242" }, token.text.toString().trim())
@@ -2226,14 +2235,14 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(18), dp(20), dp(20))
         }
         val title = TextView(this).apply {
-            text = "🛠 macOS 手势命令发射面板"
+            text = I18n.tr("🛠 macOS Gesture Command Panel", "🛠 macOS 手势命令发射面板")
             setTextColor(palette.label)
             textSize = 16f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER_HORIZONTAL
         }
         val subtitle = TextView(this).apply {
-            text = "点击按钮直接模拟真实指尖轨迹派发至 Mac\n请将 Mac 鼠标先悬停在 Safari / 目标窗口上"
+            text = I18n.tr("Simulates finger trajectories sent directly to Mac\nPlease hover mouse over Safari or target window", "点击按钮直接模拟真实指尖轨迹派发至 Mac\n请将 Mac 鼠标先悬停在 Safari / 目标窗口上")
             setTextColor(palette.secondary)
             textSize = 11f
             gravity = Gravity.CENTER_HORIZONTAL
@@ -2262,7 +2271,7 @@ class MainActivity : Activity() {
                 isFocusable = true
                 setOnClickListener {
                     action()
-                    Toast.makeText(this@MainActivity, "已发射：$name", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "${I18n.tr("Dispatched: ", "已发射：")}$name", Toast.LENGTH_SHORT).show()
                 }
             }
             card.addView(TextView(this).apply {
@@ -2278,22 +2287,22 @@ class MainActivity : Activity() {
             })
             return card
         }
-        container.addView(makeTestBtn("🔍 智能缩放 (Smart Zoom)", "双指双击：Safari/预览 网页段落或图片平滑放大居中", 0xFF1E3A8A.toInt()) { GestureTestRunner.runSmartZoom(sender) })
-        container.addView(makeTestBtn("📖 三指查词 (Look Up)", "三指轻点：弹出 macOS 系统词典释义气泡", 0xFF065F46.toInt()) { GestureTestRunner.runLookup(sender) })
-        container.addView(makeTestBtn("◀️ 四指左轻扫 (切到右侧桌面)", "四指水平左扫：切换到下一个 Spaces 桌面", 0xFF3730A3.toInt()) { GestureTestRunner.runSwipeLeft(sender) })
-        container.addView(makeTestBtn("▶️ 四指右轻扫 (切到左侧桌面)", "四指水平右扫：切换到上一个 Spaces 桌面", 0xFF3730A3.toInt()) { GestureTestRunner.runSwipeRight(sender) })
-        container.addView(makeTestBtn("🔼 四指上滑 (调度中心)", "四指垂直上推：展开 macOS Mission Control", 0xFF6B21A8.toInt()) { GestureTestRunner.runSwipeUp(sender) })
-        container.addView(makeTestBtn("🔽 四指下滑 (应用程序窗口)", "四指垂直下拉：展开 App Exposé 当前应用多窗口", 0xFF6B21A8.toInt()) { GestureTestRunner.runSwipeDown(sender) })
-        container.addView(makeTestBtn("🔍➕ 双指捏合放大 (+30%)", "双指向外扩张：Safari/地图/文档 视口无级缩放", 0xFF831843.toInt()) { GestureTestRunner.runPinchIn(sender) })
-        container.addView(makeTestBtn("🔍➖ 双指捏合缩小 (-30%)", "双指向内聚拢：Safari/地图/文档 视口缩小", 0xFF831843.toInt()) { GestureTestRunner.runPinchOut(sender) })
-        container.addView(makeTestBtn("🔄 双指顺时针旋转 90°", "双指圆周旋转：在照片/预览中旋转图片", 0xFF92400E.toInt()) { GestureTestRunner.runRotate(sender) })
-        container.addView(makeTestBtn("🖱 双指右键点击", "双指轻点：弹出光标所在处的系统右键上下文菜单", 0xFF1F2937.toInt()) { GestureTestRunner.runRightClick(sender) })
-        container.addView(makeTestBtn("✋ 三指拖移测试", "三指接触并平移：选中文本或拖动窗口标题栏", 0xFF1F2937.toInt()) { GestureTestRunner.runThreeFingerDrag(sender) })
-        container.addView(makeTestBtn("📬 通知中心 (Notification Center)", "双指从右边缘向左滑入：打开/关闭 macOS 系统通知中心", 0xFF0C4A6E.toInt()) { GestureTestRunner.runNotificationCenter(sender) })
-        container.addView(makeTestBtn("🚀 启动台 (Launchpad)", "四指向内捏合：展开 macOS Launchpad 应用程序网格", 0xFF047857.toInt()) { GestureTestRunner.runLaunchpadPinch(sender) })
-        container.addView(makeTestBtn("🖥️ 显示桌面 (Show Desktop)", "四指向外张开：推开所有应用窗口显示纯净桌面", 0xFF0369A1.toInt()) { GestureTestRunner.runShowDesktopSpread(sender) })
-        container.addView(makeTestBtn("✊ 软件长按拖拽 (Press-and-Hold Drag)", "单指原地按住450ms扣住左键并拖拽选中，抬手释放", 0xFFB45309.toInt()) { GestureTestRunner.runPressAndHoldDrag(sender) })
-        val closeBtn = actionSheetButton("关闭面板", false) { dialog.dismiss() }.apply {
+        container.addView(makeTestBtn("🔍 智能缩放 (Smart Zoom)", I18n.tr("Double tap with 2 fingers: magnify Safari / Preview content", "双指双击：Safari/预览 网页段落或图片平滑放大居中"), 0xFF1E3A8A.toInt()) { GestureTestRunner.runSmartZoom(sender) })
+        container.addView(makeTestBtn("📖 三指查词 (Look Up)", I18n.tr("Three-finger tap: trigger macOS system dictionary lookup", "三指轻点：弹出 macOS 系统词典释义气泡"), 0xFF065F46.toInt()) { GestureTestRunner.runLookup(sender) })
+        container.addView(makeTestBtn("◀️ 四指左轻扫 (Swipe Left)", I18n.tr("Four-finger swipe left: switch to next Spaces desktop", "四指水平左扫：切换到下一个 Spaces 桌面"), 0xFF3730A3.toInt()) { GestureTestRunner.runSwipeLeft(sender) })
+        container.addView(makeTestBtn("▶️ 四指右轻扫 (Swipe Right)", I18n.tr("Four-finger swipe right: switch to previous Spaces desktop", "四指水平右扫：切换到上一个 Spaces 桌面"), 0xFF3730A3.toInt()) { GestureTestRunner.runSwipeRight(sender) })
+        container.addView(makeTestBtn("🔼 四指上滑 (Mission Control)", I18n.tr("Four-finger swipe up: open macOS Mission Control", "四指垂直上推：展开 macOS Mission Control"), 0xFF6B21A8.toInt()) { GestureTestRunner.runSwipeUp(sender) })
+        container.addView(makeTestBtn("🔽 四指下滑 (App Exposé)", I18n.tr("Four-finger swipe down: open App Exposé", "四指垂直下拉：展开 App Exposé 当前应用多窗口"), 0xFF6B21A8.toInt()) { GestureTestRunner.runSwipeDown(sender) })
+        container.addView(makeTestBtn("🔍➕ 双指捏合放大 (+30%)", I18n.tr("Spread two fingers: zoom in Safari/Maps/Documents", "双指向外扩张：Safari/地图/文档 视口无级缩放"), 0xFF831843.toInt()) { GestureTestRunner.runPinchIn(sender) })
+        container.addView(makeTestBtn("🔍➖ 双指捏合缩小 (-30%)", I18n.tr("Pinch two fingers: zoom out Safari/Maps/Documents", "双指向内聚拢：Safari/地图/文档 视口缩小"), 0xFF831843.toInt()) { GestureTestRunner.runPinchOut(sender) })
+        container.addView(makeTestBtn("🔄 双指顺时针旋转 90°", I18n.tr("Two-finger rotate: rotate photos/documents clockwise", "双指圆周旋转：在照片/预览中旋转图片"), 0xFF92400E.toInt()) { GestureTestRunner.runRotate(sender) })
+        container.addView(makeTestBtn("🖱 双指右键点击 (Secondary Click)", I18n.tr("Two-finger tap: open context menu at cursor position", "双指轻点：弹出光标所在处的系统右键上下文菜单"), 0xFF1F2937.toInt()) { GestureTestRunner.runRightClick(sender) })
+        container.addView(makeTestBtn("✋ 三指拖移测试 (3-Finger Drag)", I18n.tr("Three-finger pan: select text or drag window titlebars", "三指接触并平移：选中文本或拖动窗口标题栏"), 0xFF1F2937.toInt()) { GestureTestRunner.runThreeFingerDrag(sender) })
+        container.addView(makeTestBtn("📬 通知中心 (Notification Center)", I18n.tr("Two-finger right-edge swipe: toggle macOS Notification Center", "双指从右边缘向左滑入：打开/关闭 macOS 系统通知中心"), 0xFF0C4A6E.toInt()) { GestureTestRunner.runNotificationCenter(sender) })
+        container.addView(makeTestBtn("🚀 启动台 (Launchpad)", I18n.tr("Four-finger pinch in: open macOS Launchpad", "四指向内捏合：展开 macOS Launchpad 应用程序网格"), 0xFF047857.toInt()) { GestureTestRunner.runLaunchpadPinch(sender) })
+        container.addView(makeTestBtn("🖥️ 显示桌面 (Show Desktop)", I18n.tr("Four-finger spread out: show macOS desktop", "四指向外张开：推开所有应用窗口显示纯净桌面"), 0xFF0369A1.toInt()) { GestureTestRunner.runShowDesktopSpread(sender) })
+        container.addView(makeTestBtn("✊ 软件长按拖拽 (Press-and-Hold Drag)", I18n.tr("Hold 450ms then drag to select, release to lift", "单指原地按住450ms扣住左键并拖拽选中，抬手释放"), 0xFFB45309.toInt()) { GestureTestRunner.runPressAndHoldDrag(sender) })
+        val closeBtn = actionSheetButton(I18n.tr("Close", "关闭面板"), false) { dialog.dismiss() }.apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(12) }
         }
         container.addView(closeBtn)
@@ -2320,7 +2329,7 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(18), dp(20), dp(20))
         }
         val title = TextView(this).apply {
-            text = "深按条设置"
+            text = I18n.tr("Deep Press Bar Settings", "深按条设置")
             setTextColor(palette.label)
             textSize = 16f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -2329,7 +2338,7 @@ class MainActivity : Activity() {
         container.addView(title)
 
         val enabled = android.widget.CheckBox(this).apply {
-            text = "显示深按条"
+            text = I18n.tr("Show Deep Press Bar", "显示深按条")
             isChecked = prefs.getBoolean(KEY_DEEP_ENABLED, true)
             setTextColor(palette.label)
         }
@@ -2378,26 +2387,26 @@ class MainActivity : Activity() {
         }
 
         val hold = addSeekBar(
-            "确认时长",
+            I18n.tr("Hold Duration", "确认时长"),
             200,
             2_000,
             prefs.getLong(KEY_DEEP_HOLD_MS, DEFAULT_DEEP_HOLD_MS).toInt(),
             " ms",
         )
         val hapticStrength = addSeekBar(
-            "按下震动强度",
+            I18n.tr("Press Haptic Strength", "按下震动强度"),
             40,
             255,
             prefs.getInt(KEY_DEEP_HAPTIC_STRENGTH, DEFAULT_DEEP_HAPTIC_STRENGTH),
             " / 255",
         )
-        val x = addSeekBar("横向位置", 0, 100, (prefs.getFloat(KEY_DEEP_X, DEFAULT_DEEP_X) * 100f).toInt(), "%")
-        val y = addSeekBar("纵向位置", 0, 100, (prefs.getFloat(KEY_DEEP_Y, DEFAULT_DEEP_Y) * 100f).toInt(), "%")
-        val width = addSeekBar("宽度", 140, 520, prefs.getInt(KEY_DEEP_WIDTH, DEFAULT_DEEP_WIDTH), " dp")
-        val height = addSeekBar("高度", 36, 120, prefs.getInt(KEY_DEEP_HEIGHT, DEFAULT_DEEP_HEIGHT), " dp")
+        val x = addSeekBar(I18n.tr("Horizontal Position", "横向位置"), 0, 100, (prefs.getFloat(KEY_DEEP_X, DEFAULT_DEEP_X) * 100f).toInt(), "%")
+        val y = addSeekBar(I18n.tr("Vertical Position", "纵向位置"), 0, 100, (prefs.getFloat(KEY_DEEP_Y, DEFAULT_DEEP_Y) * 100f).toInt(), "%")
+        val width = addSeekBar(I18n.tr("Width", "宽度"), 140, 520, prefs.getInt(KEY_DEEP_WIDTH, DEFAULT_DEEP_WIDTH), " dp")
+        val height = addSeekBar(I18n.tr("Height", "高度"), 36, 120, prefs.getInt(KEY_DEEP_HEIGHT, DEFAULT_DEEP_HEIGHT), " dp")
 
         container.addView(TextView(this).apply {
-            text = "直接拖动预览调整位置，拖右下角调整大小"
+            text = I18n.tr("Drag preview to reposition, drag corner handle to resize", "直接拖动预览调整位置，拖右下角调整大小")
             setTextColor(palette.secondary)
             textSize = 11f
             setPadding(dp(4), dp(10), dp(4), dp(5))
@@ -2410,7 +2419,7 @@ class MainActivity : Activity() {
             }
         }
         val previewButton = Button(this).apply {
-            text = "深按"
+            text = I18n.tr("Deep Press", "深按")
             isAllCaps = false
             textSize = 12f
             setTextColor(palette.deepText)
@@ -2420,14 +2429,14 @@ class MainActivity : Activity() {
                 setStroke(dp(1), palette.deepStroke)
             }
             elevation = dp(2).toFloat()
-            contentDescription = "深按条预览，可拖动"
+            contentDescription = I18n.tr("Deep press preview, draggable", "深按条预览，可拖动")
         }
         val resizeHandle = View(this).apply {
             background = GradientDrawable().apply {
                 setColor(palette.deepProgress)
                 cornerRadius = dp(2).toFloat()
             }
-            contentDescription = "拖动此角调整深按条大小"
+            contentDescription = I18n.tr("Drag this corner to resize", "拖动此角调整深按条大小")
         }
         preview.addView(previewButton)
         preview.addView(resizeHandle, FrameLayout.LayoutParams(dp(12), dp(12), Gravity.BOTTOM or Gravity.END))
@@ -2499,7 +2508,7 @@ class MainActivity : Activity() {
         preview.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> refreshPreviewGeometry() }
         container.addView(preview, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(150)).apply { bottomMargin = dp(4) })
 
-        val save = actionSheetButton("保存", true) {
+        val save = actionSheetButton(I18n.tr("Save", "保存"), true) {
                 prefs.edit()
                     .putBoolean(KEY_DEEP_ENABLED, enabled.isChecked)
                     .putLong(KEY_DEEP_HOLD_MS, (hold.progress + 200).toLong())
@@ -2569,7 +2578,7 @@ class MainActivity : Activity() {
 
     private fun setStatus(connected: Boolean, msg: String) {
         isConnected = connected
-        isConnecting = msg == "连接中…"
+        isConnecting = msg == I18n.tr("Connecting…", "连接中…") || msg == "Connecting…" || msg == "连接中…"
         status.text = msg
         val d = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
@@ -2577,8 +2586,8 @@ class MainActivity : Activity() {
         }
         dot.background = d
         if (::connectButton.isInitialized) {
-            connectButton.text = if (isConnecting) "取消连接" else if (connected) "断开" else "连接 Mac"
-            connectButton.contentDescription = if (isConnecting) "取消连接 Mac" else if (connected) "断开与 Mac 的连接" else "配置并连接 Mac"
+            connectButton.text = if (isConnecting) I18n.tr("Cancel", "取消连接") else if (connected) I18n.tr("Disconnect", "断开") else I18n.tr("Connect Mac", "连接 Mac")
+            connectButton.contentDescription = if (isConnecting) I18n.tr("Cancel connection", "取消连接 Mac") else if (connected) I18n.tr("Disconnect from Mac", "断开与 Mac 的连接") else I18n.tr("Configure and connect to Mac", "配置并连接 Mac")
         }
         setHeaderExpanded(!connected)
     }
@@ -2652,7 +2661,7 @@ class MainActivity : Activity() {
                     prefs.getBoolean(KEY_WEB_ENABLED, true),
                 )
             }
-            Toast.makeText(this, "已载入配对信息", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, I18n.tr("Pairing info loaded", "已载入配对信息"), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2666,7 +2675,7 @@ class MainActivity : Activity() {
             }
             val target = PairingUri.parse(data?.getStringExtra(QrScannerActivity.EXTRA_QR_VALUE))
             if (target == null) {
-                Toast.makeText(this, "这不是有效的 Trackpad Companion 配对二维码。", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, I18n.tr("This is not a valid Trackpad Companion pairing QR code.", "这不是有效的 Trackpad Companion 配对二维码。"), Toast.LENGTH_LONG).show()
                 showConnectionDialog()
                 return
             }

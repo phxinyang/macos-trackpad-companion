@@ -43,7 +43,7 @@ class MacDiscovery(context: Context, private val listener: Listener) {
         override fun onServiceFound(serviceInfo: NsdServiceInfo) {
             if (serviceInfo.serviceType.trimEnd('.') == SERVICE_TYPE.trimEnd('.')) {
                 runCatching { manager.resolveService(serviceInfo, resolveListener) }
-                    .onFailure { listener.onDiscoveryError("解析 Mac 服务失败：${it.message ?: "未知错误"}") }
+                    .onFailure { listener.onDiscoveryError(I18n.tr("Failed to resolve Mac service: ${it.message ?: "Unknown error"}", "解析 Mac 服务失败：${it.message ?: "未知错误"}")) }
             }
         }
         override fun onServiceLost(serviceInfo: NsdServiceInfo) {
@@ -54,7 +54,7 @@ class MacDiscovery(context: Context, private val listener: Listener) {
             started = false
             runCatching { manager.stopServiceDiscovery(this) }
             releaseMulticastLock()
-            listener.onDiscoveryError("无法搜索附近的 Mac（错误 $errorCode）")
+            listener.onDiscoveryError(I18n.tr("Cannot search nearby Macs (error $errorCode)", "无法搜索附近的 Mac（错误 $errorCode）"))
         }
         override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
             started = false
@@ -81,7 +81,7 @@ class MacDiscovery(context: Context, private val listener: Listener) {
         }
 
         override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-            listener.onDiscoveryError("解析 ${serviceInfo.serviceName} 失败（错误 $errorCode）")
+            listener.onDiscoveryError(I18n.tr("Failed to resolve ${serviceInfo.serviceName} (error $errorCode)", "解析 ${serviceInfo.serviceName} 失败（错误 $errorCode）"))
         }
     }
 
@@ -89,14 +89,14 @@ class MacDiscovery(context: Context, private val listener: Listener) {
         if (started) return
         runCatching { if (!multicastLock.isHeld) multicastLock.acquire() }
             .onFailure {
-                listener.onDiscoveryError("无法取得局域网搜索权限：${it.message ?: "未知错误"}")
+                listener.onDiscoveryError(I18n.tr("Cannot acquire local discovery lock: ${it.message ?: "Unknown error"}", "无法取得局域网搜索权限：${it.message ?: "未知错误"}"))
                 return
             }
         runCatching {
             manager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
         }.onFailure {
             releaseMulticastLock()
-            listener.onDiscoveryError("无法启动局域网搜索：${it.message ?: "未知错误"}")
+            listener.onDiscoveryError(I18n.tr("Cannot start local discovery: ${it.message ?: "Unknown error"}", "无法启动局域网搜索：${it.message ?: "未知错误"}"))
         }
     }
 

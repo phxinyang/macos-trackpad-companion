@@ -62,7 +62,7 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
         )
         setContentView(buildContent())
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            status.text = "将 Mac 上的二维码放入框内"
+            status.text = I18n.tr("Align Mac QR code inside the box", "将 Mac 上的二维码放入框内")
         } else {
             requestPermissions(arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA)
         }
@@ -90,12 +90,12 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
                 cornerRadius = dp(18).toFloat()
             }
             alpha = 0.9f
-            contentDescription = "二维码取景框"
+            contentDescription = I18n.tr("QR Code frame", "二维码取景框")
         }
         root.addView(focusBox, FrameLayout.LayoutParams(dp(280), dp(280), Gravity.CENTER))
 
         val top = TextView(this).apply {
-            text = "扫描 Mac 配对二维码"
+            text = I18n.tr("Scan Mac Pairing QR Code", "扫描 Mac 配对二维码")
             textSize = 20f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
@@ -115,7 +115,7 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
             background = ColorDrawableCompat.argb(190, 0, 0, 0)
         }
         status = TextView(this).apply {
-            text = "正在准备相机…"
+            text = I18n.tr("Preparing camera…", "正在准备相机…")
             textSize = 14f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
@@ -126,7 +126,7 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
         permissionButton = Button(this).apply {
-            text = "打开相机权限"
+            text = I18n.tr("Grant Camera Permission", "打开相机权限")
             isAllCaps = false
             visibility = View.GONE
             setOnClickListener { openPermissionSettings() }
@@ -136,7 +136,7 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
             dp(48),
         ))
         val cancel = Button(this).apply {
-            text = "取消"
+            text = I18n.tr("Cancel", "取消")
             isAllCaps = false
             setOnClickListener { finishCanceled() }
         }
@@ -191,13 +191,13 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
             camera = next
             next.startPreview()
             requestFocus()
-            status.text = "将 Mac 上的二维码放入框内"
+            status.text = I18n.tr("Align Mac QR code inside the box", "将 Mac 上的二维码放入框内")
             permissionButton?.visibility = View.GONE
         } catch (error: Exception) {
             releaseCamera()
-            status.text = "相机不可用，请返回使用 IP 连接"
+            status.text = I18n.tr("Camera unavailable, please return and use IP connection", "相机不可用，请返回使用 IP 连接")
             permissionButton?.visibility = View.GONE
-            Toast.makeText(this, error.localizedMessage ?: "无法打开相机", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, error.localizedMessage ?: I18n.tr("Unable to open camera", "无法打开相机"), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -218,7 +218,7 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
                 if (value != null) finishWithValue(value)
             }
             ?.addOnFailureListener { error ->
-                status.text = "识别中…${error.localizedMessage.orEmpty()}"
+                status.text = I18n.tr("Scanning…${error.localizedMessage.orEmpty()}", "识别中…${error.localizedMessage.orEmpty()}")
             }
             ?.addOnCompleteListener {
                 processingFrame = false
@@ -341,7 +341,7 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
                 data = Uri.parse("package:$packageName")
             })
         }.onFailure {
-            Toast.makeText(this, "请在系统设置中允许相机权限", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, I18n.tr("Please grant camera permission in system settings", "请在系统设置中允许相机权限"), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -349,10 +349,10 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQUEST_CAMERA) return
         if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            status.text = "将 Mac 上的二维码放入框内"
+            status.text = I18n.tr("Align Mac QR code inside the box", "将 Mac 上的二维码放入框内")
             openCameraIfReady()
         } else {
-            status.text = "需要相机权限才能扫描二维码，也可以返回使用 IP 连接"
+            status.text = I18n.tr("Camera permission required to scan QR code, or return to use IP connection", "需要相机权限才能扫描二维码，也可以返回使用 IP 连接")
             permissionButton?.visibility = View.VISIBLE
         }
     }
