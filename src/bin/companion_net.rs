@@ -34,7 +34,8 @@ struct Args {
     /// Path to TOML config. Default matches the companion daemon:
     /// `$XDG_CONFIG_HOME/macos-trackpad-companion/config.toml`,
     /// falling back to `~/.config/macos-trackpad-companion/config.toml`.
-    /// Missing file → defaults (`[net]` port 4242 on all interfaces).
+    /// Missing file → defaults (`[net]` port 4242 on loopback; configuring a
+    /// token changes the omitted-address default to all IPv4 interfaces).
     #[arg(long, value_name = "PATH")]
     config: Option<PathBuf>,
 
@@ -115,6 +116,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Reject an explicitly exposed unauthenticated listener before prompting
+    // for Accessibility. Server::run repeats this enforcement at bind time.
+    cfg.net.effective_listen_ip()?;
+
     // CGEventPost silently drops synthetic events without this grant,
     // which would look exactly like "the pipeline works but nothing
     // happens". Check after argument/config handling so --help and
@@ -122,7 +127,7 @@ fn main() -> Result<()> {
     ensure_accessibility()?;
 
     log::info!("companion-net starting (config={})", cfg_path.display());
-    log::debug!("resolved config: {:#?}", cfg);
+    log::debug!("resolved config summary: {:?}", cfg.log_summary());
 
     let lock = instance_lock::acquire()?;
     log::debug!("acquired instance lock at {}", lock.path.display());

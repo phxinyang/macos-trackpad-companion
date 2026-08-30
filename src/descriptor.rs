@@ -96,15 +96,14 @@ impl Layout {
                 self.bytes_per_contact
             );
         }
-        if let Some(fields) = self.contact_fields {
-            if fields.stride_bits == 0
+        if let Some(fields) = self.contact_fields
+            && (fields.stride_bits == 0
                 || fields.tip.bit_width == 0
                 || fields.id.bit_width == 0
                 || fields.x.bit_width == 0
-                || fields.y.bit_width == 0
-            {
-                bail!("descriptor contains an empty contact bit field");
-            }
+                || fields.y.bit_width == 0)
+        {
+            bail!("descriptor contains an empty contact bit field");
         }
         Ok(())
     }
@@ -275,8 +274,8 @@ impl<'a> Walker<'a> {
             let udata = read_uint(raw);
             let sdata = read_sint(raw);
 
-        match kind {
-            0 => self.handle_main(tag, udata)?,
+            match kind {
+                0 => self.handle_main(tag, udata)?,
                 1 => self.handle_global(tag, udata, sdata),
                 2 => self.handle_local(tag, udata),
                 _ => {}
@@ -310,7 +309,10 @@ impl<'a> Walker<'a> {
             .copied()
             .unwrap_or((self.usage_page as u32) << 16);
 
-        self.collections.push(Collection { kind, primary_usage });
+        self.collections.push(Collection {
+            kind,
+            primary_usage,
+        });
 
         if kind == 0x02 && primary_usage == FINGER_USAGE {
             let cursor = *self.bit_cursor.entry(self.report_id).or_insert(8);
@@ -361,7 +363,10 @@ impl<'a> Walker<'a> {
         let total_bits = (bit_size * count) as usize;
 
         let cursor_initial = if self.report_id != 0 { 8 } else { 0 };
-        let cursor = self.bit_cursor.entry(self.report_id).or_insert(cursor_initial);
+        let cursor = self
+            .bit_cursor
+            .entry(self.report_id)
+            .or_insert(cursor_initial);
         let start_bit = *cursor;
         *cursor += total_bits;
 
@@ -572,20 +577,18 @@ impl<'a> Walker<'a> {
         let contact_count = self
             .contact_count
             .ok_or_else(|| anyhow!("descriptor missing Contact Count field"))?;
-        let button = self
-            .buttons
-            .get(&report_id)
-            .copied()
-            .ok_or_else(|| anyhow!("descriptor missing Button 1 field in touch report {report_id:#04x}"))?;
+        let button = self.buttons.get(&report_id).copied().ok_or_else(|| {
+            anyhow!("descriptor missing Button 1 field in touch report {report_id:#04x}")
+        })?;
 
         let total_bits = self.bit_cursor.get(&report_id).copied().unwrap_or(0);
 
-        let physical_x_max_mm = self
-            .physical_x_max_mm
-            .ok_or_else(|| anyhow!("descriptor missing Physical Max + Unit (cm/in length) for X"))?;
-        let physical_y_max_mm = self
-            .physical_y_max_mm
-            .ok_or_else(|| anyhow!("descriptor missing Physical Max + Unit (cm/in length) for Y"))?;
+        let physical_x_max_mm = self.physical_x_max_mm.ok_or_else(|| {
+            anyhow!("descriptor missing Physical Max + Unit (cm/in length) for X")
+        })?;
+        let physical_y_max_mm = self.physical_y_max_mm.ok_or_else(|| {
+            anyhow!("descriptor missing Physical Max + Unit (cm/in length) for Y")
+        })?;
         let layout = Layout {
             report_id,
             input_mode_report_id: self.input_mode_report_id,
@@ -637,13 +640,17 @@ fn physical_to_mm(physical: i32, unit: u32, unit_exponent: i32) -> Option<f64> {
     }
     let system = unit & 0xF;
     let length_nib = ((unit >> 4) & 0xF) as i32;
-    let length_exp = if length_nib & 0x8 != 0 { length_nib - 16 } else { length_nib };
+    let length_exp = if length_nib & 0x8 != 0 {
+        length_nib - 16
+    } else {
+        length_nib
+    };
     if length_exp != 1 {
         return None;
     }
     let scale_to_mm = match system {
-        1 => 10.0,   // SI Linear: cm → mm
-        3 => 25.4,   // English Linear: in → mm
+        1 => 10.0, // SI Linear: cm → mm
+        3 => 25.4, // English Linear: in → mm
         _ => return None,
     };
     Some((physical as f64) * 10f64.powi(unit_exponent) * scale_to_mm)
@@ -728,9 +735,8 @@ mod tests {
         // feature field in report 0x07. The ID is intentionally not 0x08
         // to prove the parser does not bake in a universal report number.
         desc.extend_from_slice(&[
-            0x05, 0x0D, 0x09, 0x0E, 0xA1, 0x01, 0x85, 0x07, 0x09, 0x22, 0xA1, 0x02,
-            0x09, 0x52, 0x15, 0x00, 0x25, 0x0A, 0x75, 0x08, 0x95, 0x01, 0xB1, 0x02,
-            0xC0, 0xC0,
+            0x05, 0x0D, 0x09, 0x0E, 0xA1, 0x01, 0x85, 0x07, 0x09, 0x22, 0xA1, 0x02, 0x09, 0x52,
+            0x15, 0x00, 0x25, 0x0A, 0x75, 0x08, 0x95, 0x01, 0xB1, 0x02, 0xC0, 0xC0,
         ]);
         let layout = parse(&desc).expect("parse");
         assert_eq!(layout.input_mode_report_id, Some(0x07));
@@ -761,19 +767,18 @@ mod tests {
     fn wpt_descriptor_with_mouse_tlc() -> Vec<u8> {
         // ===== Mouse TLC (Report ID 0x01) — declares Button 0x01..0x02 =====
         let mut d = vec![
-            0x05, 0x01,                         // Usage Page (Generic Desktop)
-            0x09, 0x02,                         // Usage (Mouse)
-            0xA1, 0x01,                         // Collection (Application)
-                0x85, 0x01,                         //   Report ID (1)
-                0x09, 0x01,                         //   Usage (Pointer)
-                0xA1, 0x00,                         //   Collection (Physical)
-                    0x05, 0x09, 0x19, 0x01, 0x29, 0x02, 0x15, 0x00, 0x25, 0x01,
-                    0x75, 0x01, 0x95, 0x02, 0x81, 0x02,     // 2 buttons (1 bit each)
-                    0x95, 0x06, 0x81, 0x03,                 // 6 bits padding
-                    0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15, 0x81, 0x25, 0x7F,
-                    0x75, 0x08, 0x95, 0x02, 0x81, 0x06,     // 2x 8-bit X/Y deltas
-                0xC0,
-            0xC0,
+            0x05, 0x01, // Usage Page (Generic Desktop)
+            0x09, 0x02, // Usage (Mouse)
+            0xA1, 0x01, // Collection (Application)
+            0x85, 0x01, //   Report ID (1)
+            0x09, 0x01, //   Usage (Pointer)
+            0xA1, 0x00, //   Collection (Physical)
+            0x05, 0x09, 0x19, 0x01, 0x29, 0x02, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x02,
+            0x81, 0x02, // 2 buttons (1 bit each)
+            0x95, 0x06, 0x81, 0x03, // 6 bits padding
+            0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15, 0x81, 0x25, 0x7F, 0x75, 0x08, 0x95, 0x02,
+            0x81, 0x06, // 2x 8-bit X/Y deltas
+            0xC0, 0xC0,
         ];
 
         // ===== Touchpad TLC (Report ID 0x05) — five fingers + scan + count + button =====

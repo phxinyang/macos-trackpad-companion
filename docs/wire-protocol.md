@@ -17,9 +17,11 @@ so senders retransmit that one a few times.
 ## Optional authentication
 
 Authentication is disabled when `[net].token` is absent or empty, preserving
-the original ATP1 wire format. When a token is configured, WebSocket clients
-must send either `Authorization: Bearer <token>` during the upgrade or put the
-URL-encoded token in `/ws?token=<token>`. UDP datagrams must use this envelope:
+the original ATP1 wire format. In that mode the server is loopback-only: an
+omitted `[net].listen_ip` resolves to `127.0.0.1`, and an explicit non-loopback
+address is rejected. When a token is configured, WebSocket clients must send
+either `Authorization: Bearer <token>` during the upgrade or put the URL-encoded
+token in `/ws?token=<token>`. UDP datagrams must use this envelope:
 
 ```text
 offset  size  field
@@ -31,7 +33,8 @@ offset  size  field
 
 The envelope is authentication, not encryption; use a trusted network or a
 VPN/TLS tunnel when frame confidentiality matters. Existing unauthenticated
-clients continue to work only while the server token is unset.
+clients continue to work only while the server token is unset and can reach the
+loopback listener.
 
 ## Liveness endpoint
 

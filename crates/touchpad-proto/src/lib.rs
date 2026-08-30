@@ -78,9 +78,7 @@ impl Frame {
         buf.extend_from_slice(&MAGIC);
         buf.push(VERSION);
         buf.push(if self.button { FLAG_BUTTON } else { 0 });
-        buf.push(
-            self.contacts.len() as u8,
-        );
+        buf.push(self.contacts.len() as u8);
         buf.extend_from_slice(&self.seq.to_le_bytes());
         buf.extend_from_slice(&self.scan_time_100us.to_le_bytes());
         for c in &self.contacts {
@@ -332,7 +330,10 @@ mod tests {
     fn rejects_count_and_length_violations() {
         let mut b = frame(1).encode();
         b[6] = (MAX_CONTACTS + 1) as u8;
-        assert_eq!(decode(&b), Err(DecodeError::BadContactCount(MAX_CONTACTS + 1)));
+        assert_eq!(
+            decode(&b),
+            Err(DecodeError::BadContactCount(MAX_CONTACTS + 1))
+        );
 
         let full = frame(1).encode();
         for cut in 0..full.len() {
@@ -367,10 +368,7 @@ mod tests {
         assert_eq!(t.classify(101), SeqClass::Duplicate);
         assert_eq!(t.classify(90), SeqClass::Duplicate);
         // A skip of three reports the two lost frames in between.
-        assert_eq!(
-            t.classify(104),
-            SeqClass::ForwardAfterGap { lost: 2 }
-        );
+        assert_eq!(t.classify(104), SeqClass::ForwardAfterGap { lost: 2 });
         // Jumping straight to MAX without touching the wrap point is a
         // ~4-billion step *backward* — implausible, so Duplicate.
         assert_eq!(t.classify(u32::MAX), SeqClass::Duplicate);
@@ -411,8 +409,20 @@ mod tests {
             scan_time_100us: 987_654,
             button: true,
             contacts: vec![
-                Contact { id: 5, x: -13.5, y: 77.25, tip: true, confidence: true },
-                Contact { id: 9, x: 4.0, y: -0.5, tip: true, confidence: false },
+                Contact {
+                    id: 5,
+                    x: -13.5,
+                    y: 77.25,
+                    tip: true,
+                    confidence: true,
+                },
+                Contact {
+                    id: 9,
+                    x: 4.0,
+                    y: -0.5,
+                    tip: true,
+                    confidence: false,
+                },
             ],
         };
         assert_eq!(decode(&bytes).unwrap(), expect);
@@ -424,7 +434,9 @@ mod tests {
     fn round_trips_random_frames() {
         let mut seed = 0x1234_5678u64;
         let mut rng = move || {
-            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            seed = seed
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             (seed >> 33) as u32
         };
         for _ in 0..500 {

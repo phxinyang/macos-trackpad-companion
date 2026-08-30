@@ -111,7 +111,9 @@ impl PeerGate {
             return PeerDecision::IgnoreRetired;
         }
         if self.active == Some(peer) {
-            return PeerDecision::Accept { switched_from: None };
+            return PeerDecision::Accept {
+                switched_from: None,
+            };
         }
         let switched_from = self.active.replace(peer);
         if let Some(previous) = switched_from {
@@ -179,11 +181,7 @@ impl Server {
             log::info!("[net] no transports enabled; nothing is listening");
             return Ok(());
         }
-        let token = self
-            .cfg
-            .token
-            .clone()
-            .filter(|token| !token.is_empty());
+        let token = self.cfg.configured_token().map(str::to_owned);
         if let Some(token) = token.as_deref() {
             if token.len() > AUTH_TOKEN_MAX_BYTES {
                 anyhow::bail!(
@@ -192,15 +190,9 @@ impl Server {
                     AUTH_TOKEN_MAX_BYTES
                 );
             }
-            log::info!(
-                "[net] bearer token enabled for WebSocket and UDP ATK1 envelopes"
-            );
+            log::info!("[net] bearer token enabled for WebSocket and UDP ATK1 envelopes");
         }
-        let bind_ip = self
-            .cfg
-            .listen_ip
-            .clone()
-            .unwrap_or_else(|| "0.0.0.0".into());
+        let bind_ip = self.cfg.effective_listen_ip()?;
         let requested_port = self.cfg.port;
 
         // Both transports deliberately share one port number for discovery.
@@ -208,7 +200,7 @@ impl Server {
         // the assigned number for the other socket.
         let udp = if phone_enabled {
             Some(
-                UdpSocket::bind((bind_ip.as_str(), requested_port))
+                UdpSocket::bind((bind_ip, requested_port))
                     .with_context(|| format!("bind UDP {bind_ip}:{requested_port}"))?,
             )
         } else {
@@ -216,7 +208,10 @@ impl Server {
         };
         let port = if requested_port == 0 {
             if let Some(ref socket) = udp {
-                socket.local_addr().context("read assigned UDP port")?.port()
+                socket
+                    .local_addr()
+                    .context("read assigned UDP port")?
+                    .port()
             } else {
                 0
             }
@@ -225,7 +220,7 @@ impl Server {
         };
         let tcp = if web_enabled {
             Some(
-                TcpListener::bind((bind_ip.as_str(), port))
+                TcpListener::bind((bind_ip, port))
                     .with_context(|| format!("bind TCP {bind_ip}:{port}"))?,
             )
         } else {
@@ -344,7 +339,9 @@ fn pump(rx: mpsc::Receiver<Incoming>, stats: &Stats, sink: &mut dyn InputSink) -
                 if peers.active != Some(peer) {
                     continue;
                 }
-                log::info!("[net] sender restarted on {peer:?}; canceling touch and resetting scan clock");
+                log::info!(
+                    "[net] sender restarted on {peer:?}; canceling touch and resetting scan clock"
+                );
                 if contacts_down {
                     sink.on_link_timeout(Timestamp::now());
                     contacts_down = false;
@@ -569,13 +566,25 @@ fn udp_reader(
                             let _ = tx.send(Incoming::Restart { peer: peer_id });
                         }
                         if let Some(lost) = lost_since_last {
-                            let _ = tx.send(Incoming::Gap { peer: peer_id, lost });
+                            let _ = tx.send(Incoming::Gap {
+                                peer: peer_id,
+                                lost,
+                            });
                         }
-                        let _ = tx.send(Incoming::Frame { peer: peer_id, frame });
+                        let _ = tx.send(Incoming::Frame {
+                            peer: peer_id,
+                            frame,
+                        });
                     }
                     Admit::Replay if frame.contacts.is_empty() => {
                         // Retransmitted lift — intentional safety copy.
-                        let _ = tx.send(Incoming::Frame { peer: PeerId { transport: PeerTransport::Udp, addr: peer }, frame });
+                        let _ = tx.send(Incoming::Frame {
+                            peer: PeerId {
+                                transport: PeerTransport::Udp,
+                                addr: peer,
+                            },
+                            frame,
+                        });
                     }
                     Admit::Replay | Admit::Stale => {} // superseded motion frame
                 }
@@ -653,7 +662,11 @@ fn handle_conn(
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("");
     let raw_path = parts.next().unwrap_or("/");
-    let clean_path = raw_path.split('?').next().unwrap_or(raw_path).trim_end_matches('/');
+    let clean_path = raw_path
+        .split('?')
+        .next()
+        .unwrap_or(raw_path)
+        .trim_end_matches('/');
 
     if method != "GET" {
         write_simple(&mut stream, 405, "method not allowed")?;
@@ -678,7 +691,8 @@ fn handle_conn(
     }
 
     // WebSocket upgrade for the touchpad event channel.
-    let wants_ws = (clean_path == "/ws" || raw_path == "/ws") && head.to_ascii_lowercase().contains("upgrade: websocket");
+    let wants_ws = (clean_path == "/ws" || raw_path == "/ws")
+        && head.to_ascii_lowercase().contains("upgrade: websocket");
     if wants_ws {
         if !authorized_http_request(&head, raw_path, token) {
             write_unauthorized(&mut stream)?;
@@ -697,14 +711,22 @@ fn handle_conn(
         ws_relay(stream, peer, tx, &stats)
     } else {
         let lower_path = clean_path.to_ascii_lowercase();
-        if lower_path.is_empty() || lower_path == "/index.html" || lower_path == "/touchpad.html" || lower_path == "/touchpad" {
+        if lower_path.is_empty()
+            || lower_path == "/index.html"
+            || lower_path == "/touchpad.html"
+            || lower_path == "/touchpad"
+        {
             if !authorized_http_request(&head, raw_path, token) {
                 write_unauthorized(&mut stream)?;
                 return Ok(());
             }
             write_simple(&mut stream, 200, &page.html)?;
             Ok(())
-        } else if lower_path == "/test" || lower_path == "/tester" || lower_path == "/test.html" || lower_path == "/tester.html" {
+        } else if lower_path == "/test"
+            || lower_path == "/tester"
+            || lower_path == "/test.html"
+            || lower_path == "/tester.html"
+        {
             if !authorized_http_request(&head, raw_path, token) {
                 write_unauthorized(&mut stream)?;
                 return Ok(());
@@ -712,8 +734,8 @@ fn handle_conn(
             write_simple(&mut stream, 200, &page.tester_html)?;
             Ok(())
         } else {
-        let help_body = format!(
-            "<!DOCTYPE html><html><body style='background:#0b0c10;color:#eee;font-family:sans-serif;padding:40px;'>\
+            let help_body = format!(
+                "<!DOCTYPE html><html><body style='background:#0b0c10;color:#eee;font-family:sans-serif;padding:40px;'>\
             <h2>404 Not Found</h2>\
             <p>请求路径: <code>{}</code> 未找到。</p>\
             <p>请点击直达页面：</p>\
@@ -722,8 +744,8 @@ fn handle_conn(
               <li><a href='/test' style='color:#00e5ff;'>🛠 触控板全功能诊断套件 (/test)</a></li>\
             </ul>\
             </body></html>",
-            raw_path
-        );
+                raw_path
+            );
             write_simple(&mut stream, 404, &help_body)
         }
     }
@@ -1052,10 +1074,7 @@ mod tests {
 
     #[test]
     fn web_page_requires_configured_token() {
-        let denied = health_request(
-            Some("s3cret"),
-            "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n",
-        );
+        let denied = health_request(Some("s3cret"), "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
         assert!(denied.starts_with("HTTP/1.1 401 Unauthorized"));
 
         let accepted = health_request(
@@ -1165,11 +1184,15 @@ mod tests {
 
         assert_eq!(
             gate.observe(udp, t0),
-            PeerDecision::Accept { switched_from: None }
+            PeerDecision::Accept {
+                switched_from: None
+            }
         );
         assert_eq!(
             gate.observe(udp, t0 + Duration::from_millis(10)),
-            PeerDecision::Accept { switched_from: None }
+            PeerDecision::Accept {
+                switched_from: None
+            }
         );
         assert_eq!(
             gate.observe(ws, t0 + Duration::from_millis(20)),
@@ -1197,7 +1220,9 @@ mod tests {
         let ws = endpoint(PeerTransport::WebSocket, 1001);
         assert_eq!(
             gate.observe(udp, t0),
-            PeerDecision::Accept { switched_from: None }
+            PeerDecision::Accept {
+                switched_from: None
+            }
         );
         assert_eq!(
             gate.observe(ws, t0 + Duration::from_millis(1)),
@@ -1216,7 +1241,10 @@ mod tests {
             contacts: Vec::new(),
         };
         let encoded = frame.encode();
-        assert_eq!(authenticated_udp_payload(&encoded, None), Some(encoded.as_slice()));
+        assert_eq!(
+            authenticated_udp_payload(&encoded, None),
+            Some(encoded.as_slice())
+        );
 
         let token = b"s3cret";
         let mut envelope = Vec::from(AUTH_MAGIC);
@@ -1230,7 +1258,10 @@ mod tests {
         let mut empty = Vec::from(AUTH_MAGIC);
         empty.extend_from_slice(&(token.len() as u16).to_le_bytes());
         empty.extend_from_slice(token);
-        assert_eq!(authenticated_udp_payload(&empty, Some("s3cret")), Some(&[][..]));
+        assert_eq!(
+            authenticated_udp_payload(&empty, Some("s3cret")),
+            Some(&[][..])
+        );
         assert_eq!(authenticated_udp_payload(&envelope, Some("wrong")), None);
         assert_eq!(authenticated_udp_payload(&encoded, Some("s3cret")), None);
     }

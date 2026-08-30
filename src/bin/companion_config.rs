@@ -180,18 +180,19 @@ fn set(path: Option<&Path>, dotted: &str, raw_value: &str) -> Result<()> {
 
 fn write_config(resolved: &Path, root: &toml::Value) -> Result<()> {
     let rendered = toml::to_string_pretty(root).context("render config")?;
+    config::Config::parse_str(&rendered).context("validate config before write")?;
     let tmp = resolved.with_extension("toml.tmp");
     if let Some(parent) = resolved.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("create config directory {}", parent.display()))?;
     }
     std::fs::write(&tmp, rendered).with_context(|| format!("write {}", tmp.display()))?;
-    std::fs::rename(&tmp, &resolved)
+    std::fs::rename(&tmp, resolved)
         .with_context(|| format!("replace config {}", resolved.display()))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&resolved, std::fs::Permissions::from_mode(0o600))
+        std::fs::set_permissions(resolved, std::fs::Permissions::from_mode(0o600))
             .with_context(|| format!("protect config {}", resolved.display()))?;
     }
     Ok(())
@@ -251,6 +252,18 @@ fn remove_value(root: &mut toml::Value, path: &[&str]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static NEXT_TEST_DIR: AtomicUsize = AtomicUsize::new(0);
+
+    fn test_config_path(name: &str) -> PathBuf {
+        let id = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("companion-config-tests")
+            .join(format!("{}-{name}-{id}", std::process::id()))
+            .join("config.toml")
+    }
 
     #[test]
     fn parses_scalar_values() {
@@ -280,5 +293,39 @@ mod tests {
             .collect::<String>();
         assert_eq!(token.len(), 64);
         assert!(token.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn invalid_set_never_replaces_existing_config() {
+        let path = test_config_path("invalid-set");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = "[net]\nport = 4242\nweb_enabled = true\n";
+
+        for (dotted, raw_value) in [
+            ("net.unknown_option", "true"),
+            ("net.web_enabled", "not-a-bool"),
+            ("net.port", "70000"),
+            ("net.listen_ip", "0.0.0.0"),
+        ] {
+            std::fs::write(&path, original).unwrap();
+            let error = set(Some(&path), dotted, raw_value).unwrap_err().to_string();
+            assert!(
+                error.contains("validate config before write"),
+                "unexpected error for {dotted}: {error}"
+            );
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+            assert!(!path.with_extension("toml.tmp").exists());
+        }
+
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn valid_set_is_written_after_schema_validation() {
+        let path = test_config_path("valid-set");
+        set(Some(&path), "net.port", "4545").unwrap();
+        let (cfg, _) = config::load(Some(&path)).unwrap();
+        assert_eq!(cfg.net.port, 4545);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 }

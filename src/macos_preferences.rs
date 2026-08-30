@@ -99,6 +99,7 @@ impl RawTrackpadPreferences {
     /// Number of preference values collected across the primary, fallback,
     /// and global domains. This is intentionally exposed for diagnostics;
     /// callers should use `value` for individual settings.
+    #[allow(dead_code)]
     pub fn value_count(&self) -> usize {
         self.values.len()
     }
@@ -649,6 +650,7 @@ pub fn apply(cfg: &mut Config) -> SyncReport {
 /// virtual phone surface has no physical click switch to mirror. Keep the
 /// companion default (`tap_to_click = on`) in that mode while still honoring
 /// an explicit TOML setting.
+#[allow(dead_code)]
 pub fn apply_for_virtual_input(cfg: &mut Config) -> SyncReport {
     apply_with_mode(cfg, true)
 }
@@ -790,7 +792,7 @@ mod tests {
             ..SyncReport::default()
         };
         merge_policy(&mut cfg, &policy, &mut report);
-        assert_eq!(cfg.scroll.natural, true);
+        assert!(cfg.scroll.natural);
         assert_eq!(cfg.macos.haptic_feedback, HapticSetting::On);
         assert_eq!(cfg.gestures.pinch.enable, GestureEnable::On);
         assert_eq!(cfg.gestures.tap_to_click, GestureEnable::Off);

@@ -12,8 +12,8 @@ pub mod gesture;
 #[cfg(target_os = "macos")]
 pub mod hid;
 pub mod instance_lock;
-pub mod net;
 pub mod macos_preferences;
+pub mod net;
 #[cfg(target_os = "macos")]
 pub mod output;
 #[cfg(not(target_os = "macos"))]
