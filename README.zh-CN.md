@@ -248,11 +248,6 @@ Developer ID 签名并完成公证的 macOS DMG/ZIP、自动发布说明和 `SHA
 的 GitHub Release。发布凭据仅保存在 GitHub Actions Secrets 中。所需密钥、
 版本字段和 tag 流程见 [docs/releasing.md](docs/releasing.md)。
 
-如果暂时没有发布密钥，可以在 GitHub Actions 页面手动运行
-**Development Release** 工作流。它会创建明确标记的 Pre-release，包含 ad-hoc
-签名的 macOS DMG/ZIP 和 debug Android APK，仅供测试使用，不适合正式分发或上传
-到 Google Play。
-
 ## 目录结构速览
 
 | 目录 | 职责 |
