@@ -37,9 +37,10 @@ DMG staging volume and is not copied into the installed app.
 The installer background is a `900x620` asset. Finder receives a fixed
 `900x620` window and explicit icon-center coordinates, `{245,340}` for the app
 and `{655,340}` for the Applications shortcut. The staging `.background`
-directory and `.hidden` manifest are hidden before the image is created and
-again after Finder saves its icon view, using filesystem flags plus Finder
-metadata. The background contains only the title, one install instruction, and
+directory is hidden before the image is created and again after Finder saves
+its icon view, using filesystem flags plus Finder metadata when `SetFile` is
+available through the Xcode tools. No helper manifest is shipped in the image.
+The background contains only the title, one install instruction, and
 the transfer arrow; Finder owns the two icon labels so explanatory copy cannot
 overlap them.
 Set `CODESIGN_IDENTITY='Developer ID Application: ...'` for a hardened runtime

@@ -6,6 +6,8 @@ import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RadialGradient
@@ -147,8 +149,16 @@ internal object InteractionMetrics {
     const val PRESS_ALPHA = 0.96f
     const val PRESS_DOWN_MS = 95L
     const val PRESS_UP_MS = 175L
+    const val FULLSCREEN_ENTER_MS = 260L
+    const val FULLSCREEN_EXIT_MS = 220L
+    const val FULLSCREEN_ENTER_SCALE = 0.985f
+    const val FULLSCREEN_EXIT_SCALE = 0.995f
     val PRESS_DOWN_INTERPOLATOR = PathInterpolator(0.2f, 0f, 0f, 1f)
     val PRESS_UP_INTERPOLATOR = DecelerateInterpolator(1.35f)
+    // A short ease-out with a soft tail matches the way macOS hides chrome:
+    // the surface stays anchored while the controls leave its visual field.
+    val FULLSCREEN_ENTER_INTERPOLATOR = PathInterpolator(0.16f, 1f, 0.3f, 1f)
+    val FULLSCREEN_EXIT_INTERPOLATOR = PathInterpolator(0.2f, 0f, 0f, 1f)
 }
 
 private data class ThemePalette(
@@ -270,6 +280,10 @@ private class MaterialSurfaceView(context: android.content.Context) : View(conte
         val scene = palette ?: return
         val w = width.toFloat()
         val h = height.toFloat()
+        // API 31+ GpuGlassView (and the QWEA0 fallback) owns the optical
+        // surface. An opaque child fill here would paint over that lens and
+        // leave only a static gradient visible while the pad is idle.
+        if (scene.material == MaterialKind.LIQUID_GLASS) return
         paint.shader = null
         paint.style = Paint.Style.FILL
         canvas.drawColor(scene.pad)
@@ -678,11 +692,14 @@ class MainActivity : Activity() {
     private lateinit var connectButton: Button
     private lateinit var headerToggle: Button
     private var padGlassView: LiquidGlassView? = null
+    private var gpuGlassView: GpuGlassView? = null
     private var normalPadFrameBackground: android.graphics.drawable.Drawable? = null
     private lateinit var discovery: MacDiscovery
     private var discoveredEndpoints: List<MacDiscovery.MacEndpoint> = emptyList()
     private var isFullscreenMode = false
     private var isConnected = false
+    private var isConnecting = false
+    private var connectionAttemptSerial = 0L
     private var headerExpanded = true
     private var modalDepth = 0
     private var wallpaperBitmap: Bitmap? = null
@@ -764,6 +781,10 @@ class MainActivity : Activity() {
         }
         pad.onTouchStateChanged = { active ->
             padGlassView?.enableDynamicBackground = active
+            gpuGlassView?.setInteraction(active)
+        }
+        pad.onTouchPositionChanged = { x, y ->
+            gpuGlassView?.setInteraction(true, x, y)
         }
         padFrame = FrameLayout(this)
         padFrame.addView(
@@ -883,7 +904,9 @@ class MainActivity : Activity() {
                 addView(status)
             }
             addView(headerInfo)
-            connectButton = actionButton("连接 Mac", true) { showConnectionDialog() }.apply {
+            connectButton = actionButton("连接 Mac", true) {
+                if (isConnecting) cancelMacConnection() else showConnectionDialog()
+            }.apply {
                 contentDescription = "配置并连接 Mac"
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40))
             }
@@ -1023,50 +1046,61 @@ class MainActivity : Activity() {
                     val left = (width - drawWidth) / 2f
                     val top = (height - drawHeight) / 2f
                     paint.shader = null
-                    paint.alpha = 232
+                    val wallpaperOpacity = prefs.getInt(KEY_WALLPAPER_OPACITY, DEFAULT_WALLPAPER_OPACITY)
+                        .coerceIn(0, 100)
+                    val wallpaperSaturation = prefs.getInt(KEY_WALLPAPER_SATURATION, DEFAULT_WALLPAPER_SATURATION)
+                        .coerceIn(60, 140) / 100f
+                    val wallpaperBrightness = prefs.getInt(KEY_WALLPAPER_BRIGHTNESS, DEFAULT_WALLPAPER_BRIGHTNESS)
+                        .coerceIn(70, 130) / 100f
+                    val colorMatrix = ColorMatrix().apply { setSaturation(wallpaperSaturation) }
+                    colorMatrix.postConcat(ColorMatrix(floatArrayOf(
+                        wallpaperBrightness, 0f, 0f, 0f, 0f,
+                        0f, wallpaperBrightness, 0f, 0f, 0f,
+                        0f, 0f, wallpaperBrightness, 0f, 0f,
+                        0f, 0f, 0f, 1f, 0f,
+                    )))
+                    paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
+                    paint.alpha = (wallpaperOpacity * 2.55f).toInt().coerceIn(0, 255)
                     canvas.drawBitmap(bitmap, null, android.graphics.RectF(left, top, left + drawWidth, top + drawHeight), paint)
+                    paint.colorFilter = null
                     paint.alpha = 255
-                    paint.color = if (scene.sceneDark) 0x99070B12.toInt() else 0x78FFFFFF
+                    // A wallpaper is already the visual identity of the scene.
+                    // Keep only a restrained readability scrim; theme gradients
+                    // belong to the no-wallpaper state and otherwise shift the
+                    // user's image toward an unintended hue.
+                    paint.color = if (scene.sceneDark) 0x24070B12 else 0x18FFFFFF
+                    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+                } else {
+                    val tint = { color: Int, alpha: Int ->
+                        Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
+                    }
+                    paint.shader = LinearGradient(
+                        0f, 0f, width.toFloat(), height.toFloat(),
+                        intArrayOf(scene.sceneStart, scene.sceneMid, scene.sceneEnd),
+                        null,
+                        Shader.TileMode.CLAMP,
+                    )
+                    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+                    // Continuous fields provide a quiet optical backdrop when
+                    // no wallpaper is selected; they are intentionally absent
+                    // when a user image is present.
+                    paint.shader = LinearGradient(
+                        width * -.18f, height * .92f, width * 1.18f, height * .08f,
+                        intArrayOf(scene.sceneStart, tint(scene.sceneGlowA, 0x66), scene.sceneMid, tint(scene.sceneGlowB, 0x66), scene.sceneEnd),
+                        floatArrayOf(0f, .22f, .48f, .74f, 1f),
+                        Shader.TileMode.CLAMP,
+                    )
+                    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+                    paint.shader = LinearGradient(
+                        0f, height * .04f, width.toFloat(), height * .96f,
+                        intArrayOf(0x30FFFFFF, 0x00000000, scene.sceneGlowC, 0x00000000),
+                        floatArrayOf(0f, .30f, .68f, 1f),
+                        Shader.TileMode.CLAMP,
+                    )
                     canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
                 }
-                val tint = { color: Int, alpha: Int ->
-                    Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
-                }
-                paint.shader = LinearGradient(
-                    0f, 0f, width.toFloat(), height.toFloat(),
-                    intArrayOf(
-                        if (bitmap == null) scene.sceneStart else tint(scene.sceneStart, 0x86),
-                        if (bitmap == null) scene.sceneMid else tint(scene.sceneMid, 0x72),
-                        if (bitmap == null) scene.sceneEnd else tint(scene.sceneEnd, 0x86),
-                    ),
-                    null,
-                    Shader.TileMode.CLAMP,
-                )
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
-                // Use only continuous fields behind the lens. This gives the
-                // refraction shader enough contrast without adding circles,
-                // blocks, or a poster-like ribbon composition.
-                paint.shader = LinearGradient(
-                    width * -.18f, height * .92f, width * 1.18f, height * .08f,
-                    intArrayOf(
-                        if (bitmap == null) scene.sceneStart else tint(scene.sceneStart, 0x58),
-                        if (bitmap == null) scene.sceneGlowA else tint(scene.sceneGlowA, 0x66),
-                        if (bitmap == null) scene.sceneMid else tint(scene.sceneMid, 0x48),
-                        if (bitmap == null) scene.sceneGlowB else tint(scene.sceneGlowB, 0x66),
-                        if (bitmap == null) scene.sceneEnd else tint(scene.sceneEnd, 0x58),
-                    ),
-                    floatArrayOf(0f, .22f, .48f, .74f, 1f),
-                    Shader.TileMode.CLAMP,
-                )
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
-                paint.shader = LinearGradient(
-                    0f, height * .04f, width.toFloat(), height * .96f,
-                    intArrayOf(0x30FFFFFF, 0x00000000, scene.sceneGlowC, 0x00000000),
-                    floatArrayOf(0f, .30f, .68f, 1f),
-                    Shader.TileMode.CLAMP,
-                )
-                canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
                 paint.shader = null
+                paint.colorFilter = null
             }
         }.apply {
             setWillNotDraw(false)
@@ -1079,56 +1113,74 @@ class MainActivity : Activity() {
             addView(backdropLayer, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             if (palette.usesLiquidGlass) {
                 val liquid = palette.liquid ?: LIQUID_DEFAULT
-                val padGlass = LiquidGlassView(this@MainActivity).apply {
-                    cornerRadius = dp(30).toFloat()
-                    // CLEAR keeps the scene recognizable through the lens. The
-                    // regular preset adds a heavy system tint and reads as a
-                    // gray overlay on a large touch surface.
-                    material = GlassMaterial.CLEAR
-                    useShaderPipeline = true
-                    // Keep the full dynamic lens during a gesture; the touch
-                    // host toggles this off as soon as all fingers lift so an
-                    // idle pad never spins a permanent render loop.
-                    enableDynamicBackground = false
-                    globalDownsampleFactor = GLASS_GLOBAL_DOWNSAMPLE
-                    downsampleScale = GLASS_DOWNSAMPLE_SCALE
-                    enableOptimizedCapture = true
-                    highQualityBlur = false
-                    blurMethod = BlurMethod.DOWNSAMPLE
-                    collectFrameStats = false
-                    useHardwareBlurWhenPossible = true
-                    // A restrained blur matches the web surface and leaves
-                    // enough color structure for the refraction to read.
-                    enableBackdropBlur = true
-                    // Keep the complete optical stack for fallback renderers,
-                    // but run both color passes on reduced-resolution buffers.
-                    enableChromaticAberration = true
-                    enableChromaticDispersion = true
-                    aberrationDownsample = 0.35f
-                    dispersionDownsample = 0.35f
-                    enableEdgeHighlight = true
-                    enableSensorHighlight = true
-                    enableAdaptiveTint = liquid.adaptiveTint
-                    overLight = !palette.sceneDark
-                    enableShadow = false
-                    // Match the library's showcase scale: the large pad needs
-                    // a real lens profile, otherwise the rim reads as blur.
-                    bevelWidth = liquid.bevelWidth
-                    refractionHeight = liquid.refractionHeight
-                    dispersionStrength = liquid.dispersionStrength
-                    blurAmount = liquid.blurAmount
-                    saturation = liquid.saturation
-                    edgeHighlightOpacity = liquid.highlightOpacity
-                    enablePressEffect = false
-                    addView(padFrame, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    // API 31+ uses one local AGSL pass: a half-resolution scene
+                    // texture is sampled for refraction, dispersion and touch
+                    // lighting without QWEA0's several intermediate surfaces.
+                    val gpu = GpuGlassView(this@MainActivity).apply {
+                        setOptics(
+                            refractionHeight = liquid.refractionHeight,
+                            dispersionStrength = liquid.dispersionStrength,
+                            saturation = liquid.saturation,
+                            highlightOpacity = liquid.highlightOpacity,
+                            accentColor = palette.accent,
+                        )
+                        setFullscreen(isFullscreenMode)
+                        addView(padFrame, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                    }
+                    gpuGlassView = gpu
+                    padGlassView = null
+                    padHost = gpu
+                    addView(gpu, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply {
+                        setMargins(dp(18), dp(68), dp(18), dp(66))
+                    })
+                    gpu.post { gpu.setBackdropSource(backdropLayer) }
+                } else {
+                    val padGlass = LiquidGlassView(this@MainActivity).apply {
+                        cornerRadius = dp(30).toFloat()
+                        // CLEAR keeps the scene recognizable through the lens.
+                        material = GlassMaterial.CLEAR
+                        useShaderPipeline = true
+                        // Keep the full dynamic lens during a gesture; the touch
+                        // host toggles this off as soon as all fingers lift.
+                        enableDynamicBackground = false
+                        globalDownsampleFactor = GLASS_GLOBAL_DOWNSAMPLE
+                        downsampleScale = GLASS_DOWNSAMPLE_SCALE
+                        enableOptimizedCapture = true
+                        highQualityBlur = false
+                        blurMethod = BlurMethod.DOWNSAMPLE
+                        collectFrameStats = false
+                        useHardwareBlurWhenPossible = true
+                        enableBackdropBlur = true
+                        enableChromaticAberration = true
+                        enableChromaticDispersion = true
+                        aberrationDownsample = 0.35f
+                        dispersionDownsample = 0.35f
+                        enableEdgeHighlight = true
+                        enableSensorHighlight = true
+                        enableAdaptiveTint = liquid.adaptiveTint
+                        overLight = !palette.sceneDark
+                        enableShadow = false
+                        bevelWidth = liquid.bevelWidth
+                        refractionHeight = liquid.refractionHeight
+                        dispersionStrength = liquid.dispersionStrength
+                        blurAmount = liquid.blurAmount
+                        saturation = liquid.saturation
+                        edgeHighlightOpacity = liquid.highlightOpacity
+                        enablePressEffect = false
+                        addView(padFrame, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                    }
+                    padGlassView = padGlass
+                    gpuGlassView = null
+                    padHost = padGlass
+                    addView(padGlass, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply {
+                        setMargins(dp(18), dp(68), dp(18), dp(66))
+                    })
+                    padGlass.post { padGlass.backdropSource = backdropLayer }
                 }
-                padGlassView = padGlass
-                padHost = padGlass
-                addView(padGlass, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply {
-                    setMargins(dp(18), dp(68), dp(18), dp(66))
-                })
-                padGlass.post { padGlass.backdropSource = backdropLayer }
             } else {
+                padGlassView = null
+                gpuGlassView = null
                 padHost = padFrame
                 addView(padFrame, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply {
                     setMargins(dp(18), dp(68), dp(18), dp(66))
@@ -1161,6 +1213,8 @@ class MainActivity : Activity() {
         addChromeSurface(header, 12, top = true)
         rootFrame.addView(fullscreenFloatBtn)
 
+        padHost.alpha = surfaceOpacityFraction()
+
         setContentView(rootFrame)
         padFrame.post { layoutDeepPressBar() }
 
@@ -1169,6 +1223,7 @@ class MainActivity : Activity() {
                 prefs.getString(KEY_HOST, "") ?: "",
                 prefs.getString(KEY_PORT, "4242") ?: "4242",
                 prefs.getString(KEY_TOKEN, "") ?: "",
+                prefs.getBoolean(KEY_WEB_ENABLED, true),
             )
         }
 
@@ -1176,18 +1231,30 @@ class MainActivity : Activity() {
         excludeSystemGestures(rootFrame)
     }
 
-    private fun connectToMac(host: String, portText: String, tokenText: String) {
+    private fun connectToMac(host: String, portText: String, tokenText: String, probeWeb: Boolean = true) {
         val port = portText.toIntOrNull()?.coerceIn(1, 65535) ?: 4242
+        val attempt = ++connectionAttemptSerial
         prefs.edit()
             .putString(KEY_HOST, host)
             .putString(KEY_PORT, port.toString())
             .putString(KEY_TOKEN, tokenText)
+            .putBoolean(KEY_WEB_ENABLED, probeWeb)
             .apply()
+        isConnecting = true
         setStatus(false, "连接中…")
-        sender.connect(host, port, tokenText.ifEmpty { null }, object : UdpSender.Listener {
+        sender.connect(host, port, tokenText.ifEmpty { null }, probeWeb, object : UdpSender.Listener {
             override fun onState(connected: Boolean, message: String) =
-                runOnUiThread { setStatus(connected, message) }
+                runOnUiThread {
+                    if (attempt == connectionAttemptSerial) setStatus(connected, message)
+                }
         })
+    }
+
+    private fun cancelMacConnection() {
+        if (!isConnecting) return
+        connectionAttemptSerial += 1
+        sender.cancelConnect()
+        setStatus(false, "已取消连接")
     }
 
     private fun themePalette(): ThemePalette {
@@ -1399,6 +1466,62 @@ class MainActivity : Activity() {
             dialog.dismiss()
             pickWallpaper()
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply {
+            bottomMargin = dp(6)
+        })
+        container.addView(TextView(this).apply {
+            text = "背景外观"
+            setTextColor(palette.secondary)
+            textSize = 11f
+            letterSpacing = 0.08f
+            setPadding(dp(4), dp(12), dp(4), dp(6))
+        })
+        var pendingWallpaperOpacity = prefs.getInt(KEY_WALLPAPER_OPACITY, DEFAULT_WALLPAPER_OPACITY)
+        var pendingWallpaperSaturation = prefs.getInt(KEY_WALLPAPER_SATURATION, DEFAULT_WALLPAPER_SATURATION)
+        var pendingWallpaperBrightness = prefs.getInt(KEY_WALLPAPER_BRIGHTNESS, DEFAULT_WALLPAPER_BRIGHTNESS)
+        var pendingSurfaceOpacity = prefs.getInt(KEY_SURFACE_OPACITY, DEFAULT_SURFACE_OPACITY)
+        fun appearanceSlider(title: String, min: Int, max: Int, initial: Int, onChange: (Int) -> Unit) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, dp(3), 0, dp(3))
+            }
+            val label = TextView(this).apply {
+                text = "$title  ${initial}%"
+                setTextColor(palette.label)
+                textSize = 13f
+            }
+            val seek = android.widget.SeekBar(this).apply {
+                this.max = max - min
+                progress = (initial - min).coerceIn(0, max - min)
+                contentDescription = title
+                setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                        val next = progress + min
+                        label.text = "$title  ${next}%"
+                        onChange(next)
+                    }
+                    override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) = Unit
+                    override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) = Unit
+                })
+            }
+            row.addView(label)
+            row.addView(seek, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
+            container.addView(row)
+        }
+        appearanceSlider("背景可见度", 0, 100, pendingWallpaperOpacity) { pendingWallpaperOpacity = it }
+        appearanceSlider("背景饱和度", 60, 140, pendingWallpaperSaturation) { pendingWallpaperSaturation = it }
+        appearanceSlider("背景亮度", 70, 130, pendingWallpaperBrightness) { pendingWallpaperBrightness = it }
+        appearanceSlider("触控面透明度", 55, 100, pendingSurfaceOpacity) { pendingSurfaceOpacity = it }
+        container.addView(actionSheetButton("应用背景外观", true) {
+            prefs.edit()
+                .putInt(KEY_WALLPAPER_OPACITY, pendingWallpaperOpacity)
+                .putInt(KEY_WALLPAPER_SATURATION, pendingWallpaperSaturation)
+                .putInt(KEY_WALLPAPER_BRIGHTNESS, pendingWallpaperBrightness)
+                .putInt(KEY_SURFACE_OPACITY, pendingSurfaceOpacity)
+                .apply()
+            dialog.dismiss()
+            recreate()
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply {
+            topMargin = dp(8)
             bottomMargin = dp(6)
         })
         val cancel = actionSheetButton("取消", false) { dialog.dismiss() }
@@ -1682,7 +1805,8 @@ class MainActivity : Activity() {
             })
             nearby.forEach { endpoint ->
                 val row = Button(this).apply {
-                    text = "${endpoint.name}\n${endpoint.host.hostAddress}:${endpoint.port}"
+                    val transportLabel = if (endpoint.webEnabled) "Web + 手机" else "仅手机 UDP"
+                    text = "${endpoint.name}\n${endpoint.host.hostAddress}:${endpoint.port} · $transportLabel"
                     isAllCaps = false
                     gravity = Gravity.START or Gravity.CENTER_VERTICAL
                     minHeight = dp(54)
@@ -1697,7 +1821,8 @@ class MainActivity : Activity() {
                         if (endpoint.authentication == "token" && token.isEmpty()) {
                             Toast.makeText(this@MainActivity, "该 Mac 需要配对 Token，请使用二维码或手动输入。", Toast.LENGTH_LONG).show()
                         } else {
-                            connectToMac(endpoint.host.hostAddress ?: "", endpoint.port.toString(), token)
+                            prefs.edit().putBoolean(KEY_WEB_ENABLED, endpoint.webEnabled).apply()
+                            connectToMac(endpoint.host.hostAddress ?: "", endpoint.port.toString(), token, endpoint.webEnabled)
                             dialog.dismiss()
                         }
                     }
@@ -1890,7 +2015,10 @@ class MainActivity : Activity() {
     }
 
     private fun applyPadChromeInsets() {
-        if (!::padHost.isInitialized) return
+        // While fullscreen, connection callbacks may still update the header
+        // state. Do not let those callbacks rewrite the surface bounds during
+        // an active fullscreen session; the exit transition restores them once.
+        if (!::padHost.isInitialized || isFullscreenMode) return
         val lp = (padHost.layoutParams as? FrameLayout.LayoutParams)
             ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         // Fullscreen hides chrome, but keeps the same centered touch surface.
@@ -1909,7 +2037,17 @@ class MainActivity : Activity() {
     private fun toggleFullscreen(fullscreen: Boolean) {
         if (isFullscreenMode == fullscreen) return
         isFullscreenMode = fullscreen
-        val motion = DecelerateInterpolator(1.35f)
+        val motion = if (fullscreen) {
+            InteractionMetrics.FULLSCREEN_ENTER_INTERPOLATOR
+        } else {
+            InteractionMetrics.FULLSCREEN_EXIT_INTERPOLATOR
+        }
+        val duration = if (fullscreen) {
+            InteractionMetrics.FULLSCREEN_ENTER_MS
+        } else {
+            InteractionMetrics.FULLSCREEN_EXIT_MS
+        }
+        val targetOpacity = surfaceOpacityFraction()
         header.animate().cancel()
         fullscreenFloatBtn.animate().cancel()
         padHost.animate().cancel()
@@ -1927,10 +2065,16 @@ class MainActivity : Activity() {
             fullscreenFloatBtn.visibility = View.VISIBLE
             fullscreenFloatBtn.alpha = 0f
             fullscreenFloatBtn.translationY = -dp(10).toFloat()
+            fullscreenFloatBtn.scaleX = .92f
+            fullscreenFloatBtn.scaleY = .92f
+            fullscreenFloatBtn.pivotX = fullscreenFloatBtn.width.toFloat()
+            fullscreenFloatBtn.pivotY = 0f
             fullscreenFloatBtn.animate()
-                .alpha(.78f)
+                .alpha(.86f)
                 .translationY(0f)
-                .setDuration(240L)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(duration)
                 .setInterpolator(motion)
                 .start()
         } else {
@@ -1940,13 +2084,17 @@ class MainActivity : Activity() {
             header.animate()
                 .alpha(1f)
                 .translationY(0f)
-                .setDuration(240L)
+                .setDuration(duration)
                 .setInterpolator(motion)
                 .start()
+            fullscreenFloatBtn.pivotX = fullscreenFloatBtn.width.toFloat()
+            fullscreenFloatBtn.pivotY = 0f
             fullscreenFloatBtn.animate()
                 .alpha(0f)
                 .translationY(-dp(10).toFloat())
-                .setDuration(170L)
+                .scaleX(.92f)
+                .scaleY(.92f)
+                .setDuration(duration)
                 .setInterpolator(motion)
                 .withEndAction { if (!isFullscreenMode) fullscreenFloatBtn.visibility = View.GONE }
                 .start()
@@ -1954,21 +2102,45 @@ class MainActivity : Activity() {
         if (::padHost.isInitialized) {
             val lp = (padHost.layoutParams as? FrameLayout.LayoutParams)
                 ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            applyPadChromeInsets()
-            if (padHost is LiquidGlassView) {
-                (padHost as LiquidGlassView).cornerRadius = dp(30).toFloat()
-                (padHost as LiquidGlassView).enableEdgeHighlight = true
+            if (fullscreen) {
+                // Fullscreen is a chrome mode, not a surface mode. Preserve
+                // the exact bounds that were visible before the transition;
+                // changing layout margins here makes the lens jump or appear
+                // to disappear while the header is fading out.
+                padHost.layoutParams = lp
+                if (padHost is LiquidGlassView) {
+                    (padHost as LiquidGlassView).cornerRadius = dp(30).toFloat()
+                    (padHost as LiquidGlassView).enableEdgeHighlight = true
+                }
+                gpuGlassView?.setFullscreen(false)
+                padFrame.setPadding(dp(8), dp(8), dp(8), dp(8))
+                padFrame.background = normalPadFrameBackground
+            } else {
+                applyPadChromeInsets()
+                padHost.layoutParams = lp
+                if (padHost is LiquidGlassView) {
+                    (padHost as LiquidGlassView).cornerRadius = dp(30).toFloat()
+                    (padHost as LiquidGlassView).enableEdgeHighlight = true
+                }
+                gpuGlassView?.setFullscreen(false)
+                padFrame.setPadding(dp(8), dp(8), dp(8), dp(8))
+                padFrame.background = normalPadFrameBackground
             }
-            padFrame.setPadding(dp(8), dp(8), dp(8), dp(8))
-            padFrame.background = normalPadFrameBackground
-            padHost.alpha = if (fullscreen) .88f else .90f
-            padHost.scaleX = if (fullscreen) .965f else .975f
-            padHost.scaleY = if (fullscreen) .965f else .975f
+            // Keep the user's chosen material opacity stable. A temporary
+            // alpha dip reads as a flash on bright wallpapers; the geometry
+            // settle alone gives the transition enough acknowledgement.
+            padHost.alpha = targetOpacity
+            padHost.scaleX = if (fullscreen) {
+                InteractionMetrics.FULLSCREEN_ENTER_SCALE
+            } else {
+                InteractionMetrics.FULLSCREEN_EXIT_SCALE
+            }
+            padHost.scaleY = padHost.scaleX
             padHost.animate()
-                .alpha(1f)
+                .alpha(targetOpacity)
                 .scaleX(1f)
                 .scaleY(1f)
-                .setDuration(300L)
+                .setDuration(duration)
                 .setInterpolator(motion)
                 .start()
         }
@@ -2338,12 +2510,17 @@ class MainActivity : Activity() {
 
     private fun setStatus(connected: Boolean, msg: String) {
         isConnected = connected
+        isConnecting = msg == "连接中…"
         status.text = msg
         val d = GradientDrawable().apply {
             shape = GradientDrawable.OVAL
             setColor(if (connected) 0xFF3DDC84.toInt() else Color.GRAY)
         }
         dot.background = d
+        if (::connectButton.isInitialized) {
+            connectButton.text = if (isConnecting) "取消连接" else "连接 Mac"
+            connectButton.contentDescription = if (isConnecting) "取消连接 Mac" else "配置并连接 Mac"
+        }
         setHeaderExpanded(!connected)
     }
 
@@ -2388,6 +2565,22 @@ class MainActivity : Activity() {
         if (hasFocus) immersive()
     }
 
+    @Deprecated("Use OnBackInvokedDispatcher on API 33+; kept for API 26-32 compatibility")
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        // Back is an exit affordance for immersive touch mode. Users should
+        // not lose the active pairing just because they want the chrome back.
+        if (isFullscreenMode) {
+            toggleFullscreen(false)
+            return
+        }
+        if (isConnecting) {
+            cancelMacConnection()
+            return
+        }
+        super.onBackPressed()
+    }
+
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -2397,6 +2590,7 @@ class MainActivity : Activity() {
                     prefs.getString(KEY_HOST, "") ?: "",
                     prefs.getString(KEY_PORT, "4242") ?: "4242",
                     prefs.getString(KEY_TOKEN, "") ?: "",
+                    prefs.getBoolean(KEY_WEB_ENABLED, true),
                 )
             }
             Toast.makeText(this, "已载入配对信息", Toast.LENGTH_SHORT).show()
@@ -2420,10 +2614,15 @@ class MainActivity : Activity() {
 
     private fun applyPairingIntent(intent: Intent?): Boolean {
         val target = PairingUri.parse(intent?.dataString) ?: return false
+        if (!target.phoneEnabled) {
+            Toast.makeText(this, "该 Mac 未开放手机连接。", Toast.LENGTH_LONG).show()
+            return false
+        }
         prefs.edit()
             .putString(KEY_HOST, target.host)
             .putString(KEY_PORT, target.port.toString())
             .putString(KEY_TOKEN, target.token.orEmpty())
+            .putBoolean(KEY_WEB_ENABLED, target.webEnabled)
             .apply()
         return true
     }
@@ -2444,10 +2643,14 @@ class MainActivity : Activity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
+    private fun surfaceOpacityFraction(): Float =
+        (prefs.getInt(KEY_SURFACE_OPACITY, DEFAULT_SURFACE_OPACITY).coerceIn(55, 100) / 100f)
+
     companion object {
         private const val KEY_HOST = "host"
         private const val KEY_PORT = "port"
         private const val KEY_TOKEN = "token"
+        private const val KEY_WEB_ENABLED = "web_enabled"
         private const val KEY_THEME = "theme"
         private const val KEY_SCALE = "scale"
         private const val KEY_HAPTIC = "haptic"
@@ -2467,7 +2670,15 @@ class MainActivity : Activity() {
         private const val KEY_DEEP_HEIGHT = "deep_press_height"
         private const val KEY_WALLPAPER_PRESET = "wallpaper_preset"
         private const val KEY_WALLPAPER_URI = "wallpaper_uri"
+        private const val KEY_WALLPAPER_OPACITY = "wallpaper_opacity"
+        private const val KEY_WALLPAPER_SATURATION = "wallpaper_saturation"
+        private const val KEY_WALLPAPER_BRIGHTNESS = "wallpaper_brightness"
+        private const val KEY_SURFACE_OPACITY = "surface_opacity"
         private const val REQUEST_WALLPAPER = 4201
+        private const val DEFAULT_WALLPAPER_OPACITY = 100
+        private const val DEFAULT_WALLPAPER_SATURATION = 100
+        private const val DEFAULT_WALLPAPER_BRIGHTNESS = 100
+        private const val DEFAULT_SURFACE_OPACITY = 92
         private const val DEFAULT_DEEP_HOLD_MS = 650L
         private const val DEFAULT_DEEP_HAPTIC_STRENGTH = 255
         private const val DEFAULT_DEEP_X = 0.5f

@@ -59,6 +59,8 @@ class TouchPadView(context: Context) : View(context) {
     /** Notifies visual hosts when a gesture starts/stops so expensive effects
      * can run only during interaction instead of while the pad is idle. */
     var onTouchStateChanged: ((Boolean) -> Unit)? = null
+    /** Reports the active contact centroid in local view pixels to visual hosts. */
+    var onTouchPositionChanged: ((Float, Float) -> Unit)? = null
     /** >1 = larger virtual surface, so each screen centimeter moves farther. */
     var scale: Float = 1f
     /** Controls only the visualizer. Wire frames and gesture semantics remain unchanged. */
@@ -316,6 +318,7 @@ class TouchPadView(context: Context) : View(context) {
             MotionEvent.ACTION_DOWN -> {
                 parent?.requestDisallowInterceptTouchEvent(true)
                 onTouchStateChanged?.invoke(true)
+                notifyTouchPosition(event)
                 freeAll()
                 clearVisualTouches()
                 onTouchPulse?.invoke(event.x, event.y)
@@ -331,6 +334,7 @@ class TouchPadView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
                 onTouchStateChanged?.invoke(true)
+                notifyTouchPosition(event)
                 remember(event)
                 val count = event.pointerCount
                 if (count > maxFingersInSession) {
@@ -346,6 +350,7 @@ class TouchPadView(context: Context) : View(context) {
             }
             MotionEvent.ACTION_MOVE -> {
                 onTouchStateChanged?.invoke(true)
+                notifyTouchPosition(event)
                 remember(event)
                 val count = event.pointerCount
                 if (count > maxFingersInSession) {
@@ -377,6 +382,7 @@ class TouchPadView(context: Context) : View(context) {
 
             MotionEvent.ACTION_POINTER_UP -> {
                 val pid = event.getPointerId(event.actionIndex)
+                notifyTouchPosition(event)
                 freeId(pid)
                 updateVisualTouches(event)
                 val hasSurvivors = cidByPointer.isNotEmpty()
@@ -388,6 +394,7 @@ class TouchPadView(context: Context) : View(context) {
                 // tap. Never emit click feedback on cancellation; still send
                 // the lift frame so the Mac cannot retain stale contacts.
                 if (event.actionMasked == MotionEvent.ACTION_UP) {
+                    notifyTouchPosition(event)
                     val duration = System.currentTimeMillis() - touchDownTimeMs
                     // Only vibrate on actual tap-to-click (short press with minimal movement)
                     if (duration <= TAP_MAX_TIME_MS) {
@@ -414,6 +421,17 @@ class TouchPadView(context: Context) : View(context) {
             }
         }
         return true
+    }
+
+    private fun notifyTouchPosition(event: MotionEvent) {
+        if (event.pointerCount <= 0) return
+        var sumX = 0f
+        var sumY = 0f
+        for (index in 0 until event.pointerCount) {
+            sumX += event.getX(index)
+            sumY += event.getY(index)
+        }
+        onTouchPositionChanged?.invoke(sumX / event.pointerCount, sumY / event.pointerCount)
     }
 
     private fun getCentroidMm(event: MotionEvent): Pair<Float, Float> {

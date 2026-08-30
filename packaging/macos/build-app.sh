@@ -34,6 +34,7 @@ fi
 (cd "$ROOT/macos/TrackpadCompanionSettings" && swift build -c "$CONFIG")
 
 SWIFT_BIN="$ROOT/macos/TrackpadCompanionSettings/.build/$CONFIG/TrackpadCompanionSettings"
+SWIFT_BUILD_DIR="$ROOT/macos/TrackpadCompanionSettings/.build/$CONFIG"
 RUST_BIN_DIR="$ROOT/target/release"
 if [[ -n "${RUST_TARGET:-}" ]]; then RUST_BIN_DIR="$ROOT/target/$RUST_TARGET/release"; fi
 for binary in companion-net companion-config; do
@@ -47,6 +48,23 @@ cp "$RUST_BIN_DIR/companion-net" "$APP/Contents/Resources/companion-net"
 cp "$RUST_BIN_DIR/companion-config" "$APP/Contents/Resources/companion-config"
 cp "$ROOT/packaging/macos/Info.plist" "$APP/Contents/Info.plist"
 chmod 755 "$APP/Contents/MacOS/TrackpadCompanion" "$APP/Contents/Resources/companion-net" "$APP/Contents/Resources/companion-config"
+
+# SwiftPM keeps package resources next to the executable. The PermissionFlow
+# UI resolves its localized strings from this bundle at runtime, so include it
+# in the manually assembled app bundle used by this project.
+PERMISSIONFLOW_BUNDLE="$SWIFT_BUILD_DIR/PermissionFlow_PermissionFlow.bundle"
+if [[ ! -d "$PERMISSIONFLOW_BUNDLE" ]]; then
+  # Newer SwiftPM toolchains put architecture-specific products below
+  # `.build/<triple>/<configuration>` while keeping the executable symlink at
+  # `.build/<configuration>`.
+  PERMISSIONFLOW_BUNDLE=$(find "$ROOT/macos/TrackpadCompanionSettings/.build" \
+    -type d -name "PermissionFlow_PermissionFlow.bundle" -print -quit 2>/dev/null || true)
+fi
+if [[ -n "$PERMISSIONFLOW_BUNDLE" && -d "$PERMISSIONFLOW_BUNDLE" ]]; then
+  cp -R "$PERMISSIONFLOW_BUNDLE" "$APP/Contents/Resources/"
+else
+  echo "Warning: PermissionFlow resource bundle not found under .build; using fallback strings." >&2
+fi
 if [[ ! -f "$ICON" && -f "$ICON_SOURCE" && -x "$(command -v sips 2>/dev/null || true)" && -x "$(command -v iconutil 2>/dev/null || true)" ]]; then
   ICONSET="$OUT/.AppIcon.iconset"
   rm -rf "$ICONSET"

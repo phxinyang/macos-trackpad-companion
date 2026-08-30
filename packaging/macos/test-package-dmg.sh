@@ -15,12 +15,20 @@ contains() {
   [[ "$SCRIPT_TEXT" == *"$1"* ]]
 }
 
-contains 'set current view of container window to icon view' || {
+contains 'tell container window' || {
   echo "DMG layout must operate on Finder's live container window" >&2
   exit 1
 }
-contains 'repeat with attempt from 1 to 12' || {
+contains 'set current view to icon view' || {
+  echo "DMG layout must select icon view on the live container window" >&2
+  exit 1
+}
+contains 'repeat with attempt from 1 to 16' || {
   echo "DMG layout must retry while Finder creates the container window" >&2
+  exit 1
+}
+contains 'delay 1' || {
+  echo "DMG layout must wait for Finder to create the container window" >&2
   exit 1
 }
 contains 'delay 0.25' || {
@@ -33,6 +41,10 @@ contains 'MOUNT_NAME=${MOUNT##*/}' || {
 }
 if contains 'set current view of dmgWindow to icon view'; then
   echo "stale Finder window reference is still used" >&2
+  exit 1
+fi
+if contains '.hidden'; then
+  echo "helper .hidden manifest must not ship in the DMG" >&2
   exit 1
 fi
 
