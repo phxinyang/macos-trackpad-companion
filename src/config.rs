@@ -13,11 +13,11 @@
 //! # pid = 0x5678
 //!
 //! [net]                   # companion-net network input transport
-//! # listen_ip = "0.0.0.0" # bind address for enabled services
+//! # listen_ip = "0.0.0.0" # non-loopback addresses require a token
 //! # port      = 4242      # shared discovery port
 //! # web_enabled = true    # browser page + WebSocket
 //! # phone_enabled = true  # native phone UDP input
-//! # token     = "..."     # optional bearer token for network clients
+//! # token     = "..."     # enables auth and all-interface default binding
 //!
 //! [log]
 //! level = "info"
@@ -68,6 +68,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
@@ -128,11 +129,71 @@ impl Config {
         let mut cfg: Self = toml::from_str(source).context("parse config")?;
         let value: toml::Value = toml::from_str(source).context("parse config metadata")?;
         collect_explicit_paths(&value, "", &mut cfg.explicit.paths);
+        cfg.validate()?;
         Ok(cfg)
+    }
+
+    /// Validate cross-field invariants that serde's individual field types
+    /// cannot express. Disabled transports do not expose a socket, so they may
+    /// retain a future non-loopback address before a token is configured.
+    pub fn validate(&self) -> Result<()> {
+        if self.net.web_enabled || self.net.phone_enabled {
+            self.net
+                .effective_listen_ip()
+                .context("validate [net] listener exposure")?;
+        }
+        Ok(())
     }
 
     pub(crate) fn has_explicit(&self, path: &str) -> bool {
         self.explicit.paths.contains(path)
+    }
+
+    /// A deliberately small, secret-free view suitable for startup logs.
+    /// In particular, this never formats the bearer token or log file path.
+    pub fn log_summary(&self) -> ConfigLogSummary {
+        ConfigLogSummary {
+            device_vid: self.device.vid,
+            device_pid: self.device.pid,
+            net_listen_ip_configured: self.net.listen_ip.is_some(),
+            net_port: self.net.port,
+            net_web_enabled: self.net.web_enabled,
+            net_phone_enabled: self.net.phone_enabled,
+            net_token_configured: self.net.configured_token().is_some(),
+            log_file_configured: self.log.file.is_some(),
+            sync_system_settings: self.macos.sync_system_settings,
+            overlay_enabled: self.overlay.enable,
+        }
+    }
+}
+
+pub struct ConfigLogSummary {
+    device_vid: Option<u16>,
+    device_pid: Option<u16>,
+    net_listen_ip_configured: bool,
+    net_port: u16,
+    net_web_enabled: bool,
+    net_phone_enabled: bool,
+    net_token_configured: bool,
+    log_file_configured: bool,
+    sync_system_settings: bool,
+    overlay_enabled: bool,
+}
+
+impl std::fmt::Debug for ConfigLogSummary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfigLogSummary")
+            .field("device_vid", &self.device_vid)
+            .field("device_pid", &self.device_pid)
+            .field("net_listen_ip_configured", &self.net_listen_ip_configured)
+            .field("net_port", &self.net_port)
+            .field("net_web_enabled", &self.net_web_enabled)
+            .field("net_phone_enabled", &self.net_phone_enabled)
+            .field("net_token_configured", &self.net_token_configured)
+            .field("log_file_configured", &self.log_file_configured)
+            .field("sync_system_settings", &self.sync_system_settings)
+            .field("overlay_enabled", &self.overlay_enabled)
+            .finish()
     }
 }
 
@@ -181,6 +242,36 @@ impl Default for Net {
             phone_enabled: true,
             token: None,
         }
+    }
+}
+
+impl Net {
+    /// Empty tokens are treated as authentication being disabled.
+    pub fn configured_token(&self) -> Option<&str> {
+        self.token.as_deref().filter(|token| !token.is_empty())
+    }
+
+    /// Resolve the actual bind address while enforcing the safe unauthenticated
+    /// default. A token keeps the historical all-interface default; without a
+    /// token, an omitted address is loopback-only and an explicit non-loopback
+    /// address is rejected.
+    pub fn effective_listen_ip(&self) -> Result<IpAddr> {
+        let Some(raw) = self.listen_ip.as_deref() else {
+            return Ok(if self.configured_token().is_some() {
+                IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+            } else {
+                IpAddr::V4(Ipv4Addr::LOCALHOST)
+            });
+        };
+        let ip: IpAddr = raw
+            .parse()
+            .with_context(|| format!("parse [net].listen_ip {raw:?} as an IP address"))?;
+        if self.configured_token().is_none() && !ip.is_loopback() {
+            anyhow::bail!(
+                "[net].listen_ip {ip} exposes unauthenticated input; configure [net].token or bind a loopback address such as 127.0.0.1"
+            );
+        }
+        Ok(ip)
     }
 }
 
@@ -335,17 +426,12 @@ impl Default for Gestures {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum GestureParameterProfile {
+    #[default]
     Native,
     ChromiumOs,
-}
-
-impl Default for GestureParameterProfile {
-    fn default() -> Self {
-        Self::Native
-    }
 }
 
 /// `[gestures.one_finger_tap_drag]` — companion-net's 拖移样式 = 单指双击拖移.
@@ -856,6 +942,119 @@ mod tests {
         assert!(!cfg.net.web_enabled);
         assert!(cfg.net.phone_enabled);
         assert!(cfg.net.token.is_none());
+    }
+
+    #[test]
+    fn unauthenticated_network_defaults_to_loopback() {
+        let net = Net::default();
+        assert_eq!(
+            net.effective_listen_ip().unwrap(),
+            "127.0.0.1".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn authenticated_network_keeps_all_interface_default() {
+        let net = Net {
+            token: Some("secret".into()),
+            ..Net::default()
+        };
+        assert_eq!(
+            net.effective_listen_ip().unwrap(),
+            "0.0.0.0".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn authenticated_network_allows_explicit_non_loopback() {
+        let net = Net {
+            listen_ip: Some("192.168.1.20".into()),
+            token: Some("secret".into()),
+            ..Net::default()
+        };
+        assert_eq!(
+            net.effective_listen_ip().unwrap(),
+            "192.168.1.20".parse::<IpAddr>().unwrap()
+        );
+    }
+
+    #[test]
+    fn unauthenticated_explicit_non_loopback_is_rejected() {
+        for listen_ip in ["0.0.0.0", "::", "192.168.1.20"] {
+            let net = Net {
+                listen_ip: Some(listen_ip.into()),
+                ..Net::default()
+            };
+            let error = net.effective_listen_ip().unwrap_err().to_string();
+            assert!(error.contains("exposes unauthenticated input"), "{error}");
+        }
+    }
+
+    #[test]
+    fn config_parse_rejects_active_unauthenticated_non_loopback_listener() {
+        let error = Config::parse_str(
+            r#"
+            [net]
+            listen_ip = "0.0.0.0"
+        "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("validate [net] listener exposure"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn config_parse_allows_disabled_transport_address_before_token_setup() {
+        let cfg = Config::parse_str(
+            r#"
+            [net]
+            listen_ip = "0.0.0.0"
+            web_enabled = false
+            phone_enabled = false
+        "#,
+        )
+        .unwrap();
+        assert_eq!(cfg.net.listen_ip.as_deref(), Some("0.0.0.0"));
+    }
+
+    #[test]
+    fn unauthenticated_explicit_loopback_is_allowed() {
+        for listen_ip in ["127.0.0.1", "127.20.30.40", "::1"] {
+            let net = Net {
+                listen_ip: Some(listen_ip.into()),
+                ..Net::default()
+            };
+            assert!(net.effective_listen_ip().unwrap().is_loopback());
+        }
+    }
+
+    #[test]
+    fn listen_ip_must_be_an_ip_address() {
+        let net = Net {
+            listen_ip: Some("localhost".into()),
+            ..Net::default()
+        };
+        let error = net.effective_listen_ip().unwrap_err().to_string();
+        assert!(error.contains("as an IP address"), "{error}");
+    }
+
+    #[test]
+    fn log_summary_never_contains_token_or_log_path() {
+        let mut cfg = Config::default();
+        cfg.net.token = Some("do-not-log-this-token".into());
+        cfg.net.listen_ip = Some("do-not-log-this-listen-value".into());
+        cfg.log.level = "do-not-log-this-level".into();
+        cfg.log.file = Some(PathBuf::from("/private/do-not-log-this-file"));
+        let summary = format!("{:?}", cfg.log_summary());
+        assert!(summary.contains("net_token_configured: true"));
+        assert!(summary.contains("log_file_configured: true"));
+        assert!(!summary.contains("do-not-log-this-token"));
+        assert!(!summary.contains("do-not-log-this-listen-value"));
+        assert!(!summary.contains("do-not-log-this-level"));
+        assert!(!summary.contains("do-not-log-this-file"));
     }
 
     #[test]

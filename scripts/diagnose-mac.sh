@@ -21,6 +21,7 @@ Usage:
   scripts/diagnose-mac.sh probe [--port PORT]
   scripts/diagnose-mac.sh trace [--bin PATH] [--port PORT]
   scripts/diagnose-mac.sh permissions [--open]
+  scripts/diagnose-mac.sh redact
 
 Commands:
   collect      Read-only environment, app, config, process, port, and log report.
@@ -30,6 +31,7 @@ Commands:
                after reproducing the issue.
   permissions  Show the permission handoff and optionally open Accessibility
                settings. TCC still requires a user click; this never grants it.
+  redact       Redact sensitive diagnostic text read from stdin (test/helper).
 
 Options:
   --output PATH  Write the report to PATH (default: diagnostics/mac-debug-*.txt).
@@ -49,6 +51,8 @@ redact() {
   sed -E \
     -e 's#(/Users/)[^/[:space:]]+#\1<user>#g' \
     -e 's#(/Volumes/)[^/[:space:]]+#\1<volume>#g' \
+    -e 's#(--token=)[^[:space:]]+#\1<redacted>#g' \
+    -e 's#(--token[[:space:]]+)[^[:space:]]+#\1<redacted>#g' \
     -e 's#([Tt]oken[^:=,[:space:]]*[[:space:]]*[:=][[:space:]]*)[^,[:space:]}]+#\1<redacted>#g'
 }
 
@@ -177,7 +181,7 @@ collect_report() {
   fi
 
   section "processes and listeners"
-  if command_exists pgrep; then pgrep -afil 'TrackpadCompanion|companion-net|companion' 2>&1 || true; fi
+  if command_exists pgrep; then pgrep -afil 'TrackpadCompanion|companion-net|companion' 2>&1 | redact || true; fi
   if command_exists ps; then
     # shellcheck disable=SC2009
     # ps exposes CPU, memory, and elapsed time together.
@@ -255,7 +259,7 @@ trace() {
   : > "$trace_file"
   RUST_LOG="${RUST_LOG:-macos_trackpad_companion=trace}" \
   RUST_BACKTRACE=1 \
-  "$bin" --port "$PORT" -vv 2>&1 | tee -a "$trace_file"
+  "$bin" --port "$PORT" -vv 2>&1 | redact | tee -a "$trace_file"
   status=${PIPESTATUS[0]}
   printf 'companion_net_exit_status=%s\n' "$status"
   section "trace postflight"
@@ -267,7 +271,7 @@ trace() {
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    collect|probe|trace|permissions)
+    collect|probe|trace|permissions|redact)
       COMMAND="$1"
       shift
       ;;
@@ -307,6 +311,11 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+if [ "$COMMAND" = "redact" ]; then
+  redact
+  exit $?
+fi
+
 FINAL_STATUS=0
 case "$COMMAND" in
   permissions)
@@ -321,7 +330,7 @@ mkdir -p "$(dirname "$REPORT_PATH")"
 umask 077
 : > "$REPORT_PATH"
 chmod 600 "$REPORT_PATH" 2>/dev/null || true
-exec > >(tee -a "$REPORT_PATH") 2>&1
+exec > >(redact | tee -a "$REPORT_PATH") 2>&1
 
 printf 'Trackpad Companion macOS diagnostics\n'
 printf 'report=%s\n' "$REPORT_PATH" | redact

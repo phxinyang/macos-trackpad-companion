@@ -145,9 +145,14 @@ Web address shown by the macOS app into a browser.
 For a quick protocol check without a phone:
 
 ```sh
-python3 tools/synthetic_sender.py --host <mac-ip> --mode circle
-python3 tools/ws_probe.py --host <mac-ip> --mode scroll
+python3 tools/synthetic_sender.py --host 127.0.0.1 --mode circle
+python3 tools/ws_probe.py --host 127.0.0.1 --mode scroll
+# Guided, one-gesture-at-a-time visual verification on the Mac
+python3 tools/gesture_probe.py
 ```
+
+For an authenticated UDP listener, pass the same `--token` to
+`synthetic_sender.py` or `gesture_probe.py`.
 
 The Android and browser clients use millimetres as their coordinate unit and a
 single isotropic scale. The browser maps the surface to the configured 65 mm
@@ -168,6 +173,11 @@ internet:
 The macOS app creates a token for its managed configuration on first launch.
 The browser sends it as `?token=...`; WebSocket clients may use a bearer
 header; UDP clients wrap ATP1 in the documented ATK1 envelope.
+
+When `token` is absent or empty and `listen_ip` is omitted, `companion-net`
+binds only to `127.0.0.1`. It refuses an explicit non-loopback `listen_ip`
+without a token. When a token is configured and `listen_ip` is omitted, the
+default remains `0.0.0.0` so authenticated LAN clients can connect.
 
 Permission requirements depend on the input path:
 
@@ -213,7 +223,7 @@ A compact configuration example:
 port = 4242
 web_enabled = true
 phone_enabled = true
-# listen_ip = "192.168.1.20"
+# listen_ip = "192.168.1.20" # requires a non-empty token
 # token = "replace-with-a-random-token"
 
 [cursor]

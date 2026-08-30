@@ -96,10 +96,10 @@ const SCROLL_CURVE_REF_MM_PER_SEC: f64 = 60.0;
 /// which is exactly the case we're trying to clamp against). Used by
 /// `move_cursor_by` to keep posted event locations on-screen.
 fn display_bounds_for(point: CGPoint) -> CGRect {
-    if let Ok((ids, _)) = CGDisplay::displays_with_point(point, 1) {
-        if let Some(&id) = ids.first() {
-            return CGDisplay::new(id).bounds();
-        }
+    if let Ok((ids, _)) = CGDisplay::displays_with_point(point, 1)
+        && let Some(&id) = ids.first()
+    {
+        return CGDisplay::new(id).bounds();
     }
     CGDisplay::main().bounds()
 }
@@ -1117,8 +1117,10 @@ pub trait Output {
     /// Trigger macOS Show Desktop toggle.
     fn toggle_show_desktop(&self) {}
     /// Trigger macOS App Exposé toggle.
+    #[allow(dead_code)]
     fn toggle_app_expose(&self) {}
     /// Trigger macOS Mission Control toggle.
+    #[allow(dead_code)]
     fn toggle_mission_control(&self) {}
 }
 
@@ -1489,8 +1491,8 @@ impl Emitter {
         }) else {
             return;
         };
-        e.set_int(kCGMouseEventDeltaX as u32, i64::from(dx_px));
-        e.set_int(kCGMouseEventDeltaY as u32, i64::from(dy_px));
+        e.set_int(kCGMouseEventDeltaX, i64::from(dx_px));
+        e.set_int(kCGMouseEventDeltaY, i64::from(dy_px));
         unsafe { CGEventSetTimestamp(e.0, self.event_timestamp().as_nanos()) };
         log::trace!(
             "post: {} d=({:+},{:+})px to=({:.0},{:.0})",
@@ -2253,10 +2255,13 @@ fn post_symbolic_hotkey(source: CGEventSourceRef, shk: u32, ts: Timestamp) -> bo
             let set_val_fn = unsafe { libc::dlsym(handle, c"CGSSetSymbolicHotKeyValue".as_ptr()) };
 
             if !get_fn.is_null() && !set_en_fn.is_null() && !set_val_fn.is_null() {
+                type SetEnFn = unsafe extern "C" fn(u32, bool) -> i32;
+                type GetValFn = unsafe extern "C" fn(u32, *mut u16, *mut u16, *mut u64) -> i32;
+                type SetValFn = unsafe extern "C" fn(u32, u16, u16, u64) -> i32;
                 return Some((
-                    unsafe { std::mem::transmute(set_en_fn) },
-                    unsafe { std::mem::transmute(get_fn) },
-                    unsafe { std::mem::transmute(set_val_fn) },
+                    unsafe { std::mem::transmute::<*mut libc::c_void, SetEnFn>(set_en_fn) },
+                    unsafe { std::mem::transmute::<*mut libc::c_void, GetValFn>(get_fn) },
+                    unsafe { std::mem::transmute::<*mut libc::c_void, SetValFn>(set_val_fn) },
                 ));
             }
         }
@@ -2459,7 +2464,7 @@ fn macos_27_or_later() -> bool {
     static RESULT: OnceLock<bool> = OnceLock::new();
     // An unknown version is treated as modern so we never write the legacy
     // opaque CGEvent shape on a system whose ABI we failed to identify.
-    *RESULT.get_or_init(|| macos_major_version().map_or(true, |major| major >= 27))
+    *RESULT.get_or_init(|| macos_major_version().is_none_or(|major| major >= 27))
 }
 
 fn sky_light_set_hid_event() -> Option<SLEventSetIOHIDEventFn> {
@@ -2593,50 +2598,50 @@ fn attach_dock_hid_event(
         );
     }
 
-    if matches!(phase, kCGSGesturePhaseEnded | kCGSGesturePhaseCancelled) {
-        if let Some((vx, vy)) = velocity {
-            let alloc_velocity = unsafe {
-                let send: unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void =
-                    std::mem::transmute(objc_msgSend as *const ());
-                send(class, sel_registerName(c"alloc".as_ptr()))
-            };
-            let velocity_event = unsafe {
-                objc_send_init(
-                    alloc_velocity,
-                    sel_registerName(c"initWithType:timestamp:senderID:".as_ptr()),
-                    HID_EVENT_TYPE_VELOCITY,
-                    timestamp,
-                    0,
-                )
-            };
-            if !velocity_event.is_null() {
-                unsafe {
-                    let setter = sel_registerName(c"setDoubleValue:forField:".as_ptr());
-                    objc_send_double(
-                        velocity_event,
-                        setter,
-                        hid_field(HID_EVENT_TYPE_VELOCITY, 0),
-                        vx,
-                    );
-                    objc_send_double(
-                        velocity_event,
-                        setter,
-                        hid_field(HID_EVENT_TYPE_VELOCITY, 1),
-                        vy,
-                    );
-                    objc_send_double(
-                        velocity_event,
-                        setter,
-                        hid_field(HID_EVENT_TYPE_VELOCITY, 2),
-                        0.0,
-                    );
-                    objc_send_append(
-                        hid,
-                        sel_registerName(c"appendEvent:".as_ptr()),
-                        velocity_event,
-                    );
-                    objc_send0(velocity_event, sel_registerName(c"release".as_ptr()));
-                }
+    if matches!(phase, kCGSGesturePhaseEnded | kCGSGesturePhaseCancelled)
+        && let Some((vx, vy)) = velocity
+    {
+        let alloc_velocity = unsafe {
+            let send: unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void =
+                std::mem::transmute(objc_msgSend as *const ());
+            send(class, sel_registerName(c"alloc".as_ptr()))
+        };
+        let velocity_event = unsafe {
+            objc_send_init(
+                alloc_velocity,
+                sel_registerName(c"initWithType:timestamp:senderID:".as_ptr()),
+                HID_EVENT_TYPE_VELOCITY,
+                timestamp,
+                0,
+            )
+        };
+        if !velocity_event.is_null() {
+            unsafe {
+                let setter = sel_registerName(c"setDoubleValue:forField:".as_ptr());
+                objc_send_double(
+                    velocity_event,
+                    setter,
+                    hid_field(HID_EVENT_TYPE_VELOCITY, 0),
+                    vx,
+                );
+                objc_send_double(
+                    velocity_event,
+                    setter,
+                    hid_field(HID_EVENT_TYPE_VELOCITY, 1),
+                    vy,
+                );
+                objc_send_double(
+                    velocity_event,
+                    setter,
+                    hid_field(HID_EVENT_TYPE_VELOCITY, 2),
+                    0.0,
+                );
+                objc_send_append(
+                    hid,
+                    sel_registerName(c"appendEvent:".as_ptr()),
+                    velocity_event,
+                );
+                objc_send0(velocity_event, sel_registerName(c"release".as_ptr()));
             }
         }
     }
@@ -2794,8 +2799,7 @@ fn schedule_dock_swipe_resends(
 /// Posted to `kCGSessionEventTap` (not the HID tap) so
 /// AppleMultitouchHIDService doesn't merge the event into our PTP
 /// device's gesture state, and using the persistent
-/// combinedSessionState `source` so apps like Chrome accept this as a
-/// real-trackpad fling worthy of rubber-band bounce.
+#[allow(clippy::too_many_arguments)]
 fn post_scroll_event(
     source: CGEventSourceRef,
     int_x_px: i32,

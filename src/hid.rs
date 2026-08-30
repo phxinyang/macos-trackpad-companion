@@ -451,8 +451,10 @@ unsafe extern "C" fn on_device_matched(
     log::info!(
         "matched \"{product}\" (vid={} pid={}): {} contacts, logical max {}×{} \
          ({:.1}×{:.1} mm), {} bytes/contact, payload {} bytes total",
-        vid.map(|v| format!("{:#06x}", v as u16)).unwrap_or_else(|| "?".into()),
-        pid.map(|v| format!("{:#06x}", v as u16)).unwrap_or_else(|| "?".into()),
+        vid.map(|v| format!("{:#06x}", v as u16))
+            .unwrap_or_else(|| "?".into()),
+        pid.map(|v| format!("{:#06x}", v as u16))
+            .unwrap_or_else(|| "?".into()),
         layout.contact_slots,
         layout.logical_x_max,
         layout.logical_y_max,
@@ -520,9 +522,7 @@ fn enter_ptp_mode(
 ) -> ControlPath {
     let rv = set_feature_byte(device, PTP_CONTROL_REPORT_ID, PTP_CONTROL_PTP_HEARTBEAT);
     if rv == kIOReturnSuccess {
-        log::info!(
-            "\"{product}\": entered PTP via vendor Report 0x10 (heartbeat-protected)"
-        );
+        log::info!("\"{product}\": entered PTP via vendor Report 0x10 (heartbeat-protected)");
         return ControlPath::Vendor;
     }
     if rv != kIOReturnUnsupported {
@@ -614,17 +614,6 @@ fn feature_payload(report_id: isize, byte: u8) -> Vec<u8> {
         vec![byte]
     } else {
         vec![report_id as u8, byte]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::feature_payload;
-
-    #[test]
-    fn feature_payload_omits_id_for_unnumbered_report() {
-        assert_eq!(feature_payload(0, 0x03), vec![0x03]);
-        assert_eq!(feature_payload(0x07, 0x03), vec![0x07, 0x03]);
     }
 }
 
@@ -777,4 +766,15 @@ fn read_number_property(device: IOHIDDeviceRef, key: &str) -> Option<i32> {
     }
     let n: CFNumber = unsafe { CFNumber::wrap_under_get_rule(raw as *const _) };
     n.to_i32()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::feature_payload;
+
+    #[test]
+    fn feature_payload_omits_id_for_unnumbered_report() {
+        assert_eq!(feature_payload(0, 0x03), vec![0x03]);
+        assert_eq!(feature_payload(0x07, 0x03), vec![0x07, 0x03]);
+    }
 }

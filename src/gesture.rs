@@ -1078,22 +1078,22 @@ impl<O: Output> State<O> {
     /// three-finger-drag lock release.
     #[allow(dead_code)]
     pub fn tick(&mut self, now: Timestamp) {
-        if let Some(pending) = self.pending_right_click {
-            if now.saturating_duration_since(pending.at) >= TWO_FINGER_DOUBLE_TAP_WINDOW {
-                self.pending_right_click = None;
-                log::debug!(
-                    "2f tap: confirmed after double-tap window ({}ms) -> click Right mods=0x{:x}",
-                    TWO_FINGER_DOUBLE_TAP_WINDOW.as_millis(),
-                    pending.modifiers,
-                );
-                self.emit_tap_click_with_modifiers(MouseButton::Right, pending.modifiers);
-            }
+        if let Some(pending) = self.pending_right_click
+            && now.saturating_duration_since(pending.at) >= TWO_FINGER_DOUBLE_TAP_WINDOW
+        {
+            self.pending_right_click = None;
+            log::debug!(
+                "2f tap: confirmed after double-tap window ({}ms) -> click Right mods=0x{:x}",
+                TWO_FINGER_DOUBLE_TAP_WINDOW.as_millis(),
+                pending.modifiers,
+            );
+            self.emit_tap_click_with_modifiers(MouseButton::Right, pending.modifiers);
         }
-        if let Some(expires_at) = self.pending_drag_release {
-            if now >= expires_at {
-                self.expire_drag_lock(now, "drag-lock expired");
-                return;
-            }
+        if let Some(expires_at) = self.pending_drag_release
+            && now >= expires_at
+        {
+            self.expire_drag_lock(now, "drag-lock expired");
+            return;
         }
         // A legacy finite re-grip consumes `pending_drag_release` and keeps
         // its original deadline in DragBaseline. Persistent locks do not
@@ -1167,10 +1167,7 @@ impl<O: Output> State<O> {
         log::debug!(
             "2f tap: pending right-click (debouncing for double tap smart zoom) mods=0x{modifiers:x}"
         );
-        self.pending_right_click = Some(PendingRightClick {
-            at: now,
-            modifiers,
-        });
+        self.pending_right_click = Some(PendingRightClick { at: now, modifiers });
     }
 
     fn classify(&self, n: usize) -> GestureKind {
@@ -1280,11 +1277,10 @@ impl<O: Output> State<O> {
         // `born_during_coast`).
         if matches!(self.kind, GestureKind::Idle)
             && !matches!(new_kind, GestureKind::Idle | GestureKind::SwipeLatched)
+            && self.out.cancel_inertia()
         {
-            if self.out.cancel_inertia() {
-                self.born_during_coast = true;
-                log::debug!("touch born during coast — suppressing taps for this session");
-            }
+            self.born_during_coast = true;
+            log::debug!("touch born during coast — suppressing taps for this session");
         }
         if matches!(
             new_kind,
@@ -1538,19 +1534,17 @@ impl<O: Output> State<O> {
                 // whether the seed is fast enough to coast on; gesture-side
                 // we always offer it.
                 self.emit_scroll_inertia(vx, vy);
-                if matches!(new_kind, GestureKind::Idle) {
-                    if let Some(base) = self.two_baseline {
-                        if base.right_edge_candidate
-                            && !base.right_edge_latched
-                            && base.cumulative_dx <= -5.0
-                        {
-                            log::debug!(
-                                "2f right edge swipe: toggle notification center (cumulative_dx={:.2}mm)",
-                                base.cumulative_dx
-                            );
-                            self.out.toggle_notification_center();
-                        }
-                    }
+                if matches!(new_kind, GestureKind::Idle)
+                    && let Some(base) = self.two_baseline
+                    && base.right_edge_candidate
+                    && !base.right_edge_latched
+                    && base.cumulative_dx <= -5.0
+                {
+                    log::debug!(
+                        "2f right edge swipe: toggle notification center (cumulative_dx={:.2}mm)",
+                        base.cumulative_dx
+                    );
+                    self.out.toggle_notification_center();
                 }
                 if matches!(
                     new_kind,
@@ -1748,9 +1742,7 @@ impl<O: Output> State<O> {
                     self.started_at = now;
                     self.max_move_sq = 0.0;
                     self.drag_lock_contact_peak = 0;
-                    log::debug!(
-                        "3f drag: re-grip lifted — persistent drag lock remains armed"
-                    );
+                    log::debug!("3f drag: re-grip lifted — persistent drag lock remains armed");
                     return;
                 }
                 // Legacy finite grace mode: keep the old timeout behavior
@@ -1815,9 +1807,7 @@ impl<O: Output> State<O> {
                         // unlock tap. A clean empty frame (peak=0) is kept
                         // latched so an absent report cannot release the
                         // drag by itself.
-                        if self.drag_lock_contact_peak > 0
-                            && self.drag_lock_contact_peak < 3
-                        {
+                        if self.drag_lock_contact_peak > 0 && self.drag_lock_contact_peak < 3 {
                             if self.drag_button_held {
                                 self.out.set_drag_button_held(false);
                                 self.drag_button_held = false;
@@ -3854,6 +3844,7 @@ mod tests {
     /// `common > differential` gate disqualifies pan; pinch wins on
     /// the next few frames as the distance ratio crosses threshold.
     #[test]
+    #[allow(clippy::approx_constant)] // Captured coordinates, not mathematical constants.
     fn asymmetric_pinch_with_minor_motion_on_anchor_finger_locks_pinch() {
         let r = Recorder::default();
         let mut s = State::new(&r, test_accel());
@@ -4058,11 +4049,11 @@ mod tests {
     /// but the x-components diverge, so pan_qualified is false and
     /// pinch crosses first at score 1.12. But |common| (1.08 mm,
     /// dominantly south) already beats |differential| (0.85 mm) by
-    /// >20% — the basic margin test is passing — and one frame later
-    /// the trailing finger catches up enough that balance flips above
-    /// 0.30. The deferral logic gives pan that one frame to qualify.
-    /// Reproduces /tmp/companion-logs.txt at 2026-05-02 05:13:52.562
-    /// (pinch_score=1.12, rot_score=0.80 false lock).
+    /// by more than 20%. The basic margin test is passing, and one frame
+    /// later the trailing finger catches up enough that balance flips above
+    /// 0.30. The deferral logic gives pan that one frame to qualify. This
+    /// reproduces a captured 2026-05-02 trace where pinch_score=1.12 and
+    /// rot_score=0.80 caused a false lock.
     #[test]
     fn slow_scroll_with_horizontal_drift_locks_pan_after_one_frame_defer() {
         let r = Recorder::default();
@@ -4744,7 +4735,9 @@ mod tests {
 
         let log = r.pop();
         assert_eq!(
-            log.iter().filter(|line| line.contains("click Left")).count(),
+            log.iter()
+                .filter(|line| line.contains("click Left"))
+                .count(),
             2,
             "double tap must still produce two clicks: {log:?}"
         );
@@ -6362,21 +6355,8 @@ mod tests {
         let r = Recorder::default();
         let mut s = State::with_options(&r, test_accel(), drag_lock_options());
         let t0 = Timestamp::now();
-        let three = |y: f64| {
-            frame(&[
-                (1, 20.0, y),
-                (2, 35.0, y),
-                (3, 50.0, y),
-            ])
-        };
-        let four = |y: f64| {
-            frame(&[
-                (1, 20.0, y),
-                (2, 35.0, y),
-                (3, 50.0, y),
-                (4, 65.0, y),
-            ])
-        };
+        let three = |y: f64| frame(&[(1, 20.0, y), (2, 35.0, y), (3, 50.0, y)]);
+        let four = |y: f64| frame(&[(1, 20.0, y), (2, 35.0, y), (3, 50.0, y), (4, 65.0, y)]);
 
         // Engage the original drag, then deliberately empty the pad.
         s.on_frame_at(three(20.0), t0);
@@ -6387,7 +6367,12 @@ mod tests {
         // down, then the pad is empty again.
         s.on_frame_at(four(23.0), at(t0, 100));
         s.on_frame_at(
-            frame(&[(1, 10.0, 23.0), (2, 25.0, 23.0), (3, 40.0, 23.0), (4, 55.0, 23.0)]),
+            frame(&[
+                (1, 10.0, 23.0),
+                (2, 25.0, 23.0),
+                (3, 40.0, 23.0),
+                (4, 55.0, 23.0),
+            ]),
             at(t0, 130),
         );
         s.on_frame_at(frame(&[]), at(t0, 160));
@@ -6406,15 +6391,23 @@ mod tests {
             "re-grip must reuse the original held button: {before_unlock:?}"
         );
         assert!(
-            !before_unlock.iter().any(|line| *line == "set_left_button_held false"),
+            !before_unlock
+                .iter()
+                .any(|line| *line == "set_left_button_held false"),
             "empty stages must not release the persistent drag: {before_unlock:?}"
         );
         assert!(
-            before_unlock.iter().any(|line| line.starts_with("swipe ") && line.contains("Horizontal")),
+            before_unlock
+                .iter()
+                .any(|line| line.starts_with("swipe ") && line.contains("Horizontal")),
             "4F stage must emit a Space swipe: {before_unlock:?}"
         );
         assert!(
-            before_unlock.iter().filter(|line| line.starts_with("move ")).count() >= 2,
+            before_unlock
+                .iter()
+                .filter(|line| line.starts_with("move "))
+                .count()
+                >= 2,
             "original and resumed 3F grips must both move the pointer: {before_unlock:?}"
         );
 
@@ -6492,7 +6485,9 @@ mod tests {
         );
         let initial = r.pop();
         assert!(
-            initial.iter().any(|line| *line == "set_left_button_held true"),
+            initial
+                .iter()
+                .any(|line| *line == "set_left_button_held true"),
             "test setup must engage the drag button: {initial:?}"
         );
 
@@ -6503,10 +6498,7 @@ mod tests {
         s.on_frame_at(frame(&[]), at(t0, 40));
         s.on_frame_at(frame(&[(1, 0.42, 0.50)]), at(t0, 100));
         s.on_frame_at(frame(&[(1, 0.42, 0.50)]), at(t0, 170));
-        s.on_frame_at(
-            frame(&[(1, 0.42, 0.50), (2, 0.52, 0.50)]),
-            at(t0, 180),
-        );
+        s.on_frame_at(frame(&[(1, 0.42, 0.50), (2, 0.52, 0.50)]), at(t0, 180));
 
         // Complete the handoff to the 4F Spaces gesture.
         s.on_frame_at(
@@ -6552,14 +6544,18 @@ mod tests {
         s.on_frame_at(frame(&[]), at(t0, 280));
         let tail = r.pop();
         assert!(
-            !tail.iter().any(|line| *line == "set_left_button_held false"),
+            !tail
+                .iter()
+                .any(|line| *line == "set_left_button_held false"),
             "4F lift must return to DragLocked without releasing: {tail:?}"
         );
         s.on_frame_at(frame(&[(1, 0.42, 0.50)]), at(t0, 300));
         s.on_frame_at(frame(&[]), at(t0, 340));
         let unlock = r.pop();
         assert!(
-            unlock.iter().any(|line| *line == "set_left_button_held false"),
+            unlock
+                .iter()
+                .any(|line| *line == "set_left_button_held false"),
             "a short 1F tap must explicitly unlock the carried drag: {unlock:?}"
         );
     }

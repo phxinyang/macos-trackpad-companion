@@ -17,7 +17,7 @@ that the editor did not change.
 # pid = 0x5678
 
 [net]
-# listen_ip = "0.0.0.0"
+# listen_ip = "0.0.0.0" # non-loopback addresses require a token
 port = 4242
 web_enabled = true       # browser touchpad page + WebSocket
 phone_enabled = true     # native phone UDP input
@@ -148,6 +148,12 @@ false, `companion-net` exits without opening a network port. When only one is
 enabled, only that transport is bound; the shared port number remains usable
 for Bonjour and pairing. The macOS settings app applies these two switches by
 restarting the helper when it is already running.
+
+Network binding is fail-closed when authentication is disabled. With an absent
+or empty `token`, an omitted `listen_ip` resolves to `127.0.0.1`; explicitly
+setting a non-loopback address (including `0.0.0.0` or `::`) is rejected. With
+a non-empty token, omitting `listen_ip` keeps the authenticated LAN default of
+`0.0.0.0`. `listen_ip` must be an IP address rather than a host name.
 
 Restart the daemon after changing configuration. System preference sync is
 startup-only as well.

@@ -1354,7 +1354,10 @@ mod tests {
         assert_eq!(app.value(SettingId::PersistentDragLock), "打开");
         app.adjust(true);
         assert!(!app.cfg.gestures.three_finger_drag.persistent_drag_lock);
-        assert_eq!(app.toml_value(SettingId::PersistentDragLock).as_bool(), Some(false));
+        assert_eq!(
+            app.toml_value(SettingId::PersistentDragLock).as_bool(),
+            Some(false)
+        );
     }
 
     #[test]

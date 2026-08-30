@@ -9,6 +9,7 @@ list, and verify each gesture behaves as expected.
 Usage:
     python3 tools/gesture_probe.py           # interactive (Enter per gesture)
     python3 tools/gesture_probe.py --auto    # 2s countdown between gestures
+    python3 tools/gesture_probe.py --token TOKEN
 
 Prerequisites: companion-net running (`./target/release/companion-net -v`),
 and for the scroll/pinch steps put a scrollable web page frontmost.
@@ -30,15 +31,13 @@ def _out_and_back(sender):
 
 
 def make_steps(sender):
-    send = lambda contacts, **kw: sender.send(contacts, **kw)
     anim = lambda dur, render: sender.animate(dur, render)
     R = args_stub()
 
     return [
         ("01 单指移动",
          "光标先向右滑、再滑回来（去程+回程，贴边也能看见）。",
-         lambda: anim(0.4, lambda t: [ss.contact(1, 25 + 40 * t, 30)])
-             if False else _out_and_back(sender)),
+         lambda: _out_and_back(sender)),
         ("02 滚动-慢速小幅",
          "页面内容轻微向下滚（手指下移=内容下移）。无惯性。",
          lambda: anim(0.5, lambda t: [ss.contact(1, 45, 15 + 18 * t),
@@ -103,17 +102,18 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=4242)
     ap.add_argument("--rate", type=float, default=120.0)
+    ap.add_argument("--token", help="optional [net].token; sends ATK1-wrapped UDP frames")
     ap.add_argument("--auto", action="store_true", help="2s countdown instead of Enter")
     args = ap.parse_args()
 
     sock = __import__("socket").socket(__import__("socket").AF_INET, __import__("socket").SOCK_DGRAM)
-    sender = ss.Sender(sock, (args.host, args.port), args.rate)
+    sender = ss.Sender(sock, (args.host, args.port), args.rate, args.token)
 
     print(f"target = udp://{args.host}:{args.port}\n"
           f"每步：看说明 → 回车触发 → 观察屏幕 → 记录通过/失败。\n"
           f"--auto 模式则自动倒计时。Ctrl-C 随时退出。\n")
 
-    for i, item in enumerate(make_steps(sender)):
+    for item in make_steps(sender):
         name, expect, fire = item[0], item[1], item[-1]
         print(f"\n[{name}]")
         print(f"  预期: {expect}")

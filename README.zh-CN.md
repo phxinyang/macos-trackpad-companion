@@ -88,9 +88,14 @@ open dist/macos/Trackpad-Companion-*-macos.dmg
 没有手机时，可以用脚本快速检查协议链路：
 
 ```sh
-python3 tools/synthetic_sender.py --host <mac-ip> --mode circle
-python3 tools/ws_probe.py --host <mac-ip> --mode scroll
+python3 tools/synthetic_sender.py --host 127.0.0.1 --mode circle
+python3 tools/ws_probe.py --host 127.0.0.1 --mode scroll
+# 在 Mac 上逐项触发并目视确认手势
+python3 tools/gesture_probe.py
 ```
+
+如果 UDP 监听已配置认证，请给 `synthetic_sender.py` 或 `gesture_probe.py`
+传入相同的 `--token`。
 
 Android 和浏览器客户端都用毫米作为坐标单位，并采用相同的各向同性缩放。浏览器把触控面映射到配置中的 65 mm 虚拟宽度。Android 优先使用触控面报告的物理 DPI，不可用时回退到设备密度。
 
@@ -104,6 +109,10 @@ Android 和浏览器客户端都用毫米作为坐标单位，并采用相同的
 ```
 
 macOS 应用第一次进入托管配置时会自动生成 token。浏览器通过 `?token=...` 发送，WebSocket 可以使用 Bearer header，UDP 客户端则把 ATP1 放进文档规定的 ATK1 外层。
+
+当 `token` 缺失或为空且未设置 `listen_ip` 时，`companion-net` 只绑定
+`127.0.0.1`。如果显式指定非回环 `listen_ip` 却没有 token，程序会拒绝启动；
+配置 token 但省略 `listen_ip` 时，默认仍为 `0.0.0.0`，允许已认证的局域网客户端连接。
 
 不同输入路径需要的权限不同：
 
@@ -137,7 +146,7 @@ $XDG_CONFIG_HOME/macos-trackpad-companion/config.toml
 ```toml
 [net]
 port = 4242
-# listen_ip = "192.168.1.20"
+# listen_ip = "192.168.1.20" # 需要非空 token
 # token = "replace-with-a-random-token"
 
 [cursor]

@@ -65,7 +65,11 @@ impl HybridAssembler {
             if let Some(pending) = self.pending.as_mut() {
                 pending.button |= decoded.frame.button;
                 for contact in decoded.all_contacts {
-                    if !pending.contacts.iter().any(|existing| existing.id == contact.id) {
+                    if !pending
+                        .contacts
+                        .iter()
+                        .any(|existing| existing.id == contact.id)
+                    {
                         pending.contacts.push(contact);
                     }
                 }
@@ -80,11 +84,7 @@ impl HybridAssembler {
             let mut pending = PendingFrame {
                 scan_time_100us: scan,
                 expected_contacts: expected,
-                contacts: decoded
-                    .all_contacts
-                    .into_iter()
-                    .take(expected)
-                    .collect(),
+                contacts: decoded.all_contacts.into_iter().take(expected).collect(),
                 button: decoded.frame.button,
             };
             pending.contacts.truncate(expected);
@@ -102,7 +102,9 @@ impl HybridAssembler {
     }
 
     fn finish_pending(&mut self) {
-        let Some(pending) = self.pending.take() else { return };
+        let Some(pending) = self.pending.take() else {
+            return;
+        };
         if pending.contacts.len() == pending.expected_contacts {
             self.ready.push_back(Frame {
                 contacts: pending.contacts,
@@ -113,6 +115,7 @@ impl HybridAssembler {
     }
 }
 
+#[allow(dead_code)]
 pub fn decode(layout: &Layout, report: &[u8]) -> Option<Frame> {
     decode_parts(layout, report).map(|decoded| decoded.frame)
 }
@@ -140,16 +143,22 @@ pub(crate) fn decode_parts(layout: &Layout, report: &[u8]) -> Option<DecodedRepo
         let fields = layout.contact_fields;
         let (id, x, y, confidence, tip) = if let Some(fields) = fields {
             let base = layout.fingers_bit_offset + i * fields.stride_bits;
-            let read = |field: BitField| read_bits_at(report, base + field.bit_offset, field.bit_width);
+            let read =
+                |field: BitField| read_bits_at(report, base + field.bit_offset, field.bit_width);
             let id = read(fields.id)? as u8;
             let x = read(fields.x)? as i32;
             let y = read(fields.y)? as i32;
-            let confidence = fields.confidence.map(|field| read(field).unwrap_or(0) != 0).unwrap_or(true);
+            let confidence = fields
+                .confidence
+                .map(|field| read(field).unwrap_or(0) != 0)
+                .unwrap_or(true);
             let tip = read(fields.tip)? != 0;
             (id, x, y, confidence, tip)
         } else {
             let off = layout.fingers_offset + i * layout.bytes_per_contact;
-            if off + layout.bytes_per_contact > report.len() { break; }
+            if off + layout.bytes_per_contact > report.len() {
+                break;
+            }
             let flags = report[off];
             let id = report[off + 1];
             let x = u16::from_le_bytes([report[off + 2], report[off + 3]]) as i32;
@@ -169,10 +178,12 @@ pub(crate) fn decode_parts(layout: &Layout, report: &[u8]) -> Option<DecodedRepo
     let scan_time = layout
         .scan_time_field
         .and_then(|field| read_bits(report, field))
-        .unwrap_or_else(|| u16::from_le_bytes([
-            report[layout.scan_time_offset],
-            report[layout.scan_time_offset + 1],
-        ]) as u64) as u16;
+        .unwrap_or_else(|| {
+            u16::from_le_bytes([
+                report[layout.scan_time_offset],
+                report[layout.scan_time_offset + 1],
+            ]) as u64
+        }) as u16;
     let button = layout
         .button_field
         .and_then(|field| read_bits(report, field))
@@ -269,8 +280,16 @@ mod tests {
         assert_eq!(frame.contacts.len(), 2);
         assert_eq!(frame.contacts[0].id, 7);
         // Midpoint chip pixel → midpoint mm.
-        assert!((frame.contacts[0].x - 32.5).abs() < 0.05, "{}", frame.contacts[0].x);
-        assert!((frame.contacts[0].y - 20.0).abs() < 0.05, "{}", frame.contacts[0].y);
+        assert!(
+            (frame.contacts[0].x - 32.5).abs() < 0.05,
+            "{}",
+            frame.contacts[0].x
+        );
+        assert!(
+            (frame.contacts[0].y - 20.0).abs() < 0.05,
+            "{}",
+            frame.contacts[0].y
+        );
         assert_eq!(frame.scan_time_100us, 0x1234);
         assert!(frame.button);
     }
@@ -295,15 +314,39 @@ mod tests {
             total_payload_bytes: 13,
             contact_fields: Some(ContactBitFields {
                 stride_bits: 30,
-                tip: BitField { bit_offset: 0, bit_width: 1 },
-                confidence: Some(BitField { bit_offset: 1, bit_width: 1 }),
-                id: BitField { bit_offset: 2, bit_width: 4 },
-                x: BitField { bit_offset: 6, bit_width: 12 },
-                y: BitField { bit_offset: 18, bit_width: 12 },
+                tip: BitField {
+                    bit_offset: 0,
+                    bit_width: 1,
+                },
+                confidence: Some(BitField {
+                    bit_offset: 1,
+                    bit_width: 1,
+                }),
+                id: BitField {
+                    bit_offset: 2,
+                    bit_width: 4,
+                },
+                x: BitField {
+                    bit_offset: 6,
+                    bit_width: 12,
+                },
+                y: BitField {
+                    bit_offset: 18,
+                    bit_width: 12,
+                },
             }),
-            scan_time_field: Some(BitField { bit_offset: 68, bit_width: 16 }),
-            contact_count_field: Some(BitField { bit_offset: 84, bit_width: 4 }),
-            button_field: Some(BitField { bit_offset: 88, bit_width: 1 }),
+            scan_time_field: Some(BitField {
+                bit_offset: 68,
+                bit_width: 16,
+            }),
+            contact_count_field: Some(BitField {
+                bit_offset: 84,
+                bit_width: 4,
+            }),
+            button_field: Some(BitField {
+                bit_offset: 88,
+                bit_width: 1,
+            }),
         };
         let mut buf = vec![0u8; 13];
         buf[0] = 1;
@@ -348,17 +391,19 @@ mod tests {
             confidence: true,
         };
         let mut assembler = HybridAssembler::default();
-        assert!(assembler
-            .push(DecodedReport {
-                frame: Frame {
-                    contacts: vec![contact(1, true)],
-                    scan_time_100us: 42,
-                    button: false,
-                },
-                all_contacts: vec![contact(1, true)],
-                reported_contact_count: 2,
-            })
-            .is_none());
+        assert!(
+            assembler
+                .push(DecodedReport {
+                    frame: Frame {
+                        contacts: vec![contact(1, true)],
+                        scan_time_100us: 42,
+                        button: false,
+                    },
+                    all_contacts: vec![contact(1, true)],
+                    reported_contact_count: 2,
+                })
+                .is_none()
+        );
         let frame = assembler
             .push(DecodedReport {
                 frame: Frame {
@@ -370,7 +415,10 @@ mod tests {
                 reported_contact_count: 0,
             })
             .expect("complete hybrid frame");
-        assert_eq!(frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(
+            frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
         assert!(frame.button);
     }
 
@@ -384,17 +432,19 @@ mod tests {
             confidence: true,
         };
         let mut assembler = HybridAssembler::default();
-        assert!(assembler
-            .push(DecodedReport {
-                frame: Frame {
-                    contacts: vec![contact(1)],
-                    scan_time_100us: 1,
-                    button: false,
-                },
-                all_contacts: vec![contact(1)],
-                reported_contact_count: 2,
-            })
-            .is_none());
+        assert!(
+            assembler
+                .push(DecodedReport {
+                    frame: Frame {
+                        contacts: vec![contact(1)],
+                        scan_time_100us: 1,
+                        button: false,
+                    },
+                    all_contacts: vec![contact(1)],
+                    reported_contact_count: 2,
+                })
+                .is_none()
+        );
         let frame = assembler
             .push(DecodedReport {
                 frame: Frame {
@@ -423,7 +473,11 @@ mod tests {
         let mut parallel = HybridAssembler::default();
         let frame = parallel
             .push(DecodedReport {
-                frame: Frame { contacts: vec![contact(1), contact(2)], scan_time_100us: 10, button: false },
+                frame: Frame {
+                    contacts: vec![contact(1), contact(2)],
+                    scan_time_100us: 10,
+                    button: false,
+                },
                 all_contacts: vec![contact(1), contact(2)],
                 reported_contact_count: 2,
             })
@@ -433,39 +487,64 @@ mod tests {
         // Single-finger hybrid: one contact per report, then a zero-count
         // continuation with the same scan time.
         let mut single = HybridAssembler::default();
-        assert!(single
-            .push(DecodedReport {
-                frame: Frame { contacts: vec![contact(3)], scan_time_100us: 20, button: false },
-                all_contacts: vec![contact(3)],
-                reported_contact_count: 2,
-            })
-            .is_none());
+        assert!(
+            single
+                .push(DecodedReport {
+                    frame: Frame {
+                        contacts: vec![contact(3)],
+                        scan_time_100us: 20,
+                        button: false
+                    },
+                    all_contacts: vec![contact(3)],
+                    reported_contact_count: 2,
+                })
+                .is_none()
+        );
         let frame = single
             .push(DecodedReport {
-                frame: Frame { contacts: vec![], scan_time_100us: 20, button: false },
+                frame: Frame {
+                    contacts: vec![],
+                    scan_time_100us: 20,
+                    button: false,
+                },
                 all_contacts: vec![contact(4)],
                 reported_contact_count: 0,
             })
             .expect("single-finger hybrid frame");
-        assert_eq!(frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(), vec![3, 4]);
+        assert_eq!(
+            frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![3, 4]
+        );
 
         // Two-finger hybrid: two contacts in each serial report.
         let mut two = HybridAssembler::default();
-        assert!(two
-            .push(DecodedReport {
-                frame: Frame { contacts: vec![contact(5), contact(6)], scan_time_100us: 30, button: false },
+        assert!(
+            two.push(DecodedReport {
+                frame: Frame {
+                    contacts: vec![contact(5), contact(6)],
+                    scan_time_100us: 30,
+                    button: false
+                },
                 all_contacts: vec![contact(5), contact(6)],
                 reported_contact_count: 4,
             })
-            .is_none());
+            .is_none()
+        );
         let frame = two
             .push(DecodedReport {
-                frame: Frame { contacts: vec![], scan_time_100us: 30, button: false },
+                frame: Frame {
+                    contacts: vec![],
+                    scan_time_100us: 30,
+                    button: false,
+                },
                 all_contacts: vec![contact(7), contact(8)],
                 reported_contact_count: 0,
             })
             .expect("two-finger hybrid frame");
-        assert_eq!(frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(), vec![5, 6, 7, 8]);
+        assert_eq!(
+            frame.contacts.iter().map(|c| c.id).collect::<Vec<_>>(),
+            vec![5, 6, 7, 8]
+        );
     }
 
     #[test]

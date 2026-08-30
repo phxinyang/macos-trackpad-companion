@@ -132,7 +132,7 @@ fn main() -> Result<()> {
             cfg_path.display(),
         );
     }
-    log::debug!("resolved config: {:#?}", cfg);
+    log::debug!("resolved config summary: {:?}", cfg.log_summary());
 
     // Bound to a non-underscore name so the guard lives until end of
     // main; closing the fd releases the kernel's flock.

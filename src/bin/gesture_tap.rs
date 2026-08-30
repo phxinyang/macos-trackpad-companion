@@ -109,18 +109,18 @@ mod macos {
             135 => Some("Gesture.ScrollFlagBits"),
             // DockControl (CGS subtype 30) — 123 also doubles as
             // Scroll.MomentumPhase on scroll-wheel events.
-        119 => Some("Dock.ScrollY"),
-        123 => Some("Dock.SwipeMotion / Scroll.MomentumPhase"),
-        124 => Some("Dock.SwipeProgress"),
-        125 => Some("Dock.DeltaX"),
-        126 => Some("Dock.DeltaYNeg"),
-        129 => Some("Dock.SwipeVelocityX"),
-        130 => Some("Dock.SwipeVelocityY"),
-        134 => Some("Dock.PhaseDuplicate"),
-        136 => Some("Dock.Const136"),
-        138 => Some("Dock.Const138"),
-        139 => Some("Dock.ZoomDeltaX"),
-        165 => Some("Dock.SwipeMotionDuplicate"),
+            119 => Some("Dock.ScrollY"),
+            123 => Some("Dock.SwipeMotion / Scroll.MomentumPhase"),
+            124 => Some("Dock.SwipeProgress"),
+            125 => Some("Dock.DeltaX"),
+            126 => Some("Dock.DeltaYNeg"),
+            129 => Some("Dock.SwipeVelocityX"),
+            130 => Some("Dock.SwipeVelocityY"),
+            134 => Some("Dock.PhaseDuplicate"),
+            136 => Some("Dock.Const136"),
+            138 => Some("Dock.Const138"),
+            139 => Some("Dock.ZoomDeltaX"),
+            165 => Some("Dock.SwipeMotionDuplicate"),
             // Acceleration-bypass mouse motion (CGEventTypes.h, modern macOS).
             170 => Some("UnacceleratedPointerMovementX"),
             171 => Some("UnacceleratedPointerMovementY"),
@@ -184,7 +184,7 @@ mod macos {
             return None;
         }
         let abs = f.abs();
-        if abs < 1e-6 || abs > 1e6 {
+        if !(1e-6..=1e6).contains(&abs) {
             return None;
         }
         if f.fract() == 0.0 {

@@ -20,8 +20,8 @@ use core_foundation_sys::runloop::CFRunLoopTimerRef;
 use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2_app_kit::{
-    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSFont,
-    NSPanel, NSScreen, NSTextAlignment, NSTextField, NSWindowStyleMask,
+    NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSFont, NSPanel,
+    NSScreen, NSTextAlignment, NSTextField, NSWindowStyleMask,
 };
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
@@ -57,8 +57,7 @@ impl Overlay {
     /// `MainThreadMarker` enforces this) — AppKit constructors panic
     /// otherwise.
     pub fn new(duration_ms: u32) -> Box<Self> {
-        let mtm = MainThreadMarker::new()
-            .expect("Overlay::new must run on the main thread");
+        let mtm = MainThreadMarker::new().expect("Overlay::new must run on the main thread");
 
         // Bring up NSApp as an accessory so the daemon doesn't grow a
         // Dock icon or steal focus. Idempotent if NSApp already exists.
@@ -72,11 +71,9 @@ impl Overlay {
                 NSPoint::new(0.0, 0.0),
                 NSSize::new(1440.0, 900.0),
             ));
-        let origin_x =
-            screen_frame.origin.x + (screen_frame.size.width - PANEL_WIDTH) / 2.0;
+        let origin_x = screen_frame.origin.x + (screen_frame.size.width - PANEL_WIDTH) / 2.0;
         // AppKit Y grows upward from the bottom of the screen.
-        let origin_y =
-            screen_frame.origin.y + screen_frame.size.height - TOP_INSET - PANEL_HEIGHT;
+        let origin_y = screen_frame.origin.y + screen_frame.size.height - TOP_INSET - PANEL_HEIGHT;
         let rect = NSRect::new(
             NSPoint::new(origin_x, origin_y),
             NSSize::new(PANEL_WIDTH, PANEL_HEIGHT),
@@ -158,8 +155,7 @@ impl Overlay {
     /// goes on the top line, `#seq` on the bottom — the seq matches the
     /// `overlay #N: …` log line emitted by the caller.
     pub fn flash(&self, name: &str, seq: u64) {
-        self.name_label
-            .setStringValue(&NSString::from_str(name));
+        self.name_label.setStringValue(&NSString::from_str(name));
         self.seq_label
             .setStringValue(&NSString::from_str(&format!("#{seq}")));
         self.panel.orderFrontRegardless();
@@ -167,9 +163,7 @@ impl Overlay {
         // Cancel the previous hide-timer (if any) and install a fresh one.
         if let Some(prev) = self.hide_timer.borrow_mut().take() {
             unsafe {
-                core_foundation_sys::runloop::CFRunLoopTimerInvalidate(
-                    prev.as_concrete_TypeRef(),
-                );
+                core_foundation_sys::runloop::CFRunLoopTimerInvalidate(prev.as_concrete_TypeRef());
             }
         }
 
