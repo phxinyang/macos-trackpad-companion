@@ -1,0 +1,299 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Validate release version
+        id: version
+        run: |
+          release_version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$release_version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            echo "Release tags must use vMAJOR.MINOR.PATCH: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          root_version=$(awk -F'"' '/^version = "/ { print $2; exit }' Cargo.toml)
+          proto_version=$(awk -F'"' '/^version = "/ { print $2; exit }' crates/touchpad-proto/Cargo.toml)
+          android_version=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' android/app/build.gradle.kts)
+          android_version_code=$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' android/app/build.gradle.kts)
+          plist_version=$(python3 - <<'PY'
+          import plistlib
+          with open("packaging/macos/Info.plist", "rb") as handle:
+              print(plistlib.load(handle)["CFBundleShortVersionString"])
+          PY
+          )
+          for pair in \
+            "Cargo.toml:$root_version" \
+            "touchpad-proto:$proto_version" \
+            "Android:$android_version" \
+            "Info.plist:$plist_version"; do
+            source=${pair%%:*}
+            version=${pair#*:}
+            if [[ "$version" != "$release_version" ]]; then
+              echo "$source version $version does not match tag version $release_version" >&2
+              exit 1
+            fi
+          done
+          if [[ -z "$android_version_code" || "$android_version_code" -lt 1 ]]; then
+            echo "Android versionCode must be a positive integer" >&2
+            exit 1
+          fi
+          echo "version=$release_version" >> "$GITHUB_OUTPUT"
+      - name: Verify Rust workspace
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+          cargo check --all-targets
+          ./scripts/test-diagnose-redaction.sh
+      - name: Verify Android project
+        working-directory: android
+        run: ./gradlew test assembleDebug --no-daemon
+
+  build-android:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Require Android signing credentials
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required GitHub Actions secret: $name" >&2
+              exit 1
+            fi
+          done
+      - name: Decode Android release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/android-signing"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/android-signing/release.jks"
+          chmod 600 "$RUNNER_TEMP/android-signing/release.jks"
+      - name: Build signed Android APK and AAB
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/android-signing/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
+      - name: Verify and collect Android artifacts
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          apk="android/app/build/outputs/apk/release/app-release.apk"
+          aab="android/app/build/outputs/bundle/release/app-release.aab"
+          test -s "$apk"
+          test -s "$aab"
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          test -x "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
+          jarsigner -verify "$aab" >/dev/null 2>&1
+          echo "AAB signature verification passed"
+          mkdir -p release-assets
+          cp "$apk" "release-assets/Trackpad-Companion-$VERSION-android.apk"
+          cp "$aab" "release-assets/Trackpad-Companion-$VERSION-android.aab"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: release-assets/*
+          if-no-files-found: error
+      - name: Delete temporary Android keystore
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/android-signing"
+
+  build-macos:
+    needs: verify
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Select Swift 6.2 toolchain
+        run: |
+          if [[ -d /Applications/Xcode_26.3.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.app
+          elif [[ -d /Applications/Xcode_26.3.0.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.0.app
+          else
+            echo "Xcode 26.3 is required by PermissionFlow" >&2
+            exit 1
+          fi
+          swift --version
+      - name: Require macOS signing and notarization credentials
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          for name in MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD MACOS_KEYCHAIN_PASSWORD MACOS_CODESIGN_IDENTITY APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required GitHub Actions secret: $name" >&2
+              exit 1
+            fi
+          done
+      - name: Import Developer ID certificate
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode -o "$certificate_path"
+          security create-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$MACOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -k "$MACOS_KEYCHAIN_PASSWORD" "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+      - name: Build signed app bundle
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          MARKETING_VERSION: ${{ needs.verify.outputs.version }}
+          CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          ./packaging/macos/test-package-dmg.sh
+          ./packaging/macos/test-service-lifecycle.sh
+          ./packaging/macos/build-app.sh
+      - name: Notarize and staple app bundle
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          app_path="dist/macos/Trackpad Companion.app"
+          zip_files=(dist/macos/*-macos.zip)
+          zip_path="${zip_files[0]}"
+          test -f "$zip_path"
+          xcrun notarytool submit "$zip_path" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple "$app_path"
+          xcrun stapler validate "$app_path"
+          rm -f "$zip_path"
+          ditto -c -k --sequesterRsrc --keepParent "$app_path" "$zip_path"
+      - name: Package, notarize, and staple DMG
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          ./packaging/macos/package-dmg.sh
+          dmg_files=(dist/macos/*-macos.dmg)
+          dmg_path="${dmg_files[0]}"
+          test -f "$dmg_path"
+          xcrun notarytool submit "$dmg_path" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple "$dmg_path"
+          xcrun stapler validate "$dmg_path"
+      - name: Verify and collect macOS artifacts
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          app_path="dist/macos/Trackpad Companion.app"
+          zip_path="dist/macos/Trackpad-Companion-$VERSION-macos.zip"
+          dmg_path="dist/macos/Trackpad-Companion-$VERSION-macos.dmg"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          xcrun stapler validate "$app_path"
+          xcrun stapler validate "$dmg_path"
+          test -s "$zip_path"
+          test -s "$dmg_path"
+          mkdir -p release-assets
+          cp "$zip_path" "$dmg_path" release-assets/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos
+          path: release-assets/*
+          if-no-files-found: error
+      - name: Delete temporary signing keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+
+  publish:
+    needs: [verify, build-android, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify release set and generate checksums
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          for asset in \
+            "Trackpad-Companion-$VERSION-macos.dmg" \
+            "Trackpad-Companion-$VERSION-macos.zip" \
+            "Trackpad-Companion-$VERSION-android.apk" \
+            "Trackpad-Companion-$VERSION-android.aab"; do
+            test -s "release-assets/$asset"
+          done
+          (cd release-assets && sha256sum Trackpad-Companion-* > SHA256SUMS)
+          cat release-assets/SHA256SUMS
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Trackpad Companion v${{ needs.verify.outputs.version }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/Trackpad-Companion-${{ needs.verify.outputs.version }}-macos.dmg
+            release-assets/Trackpad-Companion-${{ needs.verify.outputs.version }}-macos.zip
+            release-assets/Trackpad-Companion-${{ needs.verify.outputs.version }}-android.apk
+            release-assets/Trackpad-Companion-${{ needs.verify.outputs.version }}-android.aab
+            release-assets/SHA256SUMS

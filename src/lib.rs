@@ -1,7 +1,5 @@
-//! Library facade so binaries beyond the main `companion` daemon can
-//! reuse the gesture/output stack. Shared between `src/main.rs` (the
-//! daemon) and `src/bin/scroll_replay.rs` (the captured-stream
-//! playback tool).
+//! Library facade shared by the daemons, configuration helper, TUI, and
+//! platform-neutral tests so they reuse the same gesture/output stack.
 
 #[cfg(target_os = "macos")]
 pub mod app_context;

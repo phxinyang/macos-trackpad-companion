@@ -82,7 +82,7 @@ jobs:
             exit 1
           fi
           swift --version
-      - name: Build unsigned app bundle
+      - name: Build ad-hoc development app bundle
         run: |
           ./packaging/macos/test-package-dmg.sh
           ./packaging/macos/test-service-lifecycle.sh
@@ -98,7 +98,7 @@ jobs:
           test -s dist/macos/*-macos.dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: trackpad-companion-macos-unsigned
+          name: trackpad-companion-macos-development
           path: dist/macos/*
 
   android:

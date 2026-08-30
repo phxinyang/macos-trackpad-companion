@@ -33,7 +33,9 @@ fi
 [[ -x "$APP/Contents/MacOS/TrackpadCompanion" ]] || { echo "App executable is missing: $APP/Contents/MacOS/TrackpadCompanion" >&2; exit 1; }
 [[ -x "$APP/Contents/Resources/companion-net" ]] || { echo "Network helper is missing: $APP/Contents/Resources/companion-net" >&2; exit 1; }
 [[ -x "$APP/Contents/Resources/companion-config" ]] || { echo "Config helper is missing: $APP/Contents/Resources/companion-config" >&2; exit 1; }
-VERSION=${VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")}
+VERSION=${VERSION:-$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")}
+VERSION=${VERSION#v}
+VERSION=$(printf '%s' "$VERSION" | tr '/ ' '--')
 mkdir -p "$OUT"
 # `dist/macos` is a local build directory. Remove older DMGs so a shell glob
 # cannot accidentally open a stale application after a successful rebuild.

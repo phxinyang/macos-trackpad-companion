@@ -13,7 +13,8 @@ than reusing `target/release` binaries built on Linux.
 ./packaging/macos/package-dmg.sh
 ```
 
-The scripts create an unsigned `.app`, `.zip`, and `.dmg` under `dist/macos`.
+Without `CODESIGN_IDENTITY`, the scripts create an ad-hoc-signed development
+`.app`, `.zip`, and `.dmg` under `dist/macos`.
 The DMG uses a Finder icon layout with a branded background, the app icon, and
 the conventional `Applications` shortcut for drag-and-drop installation.
 Packaging is intentionally non-interactive: neither script opens the resulting
@@ -48,7 +49,12 @@ turn that preference off for the normal installer view.
 The background contains only the title, one install instruction, and
 the transfer arrow; Finder owns the two icon labels so explanatory copy cannot
 overlap them.
-Set `CODESIGN_IDENTITY='Developer ID Application: ...'` for a hardened runtime
-signature. Notarization remains a release-pipeline concern: after signing,
-submit the DMG with `xcrun notarytool submit` and staple it with
-`xcrun stapler staple`. Credentials stay outside the repository.
+Set `CODESIGN_IDENTITY='Developer ID Application: ...'` for a hardened-runtime
+signature. The tag-triggered workflow refuses to publish without the required
+Developer ID and Apple notarization secrets, then notarizes and staples both
+the app and DMG. The complete cross-platform secret list and release procedure
+live in [`docs/releasing.md`](../../docs/releasing.md).
+
+`VERSION` controls only the artifact filename. `MARKETING_VERSION` defaults to
+the root Cargo package version, while `BUILD_VERSION` defaults to the Git commit
+count; both can be overridden with numeric values for a release build.

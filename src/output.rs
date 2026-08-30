@@ -2799,6 +2799,8 @@ fn schedule_dock_swipe_resends(
 /// Posted to `kCGSessionEventTap` (not the HID tap) so
 /// AppleMultitouchHIDService doesn't merge the event into our PTP
 /// device's gesture state, and using the persistent
+/// combinedSessionState `source` so apps like Chrome accept this as a
+/// real-trackpad fling worthy of rubber-band bounce.
 #[allow(clippy::too_many_arguments)]
 fn post_scroll_event(
     source: CGEventSourceRef,

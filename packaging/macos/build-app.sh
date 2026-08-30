@@ -8,6 +8,7 @@ APP="$OUT/$APP_NAME"
 CONFIG=${CONFIGURATION:-release}
 ICON=${APP_ICON:-"$OUT/AppIcon.icns"}
 ICON_SOURCE=${APP_ICON_SOURCE:-"$ROOT/packaging/macos/AppIcon.png"}
+BUNDLE_ID=${BUNDLE_ID:-com.mtc.trackpad-companion}
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "build-app.sh must run on macOS (SwiftUI and codesign are macOS tools)" >&2
@@ -20,10 +21,19 @@ command -v cargo >/dev/null || { echo "cargo is required" >&2; exit 2; }
 # through. The app is recreated only after all compilation steps succeed.
 rm -rf "$APP"
 
-VERSION=${VERSION:-$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo 0.1.0)}
-# CFBundleVersion cannot contain a slash or whitespace. Git descriptions are
-# otherwise kept verbatim so nightly builds remain easy to identify.
-VERSION=$(printf '%s' "$VERSION" | tr '/ ' '--')
+ARTIFACT_VERSION=${VERSION:-$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo 0.1.0)}
+ARTIFACT_VERSION=${ARTIFACT_VERSION#v}
+ARTIFACT_VERSION=$(printf '%s' "$ARTIFACT_VERSION" | tr '/ ' '--')
+MARKETING_VERSION=${MARKETING_VERSION:-$(awk -F'"' '/^version = "/ { print $2; exit }' "$ROOT/Cargo.toml")}
+BUILD_VERSION=${BUILD_VERSION:-$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 1)}
+if [[ ! "$MARKETING_VERSION" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]; then
+  echo "MARKETING_VERSION must contain two or three numeric components: $MARKETING_VERSION" >&2
+  exit 2
+fi
+if [[ ! "$BUILD_VERSION" =~ ^[0-9]+([.][0-9]+){0,2}$ ]]; then
+  echo "BUILD_VERSION must contain one to three numeric components: $BUILD_VERSION" >&2
+  exit 2
+fi
 if [[ -n "${RUST_TARGET:-}" ]]; then
   (cd "$ROOT" && cargo build --locked --release --target "$RUST_TARGET" --bin companion-net --bin companion-config)
 else
@@ -82,28 +92,29 @@ if [[ -f "$ICON" ]]; then
 else
   echo "No AppIcon.icns found; using the default application icon."
 fi
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_VERSION" "$APP/Contents/Info.plist"
 if [[ -f "$ICON" ]]; then
   /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "$APP/Contents/Info.plist" 2>/dev/null || \
     /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "$APP/Contents/Info.plist"
 fi
 
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
-  codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP/Contents/Resources/companion-net"
-  codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP/Contents/Resources/companion-config"
-  codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP/Contents/MacOS/TrackpadCompanion"
-  codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "$APP"
+  codesign --force --options runtime --timestamp --identifier "$BUNDLE_ID" --sign "$CODESIGN_IDENTITY" "$APP/Contents/Resources/companion-net"
+  codesign --force --options runtime --timestamp --identifier "$BUNDLE_ID" --sign "$CODESIGN_IDENTITY" "$APP/Contents/Resources/companion-config"
+  codesign --force --options runtime --timestamp --identifier "$BUNDLE_ID" --sign "$CODESIGN_IDENTITY" "$APP/Contents/MacOS/TrackpadCompanion"
+  codesign --force --options runtime --timestamp --identifier "$BUNDLE_ID" --sign "$CODESIGN_IDENTITY" "$APP"
   codesign --verify --deep --strict --verbose=2 "$APP"
 else
   echo "No CODESIGN_IDENTITY set; signing ad-hoc with stable bundle identifier for local development."
-  codesign --force -s - --identifier "com.scottlamb.TrackpadCompanion" "$APP/Contents/Resources/companion-net"
-  codesign --force -s - --identifier "com.scottlamb.TrackpadCompanion" "$APP/Contents/Resources/companion-config"
-  codesign --force -s - --identifier "com.scottlamb.TrackpadCompanion" "$APP/Contents/MacOS/TrackpadCompanion"
-  codesign --force --deep -s - --identifier "com.scottlamb.TrackpadCompanion" "$APP"
+  codesign --force -s - --identifier "$BUNDLE_ID" "$APP/Contents/Resources/companion-net"
+  codesign --force -s - --identifier "$BUNDLE_ID" "$APP/Contents/Resources/companion-config"
+  codesign --force -s - --identifier "$BUNDLE_ID" "$APP/Contents/MacOS/TrackpadCompanion"
+  codesign --force --deep -s - --identifier "$BUNDLE_ID" "$APP"
 fi
 
 mkdir -p "$OUT"
-(cd "$OUT" && ditto -c -k --sequesterRsrc --keepParent "$APP" "Trackpad-Companion-$VERSION-macos.zip")
+(cd "$OUT" && ditto -c -k --sequesterRsrc --keepParent "$APP" "Trackpad-Companion-$ARTIFACT_VERSION-macos.zip")
 echo "Created $APP"
-echo "Created $OUT/Trackpad-Companion-$VERSION-macos.zip"
+echo "Created $OUT/Trackpad-Companion-$ARTIFACT_VERSION-macos.zip"

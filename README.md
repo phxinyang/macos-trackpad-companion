@@ -37,7 +37,7 @@ Download the latest DMG installer from [GitHub Releases](https://github.com/phxi
 
 * **First Launch & Permissions**: On first launch, navigate to "Overview > Permissions" and click "Request Accessibility Permission". The built-in PermissionFlow module will open macOS "Privacy & Security > Accessibility" and guide you through authorization.
 * **System Requirements**: macOS 13 or newer (the application bundle embeds all Rust network and configuration helpers).
-* **Open Source Distribution**: Local builds use Ad-hoc signing; production distributions can be signed and notarized with an Apple Developer ID.
+* **Open Source Distribution**: Local builds use ad-hoc signing. Tag-triggered GitHub Releases require Developer ID signing and Apple notarization credentials; missing release secrets stop publication instead of uploading a development package.
 
 ## Build from Source
 
@@ -61,7 +61,7 @@ Run the network listener daemon:
 ```
 
 Build the native macOS SwiftUI app and DMG installer:
-> Building the macOS settings app requires Swift 6 (Xcode 16 or newer).
+> The current PermissionFlow dependency requires Swift 6.2 (Xcode 26 or newer).
 
 ```sh
 ./packaging/macos/build-app.sh
@@ -240,6 +240,14 @@ Run the complete test suite before submitting code:
 cargo test --workspace
 cargo check --all-targets
 ```
+
+## Releases
+
+Pushing a version tag builds one GitHub Release containing the signed Android
+APK/AAB, the Developer ID signed and notarized macOS DMG/ZIP, generated release
+notes, and `SHA256SUMS`. Release credentials remain in GitHub Actions Secrets.
+See [docs/releasing.md](docs/releasing.md) for required secrets, version fields,
+and the tag procedure.
 
 ## Repository Map
 
