@@ -42,5 +42,9 @@ contains 'Self.terminateAndWait(process)' || {
   echo "deinitialization must also release a live helper lock" >&2
   exit 1
 }
+contains 'nonisolated private static func terminateAndWait' || {
+  echo "termination helper must be callable from synchronous deinitialization" >&2
+  exit 1
+}
 
 echo "service lifecycle lock regression guard passed"
