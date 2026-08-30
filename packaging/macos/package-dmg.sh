@@ -72,7 +72,10 @@ if [[ -f "$BACKGROUND" ]]; then
   mark_hidden "$STAGE/.background"
 fi
 hdiutil create -volname "Trackpad Companion" -fs HFS+ -srcfolder "$STAGE" -ov -format UDRW "$RW_DMG"
-MOUNT=$(hdiutil attach "$RW_DMG" -readwrite -nobrowse -noautoopen | awk '/\/Volumes\// {print substr($0, index($0, "/Volumes/")); exit}')
+# Keep the volume from auto-opening, but do not use -nobrowse: on some
+# macOS/Finder combinations that flag prevents the explicit AppleScript open
+# below from creating a container window at all.
+MOUNT=$(hdiutil attach "$RW_DMG" -readwrite -noautoopen | awk '/\/Volumes\// {print substr($0, index($0, "/Volumes/")); exit}')
 MOUNT_NAME=${MOUNT##*/}
 if [[ -n "$MOUNT" ]]; then
   # hdiutil/Finder can preserve files from an older read-write image. The
@@ -90,7 +93,7 @@ if [[ -n "$MOUNT" && -x "$(command -v osascript 2>/dev/null || true)" ]]; then
 tell application "Finder"
   set finderWasVisible to visible
   try
-    -- Finder does not create a container window for a -nobrowse volume
+    -- Finder does not create a container window for a non-browsable volume
     -- while the app itself is hidden on some macOS releases. Make it
     -- temporarily visible for the layout transaction, then restore the
     -- user's original visibility below.
