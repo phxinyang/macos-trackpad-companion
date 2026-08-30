@@ -4,7 +4,7 @@
 Each press of <Enter> fires exactly one synthetic touch gesture at the
 running companion-net (127.0.0.1:4242), after printing what you should
 see. Watch the screen, note pass/fail, keep pressing through the whole
-list, then report the numbers that failed back to ZCode.
+list, and verify each gesture behaves as expected.
 
 Usage:
     python3 tools/gesture_probe.py           # interactive (Enter per gesture)
@@ -130,7 +130,7 @@ def main():
         except KeyboardInterrupt:
             print("\n中断"); sender.send([], lift_extra=True); return
 
-    print("\n全部完成。请把失败的编号反馈给 ZCode。")
+    print("\n全部完成。请确认各项手势在 macOS 上的触发与响应是否符合预期。")
 
 
 if __name__ == "__main__":

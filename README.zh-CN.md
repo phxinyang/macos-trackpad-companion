@@ -182,11 +182,25 @@ release_delay_ms = 500
 
 ## 手势行为
 
-- 单指移动指针。轻点来点按、双击、轻点拖移和可选的按住拖移都使用公开的鼠标事件。
-- 双指同向移动在动作明确后锁定为滚动。捏合和旋转使用独立的私有手势流，并持续到本次触摸结束。
-- 三指拖移通过抖动保护后按住左键。`persistent_drag_lock = true` 时，三指全部抬起，四指滑动切换 Space，再次抬起，最后重新落下三指即可继续拖移。
-- 三指和四指滑动可以路由到 Space、调度中心、App Expose 或配置的兼容后端。macOS 26 及更高版本可能使用不同的私有路径，实际效果取决于 WindowServer 版本。
-- Control、Option、Command 和 Shift 会保留在面向应用的鼠标、滚动、捏合、旋转和拖移事件中。如果额外修饰键会让 WindowServer 拒绝系统快捷键，系统快捷键路径只使用注册过的组合。
+- **单指手势**：
+  - 指针移动：线性/加速曲线光标位移。
+  - 轻点点按（Tap to Click）、双击、轻点拖移（Tap-to-Drag）以及按住拖移（Press-and-Hold Drag）。
+- **双指手势**：
+  - 平滑滚动：分阶段 2D 滚动（自然/反向方向、动量惯性、Shift 横向滚动兼容映射）。
+  - 双指捏合缩放（Pinch to Zoom）与双指旋转（Rotate，兼容 AppKit/Safari 等）。
+  - 右边缘轻扫（Right-Edge Swipe）：从右侧边缘向左滑入打开/关闭 macOS 通知中心。
+  - 智能缩放（Smart Zoom）：双指双击放大网页或内容。
+- **三指手势**：
+  - 三指拖移（Three-Finger Drag）：带防抖过滤的鼠标左键长按拖拽，支持 `persistent_drag_lock`（可跨全屏空间继续拖拽）。
+  - 三指轻点（Three-Finger Tap）：词典查询与数据检测器。
+- **四指手势**：
+  - 向上轻扫：调度中心（Mission Control）。
+  - 向下轻扫：应用程序窗口（App Exposé）。
+  - 向左/向右轻扫：在全屏 Space 与桌面间平滑切换。
+  - 径向捏合（4指收缩）：启动台（Launchpad）。
+  - 径向张开（4指散开）：显示桌面（Show Desktop）。
+- **修饰键保留**：
+  - Control、Option、Command 和 Shift 会完整保留在鼠标、滚动、捏合、旋转和拖移事件中；系统快捷键路径仅使用已注册组合键以防 WindowServer 拒绝。
 
 Apple 没有公开捏合或旋转的灵敏度设置。`gestures.pinch.gain` 和 `gestures.rotate.gain` 是 Companion 自己的兼容参数，不代表 Apple 的物理标定值。`chromium_os` profile 是基于公开识别器的实验选项，也不是 macOS 系统设置。
 

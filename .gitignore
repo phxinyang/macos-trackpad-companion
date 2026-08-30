@@ -1,7 +1,12 @@
+# Build targets and packaging
 /target
 /dist/
 /build/
 /DerivedData/
+/output/
+*.log
+
+# SwiftPM, Xcode, and macOS App artifacts
 /macos/**/.build/
 /macos/**/.swiftpm/
 /macos/**/xcuserdata/
@@ -9,36 +14,54 @@
 /macos/**/*.dmg
 /macos/**/*.app
 /macos/**/*.zip
-/macos/**/.DS_Store
+
+# Android and Gradle artifacts
 /android/.gradle/
 /android/build/
 /android/app/build/
 /android/local.properties
+/android/**/*.apk
+/android/**/*.aab
+.gradle/
+captures/
+
+# Python and virtual environments
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# IDE, Editor, and Tooling metadata
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+**/.DS_Store
+.Spotlight-V100
+.Trashes
+
+# Development agent and test metadata
 .zcode/
 .agent/
+.gemini/
+.antigravity/
 .playwright-cli/
-/output/
-*.log
 
-# macOS diagnostics are generated on the host and can contain machine names,
-# OS build identifiers, paths, and timing data.
+# macOS diagnostics (generated on host, contains machine names/timestamps)
 /diagnostics/*.txt
 /diagnostics/*.json
 
-# Local Apple signing and release material.
+# Local Apple signing, credentials, and secrets
 *.p12
 *.mobileprovision
 notarytool-credentials.json
 .env
 .env.*
 
-# Finder and editor metadata.
-.DS_Store
-.idea/
-*.swp
-
-# Local-only wallpaper research assets. These may contain third-party artwork
-# and are intentionally excluded from source distributions.
+# Local-only wallpaper research assets
 /static/private-wallpapers/
