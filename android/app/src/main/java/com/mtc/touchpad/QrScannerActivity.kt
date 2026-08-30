@@ -12,6 +12,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -27,7 +28,6 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import kotlin.math.abs
 
 /**
  * Self-contained QR scanner used by the connection sheet. Unlike Google's
@@ -43,6 +43,7 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
     private var camera: Camera? = null
     private var scanner: BarcodeScanner? = null
     private var previewSize: Camera.Size? = null
+    private var focusMode: String? = null
     private var rotationDegrees = 0
     private var surfaceReady = false
     private var processingFrame = false
@@ -71,6 +72,12 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         preview = SurfaceView(this)
         preview.holder.addCallback(this)
+        preview.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_UP) {
+                requestFocus()
+            }
+            true
+        }
         root.addView(preview, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -166,13 +173,13 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
             if (cameraId < 0) throw IllegalStateException("未找到后置摄像头")
             val next = Camera.open(cameraId)
             val parameters = next.parameters
-            val selected = parameters.supportedPreviewSizes
-                ?.minByOrNull { abs(it.width - 1280) + abs(it.height - 720) }
+            val selected = selectPreviewSize(parameters)
             if (selected != null) {
                 parameters.setPreviewSize(selected.width, selected.height)
                 previewSize = selected
             }
             parameters.previewFormat = ImageFormat.NV21
+            focusMode = configureFocus(parameters)
             next.parameters = parameters
             rotationDegrees = inputRotation(cameraId)
             next.setDisplayOrientation(displayRotation(cameraId))
@@ -183,6 +190,7 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
             next.addCallbackBuffer(ByteArray(bufferSize))
             camera = next
             next.startPreview()
+            requestFocus()
             status.text = "将 Mac 上的二维码放入框内"
             permissionButton?.visibility = View.GONE
         } catch (error: Exception) {
@@ -241,11 +249,61 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
     private fun releaseCamera() {
         camera?.let { active ->
             runCatching { active.setPreviewCallbackWithBuffer(null) }
+            runCatching { active.cancelAutoFocus() }
             runCatching { active.stopPreview() }
             runCatching { active.release() }
         }
         camera = null
+        focusMode = null
         processingFrame = false
+    }
+
+    /**
+     * Use the highest detail stream within a full-HD budget. The old fixed
+     * 1280x720 choice was visibly soft on modern high-density phones, and
+     * ranking aspect ratio first could pick 1440x720 over a sharper 1920x1080
+     * stream on extra-wide displays.
+     */
+    private fun selectPreviewSize(parameters: Camera.Parameters): Camera.Size? {
+        val supported = parameters.supportedPreviewSizes ?: return null
+        if (supported.isEmpty()) return null
+        val displayWidth = preview.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+        val displayHeight = preview.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
+        val targetAspect = aspectRatio(displayWidth, displayHeight)
+        val fullHdOrSmaller = supported.filter {
+            it.width * it.height <= MAX_PREVIEW_PIXELS && it.width >= MIN_PREVIEW_WIDTH
+        }
+        val candidates = if (fullHdOrSmaller.isNotEmpty()) fullHdOrSmaller else supported
+        return candidates.maxWithOrNull(
+            compareBy<Camera.Size> { it.width * it.height }
+                .thenBy { -kotlin.math.abs(aspectRatio(it.width, it.height) - targetAspect) },
+        )
+    }
+
+    private fun aspectRatio(width: Int, height: Int): Double {
+        val longEdge = maxOf(width, height).toDouble()
+        val shortEdge = minOf(width, height).toDouble().coerceAtLeast(1.0)
+        return longEdge / shortEdge
+    }
+
+    private fun configureFocus(parameters: Camera.Parameters): String? {
+        val modes = parameters.supportedFocusModes ?: emptyList()
+        val selected = when {
+            Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE in modes -> Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE
+            Camera.Parameters.FOCUS_MODE_AUTO in modes -> Camera.Parameters.FOCUS_MODE_AUTO
+            Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO in modes -> Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO
+            else -> null
+        }
+        if (selected != null) parameters.focusMode = selected
+        return selected
+    }
+
+    private fun requestFocus() {
+        val active = camera ?: return
+        if (focusMode != Camera.Parameters.FOCUS_MODE_AUTO) return
+        runCatching {
+            active.autoFocus { _, _ -> }
+        }
     }
 
     private fun findBackCamera(): Int {
@@ -321,5 +379,7 @@ class QrScannerActivity : Activity(), SurfaceHolder.Callback {
     companion object {
         const val EXTRA_QR_VALUE = "qr_value"
         private const val REQUEST_CAMERA = 41
+        private const val MIN_PREVIEW_WIDTH = 1280
+        private const val MAX_PREVIEW_PIXELS = 1920 * 1080
     }
 }
