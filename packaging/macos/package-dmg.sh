@@ -48,6 +48,9 @@ hdiutil create -volname "Trackpad Companion" -srcfolder "$STAGE" -ov -format UDR
 MOUNT=$(hdiutil attach "$RW_DMG" -readwrite -nobrowse -noautoopen | awk '/\/Volumes\// {print substr($0, index($0, "/Volumes/")); exit}')
 if [[ -n "$MOUNT" && -d "$MOUNT/.background" ]]; then
   chflags hidden "$MOUNT/.background" 2>/dev/null || true
+  if [[ -x "$(command -v SetFile 2>/dev/null || true)" ]]; then
+    SetFile -a V "$MOUNT/.background" 2>/dev/null || true
+  fi
 fi
 if [[ -n "$MOUNT" && -x "$(command -v osascript 2>/dev/null || true)" ]]; then
   osascript <<APPLESCRIPT || echo "Warning: Finder DMG layout could not be applied; using the default layout." >&2
@@ -57,18 +60,21 @@ tell application "Finder"
   tell disk "Trackpad Companion"
     open
     set dmgWindow to container window
+    try
+      set visible of item ".background" of disk "Trackpad Companion" to false
+    end try
     set current view of dmgWindow to icon view
     set toolbar visible of dmgWindow to false
     set statusbar visible of dmgWindow to false
-    set bounds of dmgWindow to {120, 120, 900, 620}
+    set bounds of dmgWindow to {120, 120, 1020, 740}
     set viewOptions to icon view options of dmgWindow
     set icon size of viewOptions to 128
     set arrangement of viewOptions to not arranged
     try
       set background picture of viewOptions to file ".background:dmg-background.png"
     end try
-    set position of item "Trackpad Companion.app" of dmgWindow to {210, 250}
-    set position of item "Applications" of dmgWindow to {570, 250}
+    set position of item "Trackpad Companion.app" of dmgWindow to {220, 250}
+    set position of item "Applications" of dmgWindow to {680, 250}
     close dmgWindow
     open
     update without registering applications
