@@ -94,7 +94,7 @@ const TAP_DRAG_CONFIRM: Duration = Duration::from_millis(200);
 /// Fingers decelerate as they leave the surface, so the last frame's
 /// instantaneous velocity systematically under-reports the throw the
 /// user actually made; the peak over the tail is what they felt.
-const INERTIA_PEAK_WINDOW: Duration = Duration::from_millis(50);
+const INERTIA_PEAK_WINDOW: Duration = Duration::from_millis(100);
 
 /// Centroid travel needed to lock the swipe axis (horizontal vs
 /// vertical). Below this, the gesture is still ambiguous; we wait
@@ -2757,12 +2757,12 @@ impl<O: Output> State<O> {
                     GestureKind::TwoFingerPan
                 } else {
                     let pinch_or_rot = pinch.max(rot);
-                    let pan_lenient = if common_mag > differential_mag * 1.1 {
-                        common_mag / PAN_LOCK_MM
+                    let pan_lenient = if common_mag > differential_mag * 1.05 {
+                        common_mag / tuning.pan_lock_mm
                     } else {
                         0.0
                     };
-                    let aligned_motion = alignment > PAN_ALIGNMENT_COS_MIN;
+                    let aligned_motion = alignment > 0.70;
                     if (pan_lenient > pinch_or_rot || aligned_motion)
                         && !base.pinch_rot_lock_pending
                     {
