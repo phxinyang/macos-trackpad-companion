@@ -90,7 +90,11 @@ if [[ -n "$MOUNT" && -x "$(command -v osascript 2>/dev/null || true)" ]]; then
 tell application "Finder"
   set finderWasVisible to visible
   try
-    set visible to false
+    -- Finder does not create a container window for a -nobrowse volume
+    -- while the app itself is hidden on some macOS releases. Make it
+    -- temporarily visible for the layout transaction, then restore the
+    -- user's original visibility below.
+    set visible to true
     tell disk "${MOUNT_NAME}"
       open
       delay 1

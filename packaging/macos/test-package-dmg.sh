@@ -27,6 +27,10 @@ if contains '`tell dmgWindow`'; then
   echo "AppleScript heredoc must not contain shell command-substitution backticks" >&2
   exit 1
 fi
+contains 'set visible to true' || {
+  echo "Finder must be visible while creating the DMG container window" >&2
+  exit 1
+}
 contains 'set current view of dmgWindow to icon view' || {
   echo "DMG layout must select icon view on the live container window" >&2
   exit 1
