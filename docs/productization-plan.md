@@ -424,6 +424,10 @@ helper 恢复仍需在 macOS 真机/签名 DMG 上验收，Z4f 本地化资源�
 - [x] T5. 完善 `build-app.sh`/`package-dmg.sh`：版本清洗、可选图标、嵌套 helper
   签名、DMG 临时目录清理、高压缩和 Finder 安装布局（900×620 背景、明确图标坐标、
   隐藏 `.background` staging 目录），并新增 tag 触发的 macOS Release workflow。
+- [x] T5a. 重做 DMG 安装画布：背景只承载产品名、单条安装指引和转移箭头；Finder
+  图标固定在 `{245,340}` 与 `{655,340}`，窗口固定为 900×620，并在挂载前、Finder
+  保存布局后分别写入 `.hidden`、`chflags hidden` 和 Finder invisible 元数据，避免
+  `.background` 出现在安装窗口中。
 - [x] T6. README 增加 `.dmg` 安装和 GitHub Release 说明；CI 在 macOS runner 上同时
   构建 `.app`、ZIP 和 DMG，并验证 bundle 内容。
 
