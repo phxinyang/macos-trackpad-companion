@@ -43,7 +43,7 @@ macOS 应用和 TUI 都通过同一个 `companion-config` helper 读写配置，
 Rust 二进制文件与构建主机相关。请在实际运行它们的 Mac 上编译，不要把 Linux 构建出来的 ELF 文件复制到 macOS。
 
 ```sh
-git clone https://github.com/scottlamb/macos-trackpad-companion.git
+git clone https://github.com/phxinyang/macos-trackpad-companion.git
 cd macos-trackpad-companion
 cargo build --release
 ```
@@ -62,7 +62,7 @@ cargo build --release
 
 在 macOS 上构建原生设置应用和 DMG：
 
-当前 PermissionFlow 依赖需要 Swift 6.2（Xcode 26 或更高版本）才能构建 macOS 设置目标。
+当前 PermissionFlow 依赖需要 Swift 6（Xcode 16 或更高版本）才能构建 macOS 设置目标。
 
 ```sh
 ./packaging/macos/build-app.sh
