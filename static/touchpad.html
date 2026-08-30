@@ -197,34 +197,45 @@
     position: absolute; inset: 0; width: 100%; height: 100%; z-index: 3; pointer-events: none;
   }
   #pad-frame {
-    position: absolute; left: 18px; right: 18px; top: 72px; bottom: 24px;
-    border-radius: var(--radius-lg); border: 1px solid rgba(255, 255, 255, 0.14);
+    position: absolute; left: 14px; right: 14px; top: calc(env(safe-area-inset-top, 0px) + 72px); bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+    border-radius: var(--radius-lg); border: 1px solid rgba(255, 255, 255, 0.16);
     background: linear-gradient(120deg, rgba(255,255,255,.055), rgba(255,255,255,.012) 36%, rgba(255,255,255,.04) 70%, rgba(255,255,255,.012));
-    backdrop-filter: blur(10px) saturate(1.48) brightness(.98); -webkit-backdrop-filter: blur(10px) saturate(1.48) brightness(.98);
+    backdrop-filter: blur(12px) saturate(var(--glass-saturation, 1.48)) brightness(var(--glass-brightness, .98));
+    -webkit-backdrop-filter: blur(12px) saturate(var(--glass-saturation, 1.48)) brightness(var(--glass-brightness, .98));
     box-shadow: inset 0 0 0 1px rgba(255,255,255,.30), inset 0 -30px 64px rgba(0, 0, 0, 0.08), 0 14px 40px rgba(28,37,46,.10);
-    pointer-events: none; z-index: 1; opacity: var(--material-opacity); --lens-x: 50%; --lens-y: 50%; transform-origin: 50% 50%;
-    transition-property: transform, opacity, filter, border-radius; transition-duration: 300ms; transition-timing-function: var(--ease);
-    contain: paint;
+    pointer-events: none; z-index: 1; opacity: var(--material-opacity); transform-origin: 50% 50%;
+    transition: top 240ms var(--ease), bottom 240ms var(--ease), left 240ms var(--ease), right 240ms var(--ease), transform 300ms var(--ease), opacity 180ms var(--ease), filter 180ms var(--ease), border-radius 240ms var(--ease);
+    contain: paint; overflow: hidden;
   }
-  #pad-frame[data-active="true"] { will-change: transform, filter; }
+  #pad-frame[data-active="true"] { will-change: transform; box-shadow: inset 0 0 0 1px rgba(255,255,255,.48), inset 0 -30px 64px rgba(0, 0, 0, 0.08), 0 14px 40px rgba(28,37,46,.10), 0 0 0 3px rgba(255,255,255,.10); }
   #pad-frame::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(122deg, var(--glass-fringe-warm), transparent 16% 79%, var(--glass-fringe-cool)), linear-gradient(154deg, rgba(255,255,255,.30), transparent 34% 64%, rgba(255,255,255,.08)); mix-blend-mode: screen; opacity: .82; }
-  #pad-frame::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(112deg, transparent 0 42%, var(--glass-caustic) 49%, transparent 56% 100%), linear-gradient(180deg, rgba(255,255,255,.18), transparent 18% 82%, rgba(255,255,255,.12)); opacity: .58; mix-blend-mode: screen; transition: opacity 160ms var(--ease), filter 180ms var(--ease); }
-  #pad-frame[data-active="true"]::after { background: radial-gradient(circle at var(--lens-x) var(--lens-y), rgba(255,255,255,.44), transparent 24%), linear-gradient(112deg, transparent 0 42%, var(--glass-caustic) 49%, transparent 56% 100%), linear-gradient(180deg, rgba(255,255,255,.20), transparent 18% 82%, rgba(255,255,255,.14)); opacity: .94; filter: brightness(1.12) saturate(1.10); }
-  #pad-frame[data-active="true"] { box-shadow: inset 0 0 0 1px rgba(255,255,255,.48), inset 0 -30px 64px rgba(0, 0, 0, 0.08), 0 14px 40px rgba(28,37,46,.10), 0 0 0 3px rgba(255,255,255,.10); }
-  /* Fullscreen is a chrome mode, not a material mode. Keep the same
-     centered, rounded touch plane so the wallpaper and lens do not jump. */
+  #pad-frame::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; background: linear-gradient(112deg, transparent 0 42%, var(--glass-caustic) 49%, transparent 56% 100%), linear-gradient(180deg, rgba(255,255,255,.18), transparent 18% 82%, rgba(255,255,255,.12)); opacity: .58; mix-blend-mode: screen; transition: opacity 160ms var(--ease); }
+  #pad-frame[data-active="true"]::after { opacity: .85; }
+  #pad-lens {
+    position: absolute; top: 0; left: 0; width: 180px; height: 180px; margin-left: -90px; margin-top: -90px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,.44) 0%, rgba(255,255,255,.18) 36%, transparent 70%);
+    mix-blend-mode: screen; pointer-events: none; opacity: 0;
+    will-change: transform, opacity; transition: opacity 160ms var(--ease); z-index: 2;
+  }
+  #pad-frame[data-active="true"] #pad-lens { opacity: 1; }
+  /* Fullscreen: adaptively expand to full safe area */
   html[data-fullscreen="true"] #pad-frame {
-    border-radius: var(--radius-lg); border: 1px solid rgba(255, 255, 255, .14);
-    box-shadow: inset 0 0 0 1px rgba(255,255,255,.30), inset 0 -30px 64px rgba(0,0,0,.08), 0 14px 40px rgba(28,37,46,.10);
+    top: calc(env(safe-area-inset-top, 0px) + 6px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 6px);
+    left: calc(env(safe-area-inset-left, 0px) + 6px);
+    right: calc(env(safe-area-inset-right, 0px) + 6px);
+    border-radius: var(--radius-md); border: 1px solid rgba(255, 255, 255, .18);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.32), inset 0 -30px 64px rgba(0,0,0,.08), 0 14px 40px rgba(28,37,46,.10);
   }
   html[data-fullscreen="true"] #pad-frame::before, html[data-fullscreen="true"] #pad-frame::after { border-radius: inherit; }
   html[data-fullscreen-phase="enter"] #pad-frame {
-    transform: scale(.985); opacity: var(--material-opacity); filter: brightness(1.01) saturate(1.02);
+    transform: scale(.988); opacity: var(--material-opacity);
   }
   html[data-fullscreen-phase="exit"] #pad-frame {
-    transform: scale(.995); opacity: var(--material-opacity); filter: brightness(1.005) saturate(1.01);
+    transform: scale(.996); opacity: var(--material-opacity);
   }
-  html[data-chrome="compact"]:not([data-fullscreen="true"]) #pad-frame { top: 18px; }
+  html[data-chrome="compact"]:not([data-fullscreen="true"]) #pad-frame { top: calc(env(safe-area-inset-top, 0px) + 14px); }
   html[data-theme^="classic-"] #pad-frame, html[data-theme="high-contrast"] #pad-frame { backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: inset 0 0 0 1px var(--separator); background-color: var(--pad-glass); background-image: var(--pad-texture); }
   html[data-theme="tokyo-night"] #pad-frame,
   html[data-theme="nord"] #pad-frame,
@@ -249,9 +260,8 @@
     border: 1px solid var(--separator);
     box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge);
     color: var(--label); font-size: 13px; z-index: 100; transition: opacity 180ms var(--ease), transform 180ms var(--ease), width 180ms var(--ease), padding 180ms var(--ease), background-color 180ms var(--ease);
-    --lens-x: 50%; --lens-y: 50%;
   }
-  #bar::after { content: ""; position: absolute; inset: 1px; pointer-events: none; border-radius: inherit; background: radial-gradient(circle at var(--lens-x, 50%) var(--lens-y, 50%), rgba(255,255,255,.30), transparent 38%); opacity: .55; mix-blend-mode: screen; }
+  #bar::after { content: ""; position: absolute; inset: 1px; pointer-events: none; border-radius: inherit; background: linear-gradient(180deg, rgba(255,255,255,.22) 0%, transparent 60%); opacity: .55; }
   #bar > *, #action-dock > * { position: relative; z-index: 1; }
   #bar.hidden { opacity: 0; transform: translateY(-30px); pointer-events: none; }
   body[data-settings-open="true"] #bar .bar-actions { opacity: 0; pointer-events: none; transform: scale(.96); }
@@ -380,7 +390,7 @@
   html[data-theme^="classic-"] #settings-sheet, html[data-theme="high-contrast"] #settings-sheet { backdrop-filter: none; -webkit-backdrop-filter: none; background: var(--chrome-solid); }
   #action-dock {
     min-width: 0; min-height: 48px; padding: 8px 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px;
-    background: transparent; border-top: 1px solid var(--separator); border-bottom: 1px solid var(--separator); border-radius: 0; box-shadow: none; --lens-x: 50%; --lens-y: 50%;
+    background: transparent; border-top: 1px solid var(--separator); border-bottom: 1px solid var(--separator); border-radius: 0; box-shadow: none;
     overflow: visible; overscroll-behavior: contain;
   }
   #action-dock .dock-group { flex: 1 1 180px; min-width: 170px; justify-content: flex-start; }
@@ -405,14 +415,12 @@
   html[data-theme^="classic-"] #bar, html[data-theme^="classic-"] #action-dock,
   html[data-theme="high-contrast"] #bar, html[data-theme="high-contrast"] #action-dock { box-shadow: var(--glass-shadow); }
   html.has-liquid-filter[data-theme$="glass"] #bar {
-    backdrop-filter: url("#liquid-glass-filter") saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast));
-    -webkit-backdrop-filter: blur(4px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast));
+    backdrop-filter: blur(18px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+    -webkit-backdrop-filter: blur(18px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
   }
   html.has-liquid-filter[data-theme$="glass"] #pad-frame {
-    /* SVG filters are not a reliable backdrop source across Chromium/WebKit;
-       keep the readable live blur path and express lensing in the rim layers. */
-    backdrop-filter: blur(10px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast));
-    -webkit-backdrop-filter: blur(10px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast));
+    backdrop-filter: blur(12px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
+    -webkit-backdrop-filter: blur(12px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness));
   }
   .dock-group { display: flex; align-items: center; gap: 4px; }
   .dock-divider { width: 1px; height: 26px; background: var(--separator); margin: 0 4px; }
@@ -450,7 +458,7 @@
   #command-palette-backdrop { position: fixed; inset: 0; z-index: 240; background: rgba(0,0,0,.18); opacity: 0; pointer-events: none; transition: opacity 180ms var(--ease); }
   #command-palette-backdrop[data-open="true"] { opacity: 1; pointer-events: auto; }
   #command-palette { position: fixed; z-index: 250; left: 50%; top: 18%; width: min(520px, calc(100vw - 28px)); max-height: min(520px, 68vh); overflow: auto; transform: translate(-50%, -12px) scale(.98); opacity: 0; pointer-events: none; padding: 10px; border: 1px solid var(--separator); border-radius: 18px; color: var(--label); background: var(--chrome); box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge); backdrop-filter: blur(28px) saturate(1.22); -webkit-backdrop-filter: blur(28px) saturate(1.22); transition: transform 300ms var(--spring), opacity 180ms var(--ease); }
-  html.has-liquid-filter[data-theme$="glass"] #command-palette { backdrop-filter: url("#liquid-glass-filter") saturate(var(--glass-saturation)) brightness(var(--glass-brightness)) contrast(var(--glass-contrast)); }
+  html.has-liquid-filter[data-theme$="glass"] #command-palette { backdrop-filter: blur(28px) saturate(var(--glass-saturation)) brightness(var(--glass-brightness)); }
   #command-palette[data-open="true"] { transform: translate(-50%, 0) scale(1); opacity: 1; pointer-events: auto; }
   #command-search { width: 100%; min-height: 46px; border: 0; border-bottom: 1px solid var(--separator); outline: 0; background: transparent; color: var(--label); font: inherit; font-size: 15px; padding: 0 10px; }
   #command-list { display: grid; gap: 3px; padding: 8px 0 2px; }
@@ -525,7 +533,9 @@
 </head>
 <body>
 <div id="pad-container">
-  <div id="pad-frame"></div>
+  <div id="pad-frame">
+    <div id="pad-lens"></div>
+  </div>
   <div id="edge-hint" title="双指从右边缘向左滑入打开通知中心"></div>
   <canvas id="pad-canvas"></canvas>
 </div>
@@ -711,7 +721,9 @@
   const VIRTUAL_SURFACE_WIDTH_MM = 65;
   const $ = id => document.getElementById(id);
   const dot = $("dot"), st = $("st"), bar = $("bar"), dock = $("action-dock"), floatBtn = $("float-btn"), connectionBtn = $("connection-btn");
-  const hostHint = $("host-hint"), padStatusBtn = $("pad-status-btn"), padFrame = $("pad-frame");
+  const hostHint = $("host-hint"), padStatusBtn = $("pad-status-btn"), padFrame = $("pad-frame"), padLens = $("pad-lens");
+  let frameRect = padFrame.getBoundingClientRect();
+  window.addEventListener("resize", () => { frameRect = padFrame.getBoundingClientRect(); });
   const canvas = $("pad-canvas"), ctx = canvas.getContext("2d");
   const themeBtn = $("theme-btn"), themeMenu = $("theme-menu");
   const settingsBtn = $("settings-btn"), settingsSheet = $("settings-sheet");
@@ -1739,17 +1751,14 @@
       touchStartTime = performance.now();
       maxFingers = 1;
       initialPos = { x: e.clientX, y: e.clientY };
+      frameRect = padFrame.getBoundingClientRect();
     }
     if (pointers.has(e.pointerId)) return;
     const cid = acquireCid();
     pointers.set(e.pointerId, cid);
     pos.set(e.pointerId, toMm(e));
     visualTouches.set(e.pointerId, { pointerId: e.pointerId, x: e.clientX, y: e.clientY, cid, vx: 0, vy: 0, lastTime: e.timeStamp, trail: [] });
-    const px = `${Math.round((e.clientX / window.innerWidth) * 100)}%`;
-    const py = `${Math.round((e.clientY / window.innerHeight) * 100)}%`;
-    bar.style.setProperty("--lens-x", px); bar.style.setProperty("--lens-y", py);
-    dock.style.setProperty("--lens-x", px); dock.style.setProperty("--lens-y", py);
-    padFrame.style.setProperty("--lens-x", px); padFrame.style.setProperty("--lens-y", py);
+    if (padLens) padLens.style.transform = `translate3d(${e.clientX - frameRect.left}px, ${e.clientY - frameRect.top}px, 0)`;
     if (pointers.size > maxFingers) maxFingers = pointers.size;
 
     sendRaw(encodeFrame(snapshot(), deepPressed));
@@ -1769,11 +1778,7 @@
       visual.vy = visual.vy * .60 + ((e.clientY - visual.y) / dt * 16) * .40;
       visual.x = e.clientX; visual.y = e.clientY; visual.lastTime = e.timeStamp;
     }
-    const px = `${Math.round((e.clientX / window.innerWidth) * 100)}%`;
-    const py = `${Math.round((e.clientY / window.innerHeight) * 100)}%`;
-    bar.style.setProperty("--lens-x", px); bar.style.setProperty("--lens-y", py);
-    dock.style.setProperty("--lens-x", px); dock.style.setProperty("--lens-y", py);
-    padFrame.style.setProperty("--lens-x", px); padFrame.style.setProperty("--lens-y", py);
+    if (padLens) padLens.style.transform = `translate3d(${e.clientX - frameRect.left}px, ${e.clientY - frameRect.top}px, 0)`;
     if (pointers.size > maxFingers) maxFingers = pointers.size;
     kick();
   }, { passive: false });
