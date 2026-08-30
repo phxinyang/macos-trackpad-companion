@@ -3,8 +3,10 @@
 The binary format shared by every network transport feeding the
 companion's gesture engine:
 
-- `companion-net` UDP listener ← native Android app (M5)
-- `companion-net` WebSocket (binary messages) ← browser touchpad page (M4)
+- `companion-net` UDP listener ← native Android app (M5), enabled by
+  `[net].phone_enabled`
+- `companion-net` WebSocket (binary messages) ← browser touchpad page (M4),
+  enabled by `[net].web_enabled`
 - `tools/synthetic_sender.py` ← test harness / robot finger
 
 One packet or one WebSocket message = one complete touch frame. There is
@@ -30,6 +32,20 @@ offset  size  field
 The envelope is authentication, not encryption; use a trusted network or a
 VPN/TLS tunnel when frame confidentiality matters. Existing unauthenticated
 clients continue to work only while the server token is unset.
+
+## Liveness endpoint
+
+When Web is enabled, the TCP listener serves `GET /health` for native
+connection probes. A successful response is `200` with a small JSON body
+identifying `companion-net` and protocol `ATP1`. When `[net].token` is
+configured, the request must carry `Authorization: Bearer <token>` and an
+invalid token returns `401`. Older daemons without this route may return `404`;
+Android accepts that response only when no token is configured. In phone-only
+mode there is intentionally no TCP probe or page; Bonjour/`mtc://pair` carries
+the capability bit so the Android client connects directly over UDP. The
+Android client first sends a four-byte `ATQ1` probe; when a token is configured
+it appends an authenticated empty ATK1 envelope. A valid probe receives the
+four-byte `ATA1` acknowledgement and does not enter the gesture decoder.
 
 ## Layout
 

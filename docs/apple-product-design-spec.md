@@ -97,7 +97,7 @@ The main screen never puts IP, port, token, and six unrelated buttons in one row
 - A unified top toolbar owns only status, the control-center entry, and fullscreen. After connection it collapses to a compact status capsule; sensitivity, haptics, diagnostics, theme, command, and deep-press controls live in a grouped control center and never require horizontal discovery.
 - A high-contrast touch plane occupies the full viewport and keeps pointer events uninterrupted. Its contact visualizer is velocity-aware on Android and Web, with short trails and spring-like lift fade.
 - There is no persistent bottom dock. The touch plane uses the freed bottom space; mobile widths keep the top toolbar fixed-width with no horizontal scrolling, while the control center is the only vertically scrollable surface.
-- Fullscreen keeps a single floating settings button. Escape and the browser fullscreen API remain available.
+- Fullscreen keeps a single floating settings button. Escape and the browser fullscreen API remain available; the touch surface keeps its current bounds and material instead of expanding edge-to-edge.
 - `prefers-reduced-motion`, `prefers-reduced-transparency`, `prefers-contrast`, and safe-area insets have explicit fallbacks.
 
 ## Interaction rules
@@ -107,7 +107,7 @@ The main screen never puts IP, port, token, and six unrelated buttons in one row
 - A touch frame is never blocked by a visual overlay. The deep-press bar is the only interactive overlay and remains configurable.
 - Sensitivity changes are immediate and persisted locally. Haptic toggle gives one confirmation pulse only when enabled.
 - Diagnostic gestures stay in a grouped sheet and keep their existing sender actions.
-- Glass appears on the touch plane and chrome only. Reduced transparency uses opaque surfaces. Material animations are opt-in and event-driven: a touch can trigger one finite response, but no surface runs a permanent loop. Fullscreen hides chrome and expands the touch plane to the complete window; `fullSensor` allows portrait and landscape layouts.
+- Glass appears on the touch plane and chrome only. Reduced transparency uses opaque surfaces. Material animations are opt-in and event-driven: a touch can trigger one finite response, but no surface runs a permanent loop. Fullscreen hides chrome while preserving the touch plane's current bounds and hit area; `fullSensor` allows portrait and landscape layouts.
 
 ## Implementation constraints
 
@@ -157,3 +157,24 @@ Both clients call the Rust `companion-config` helper for reads and atomic TOML
 writes. The GUI does not parse TOML or write `defaults` directly. Linux CI can
 validate the helper and schema; SwiftUI compilation and VoiceOver/window
 restoration checks remain a macOS-host gate.
+
+## Wallpaper and material pipeline
+
+The wallpaper path is deliberately separated from the material path. A selected
+image is drawn once as a full-window canvas layer, then receives only user
+controlled exposure (`0-100%`), saturation (`60-140%`) and brightness
+(`70-130%`). Theme gradients are used only when no image is selected; this
+prevents a preset or local image from being double-tinted by the active theme.
+
+The touch surface has an independent opacity control (`55-100%`). Liquid Glass
+uses it as the material alpha while solid/editor themes use it as a restrained
+surface blend, keeping text and gesture feedback stable instead of fading the
+entire application. This follows Apple's material model: transparency is a
+surface property, and reduced-transparency environments switch to opaque
+surfaces rather than applying an indiscriminate global dimmer.
+
+Android mirrors this pipeline in `MainActivity` with a color-matrix pass for the
+wallpaper and a low-strength readability scrim. API 31+ `GpuGlassView` samples
+that same scene for refraction; older devices use the same source through the
+QWEA0 fallback. The browser uses a pointer-transparent pseudo-element so the
+background never intercepts touch input.

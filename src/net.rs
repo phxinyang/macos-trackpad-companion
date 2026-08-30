@@ -660,6 +660,23 @@ fn handle_conn(
         return Ok(());
     }
 
+    // A small authenticated liveness endpoint lets native clients distinguish
+    // "a UDP socket was created" from "companion-net is actually reachable".
+    // Keep it on the existing TCP listener so no second service or port is
+    // introduced, and leave the legacy page/WS routes unchanged.
+    if clean_path == "/health" {
+        if !authorized_http_request(&head, raw_path, token) {
+            write_unauthorized(&mut stream)?;
+            return Ok(());
+        }
+        write_simple(
+            &mut stream,
+            200,
+            r#"{"status":"ok","service":"companion-net","protocol":"ATP1"}"#,
+        )?;
+        return Ok(());
+    }
+
     // WebSocket upgrade for the touchpad event channel.
     let wants_ws = (clean_path == "/ws" || raw_path == "/ws") && head.to_ascii_lowercase().contains("upgrade: websocket");
     if wants_ws {
@@ -976,6 +993,8 @@ fn read_exact(stream: &mut TcpStream, buf: &mut [u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
 
     fn peer(port: u16) -> SocketAddr {
         ([127, 0, 0, 1], port).into()
@@ -986,6 +1005,64 @@ mod tests {
             transport,
             addr: peer(port),
         }
+    }
+
+    fn health_request(token: Option<&str>, request: &str) -> String {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let (tx, _rx) = mpsc::channel::<Incoming>();
+        let stats = Arc::new(Stats::default());
+        let page = WebPageContext {
+            html: String::new(),
+            tester_html: String::new(),
+            port: address.port(),
+        };
+        let expected = token.map(str::to_owned);
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            handle_conn(stream, tx, page, stats, expected.as_deref()).unwrap();
+        });
+        let mut client = TcpStream::connect(address).unwrap();
+        client.write_all(request.as_bytes()).unwrap();
+        client.shutdown(std::net::Shutdown::Write).unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        server.join().unwrap();
+        response
+    }
+
+    #[test]
+    fn health_endpoint_requires_and_accepts_configured_token() {
+        let open = health_request(None, "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n");
+        assert!(open.starts_with("HTTP/1.1 200 OK"));
+        assert!(open.contains(r#""service":"companion-net""#));
+
+        let denied = health_request(
+            Some("s3cret"),
+            "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        assert!(denied.starts_with("HTTP/1.1 401 Unauthorized"));
+
+        let accepted = health_request(
+            Some("s3cret"),
+            "GET /health HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer s3cret\r\n\r\n",
+        );
+        assert!(accepted.starts_with("HTTP/1.1 200 OK"));
+    }
+
+    #[test]
+    fn web_page_requires_configured_token() {
+        let denied = health_request(
+            Some("s3cret"),
+            "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        assert!(denied.starts_with("HTTP/1.1 401 Unauthorized"));
+
+        let accepted = health_request(
+            Some("s3cret"),
+            "GET /?token=s3cret HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        );
+        assert!(accepted.starts_with("HTTP/1.1 200 OK"));
     }
 
     #[test]
@@ -1150,6 +1227,10 @@ mod tests {
             authenticated_udp_payload(&envelope, Some("s3cret")),
             Some(encoded.as_slice())
         );
+        let mut empty = Vec::from(AUTH_MAGIC);
+        empty.extend_from_slice(&(token.len() as u16).to_le_bytes());
+        empty.extend_from_slice(token);
+        assert_eq!(authenticated_udp_payload(&empty, Some("s3cret")), Some(&[][..]));
         assert_eq!(authenticated_udp_payload(&envelope, Some("wrong")), None);
         assert_eq!(authenticated_udp_payload(&encoded, Some("s3cret")), None);
     }

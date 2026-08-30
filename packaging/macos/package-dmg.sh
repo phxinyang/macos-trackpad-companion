@@ -10,6 +10,19 @@ WINDOW_LEFT=120
 WINDOW_TOP=120
 WINDOW_RIGHT=$((WINDOW_LEFT + DMG_WIDTH))
 WINDOW_BOTTOM=$((WINDOW_TOP + DMG_HEIGHT))
+SETFILE=""
+if [[ -x "$(command -v SetFile 2>/dev/null || true)" ]]; then
+  SETFILE=$(command -v SetFile)
+elif [[ -x "$(command -v xcrun 2>/dev/null || true)" ]]; then
+  SETFILE=$(xcrun --find SetFile 2>/dev/null || true)
+fi
+
+mark_hidden() {
+  chflags hidden "$1" 2>/dev/null || true
+  if [[ -n "$SETFILE" && -x "$SETFILE" ]]; then
+    "$SETFILE" -a V "$1" 2>/dev/null || true
+  fi
+}
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "package-dmg.sh must run on macOS" >&2
@@ -49,23 +62,16 @@ BACKGROUND="$ROOT/packaging/macos/dmg-background.png"
 if [[ -f "$BACKGROUND" ]]; then
   mkdir -p "$STAGE/.background"
   cp "$BACKGROUND" "$STAGE/.background/dmg-background.png"
-  # Finder can ignore a dot-prefixed name when a user has enabled hidden
-  # files. Keep both the filesystem flag and the Finder visibility bit set
-  # before the image is created, then repeat the operation after mounting.
-  printf '%s\n' ".background" > "$STAGE/.hidden"
-  chflags hidden "$STAGE/.background" "$STAGE/.hidden" 2>/dev/null || true
-  if [[ -x "$(command -v SetFile 2>/dev/null || true)" ]]; then
-    SetFile -a V "$STAGE/.background" "$STAGE/.hidden" 2>/dev/null || true
-  fi
+  # Mark the staging directory invisible before creating the image. The
+  # filesystem flag covers normal Finder sessions; SetFile also writes the
+  # Finder invisible bit when the Xcode command-line tools provide it.
+  mark_hidden "$STAGE/.background"
 fi
 hdiutil create -volname "Trackpad Companion" -fs HFS+ -srcfolder "$STAGE" -ov -format UDRW "$RW_DMG"
 MOUNT=$(hdiutil attach "$RW_DMG" -readwrite -nobrowse -noautoopen | awk '/\/Volumes\// {print substr($0, index($0, "/Volumes/")); exit}')
 MOUNT_NAME=${MOUNT##*/}
 if [[ -n "$MOUNT" && -d "$MOUNT/.background" ]]; then
-  chflags hidden "$MOUNT/.background" 2>/dev/null || true
-  if [[ -x "$(command -v SetFile 2>/dev/null || true)" ]]; then
-    SetFile -a V "$MOUNT/.background" 2>/dev/null || true
-  fi
+  mark_hidden "$MOUNT/.background"
 fi
 if [[ -n "$MOUNT" && -x "$(command -v osascript 2>/dev/null || true)" ]]; then
   # Finder must briefly open the hidden staging volume to persist its icon
@@ -78,31 +84,33 @@ tell application "Finder"
     set visible to false
     tell disk "${MOUNT_NAME}"
       open
+      delay 1
       try
         set visible of item ".background" of disk "${MOUNT_NAME}" to false
-        set visible of item ".hidden" of disk "${MOUNT_NAME}" to false
       end try
       set layoutReady to false
-      repeat with attempt from 1 to 12
+      repeat with attempt from 1 to 16
         try
           -- Finder creates the container window asynchronously. Operate on
           -- the live container window rather than a stale object reference.
-          set current view of container window to icon view
-          set toolbar visible of container window to false
-          set statusbar visible of container window to false
-          set bounds of container window to {${WINDOW_LEFT}, ${WINDOW_TOP}, ${WINDOW_RIGHT}, ${WINDOW_BOTTOM}}
-          set viewOptions to icon view options of container window
-          set icon size of viewOptions to 128
-          set arrangement of viewOptions to not arranged
-          try
-            set background picture of viewOptions to file ".background:dmg-background.png"
-          end try
-          if exists item "Trackpad Companion.app" of container window then
-            set position of item "Trackpad Companion.app" of container window to {245, 340}
-          end if
-          if exists item "Applications" of container window then
-            set position of item "Applications" of container window to {655, 340}
-          end if
+          tell container window
+            set current view to icon view
+            set toolbar visible to false
+            set statusbar visible to false
+            set bounds to {${WINDOW_LEFT}, ${WINDOW_TOP}, ${WINDOW_RIGHT}, ${WINDOW_BOTTOM}}
+            set viewOptions to icon view options
+            set icon size of viewOptions to 128
+            set arrangement of viewOptions to not arranged
+            try
+              set background picture of viewOptions to file ".background:dmg-background.png"
+            end try
+            if exists item "Trackpad Companion.app" then
+              set position of item "Trackpad Companion.app" to {245, 340}
+            end if
+            if exists item "Applications" then
+              set position of item "Applications" to {655, 340}
+            end if
+          end tell
           set layoutReady to true
           exit repeat
         on error
@@ -127,10 +135,7 @@ if [[ -n "$MOUNT" && -d "$MOUNT/.background" ]]; then
   # Finder may rewrite visibility metadata while saving the icon view.
   # Re-apply it immediately before detaching so the released image never
   # exposes its staging folder in a normal Finder window.
-  chflags hidden "$MOUNT/.background" "$MOUNT/.hidden" 2>/dev/null || true
-  if [[ -x "$(command -v SetFile 2>/dev/null || true)" ]]; then
-    SetFile -a V "$MOUNT/.background" "$MOUNT/.hidden" 2>/dev/null || true
-  fi
+  mark_hidden "$MOUNT/.background"
 fi
 if [[ -n "$MOUNT" ]]; then
   hdiutil detach "$MOUNT" -quiet
