@@ -4,14 +4,14 @@ import PackageDescription
 let package = Package(
     name: "TrackpadCompanionSettings",
     platforms: [.macOS(.v13)],
+    products: [
+        .executable(name: "TrackpadCompanionSettings", targets: ["TrackpadCompanionSettings"])
+    ],
     dependencies: [
         .package(
             url: "https://github.com/jaywcjlove/PermissionFlow.git",
             exact: "2.11.2"
         )
-    ],
-    products: [
-        .executable(name: "TrackpadCompanionSettings", targets: ["TrackpadCompanionSettings"])
     ],
     targets: [
         .executableTarget(
