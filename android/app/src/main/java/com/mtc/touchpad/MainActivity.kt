@@ -138,8 +138,8 @@ private const val GLASS_GLOBAL_DOWNSAMPLE = 0.5f
 private const val GLASS_DOWNSAMPLE_SCALE = 3
 
 internal object HeaderLayoutMetrics {
-    const val COMPACT_WIDTH_DP = 236
-    const val CONTENT_MIN_WIDTH_DP = 223
+    const val COMPACT_WIDTH_DP = 256
+    const val CONTENT_MIN_WIDTH_DP = 245
 }
 
 internal object PadLayoutMetrics {
@@ -1377,7 +1377,7 @@ class MainActivity : Activity() {
         CURATED_THEME_MODES.forEach { mode ->
             val modePalette = paletteFor(mode)
             val category = when (modePalette.material) {
-                MaterialKind.LIQUID_GLASS -> "Liquid Glass"
+                MaterialKind.LIQUID_GLASS -> I18n.tr("Liquid Glass", "液态玻璃")
                 MaterialKind.DROPLET_GLASS, MaterialKind.RIPPLE_WATER, MaterialKind.RAIN_GLASS,
                 MaterialKind.PRISM_CRYSTAL, MaterialKind.GEL_SURFACE, MaterialKind.LIQUID_METAL,
                 MaterialKind.PAPER_TEXTURE, MaterialKind.HOLOGRAPHIC, MaterialKind.RETRO_LCD -> I18n.tr("Material Lab", "材质实验室")
@@ -1722,31 +1722,40 @@ class MainActivity : Activity() {
             addView(hapticButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
             addView(touchPointsButton, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
         }
-        container.addView(toggleRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        container.addView(toggleRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(6) })
 
         container.addView(TextView(this).apply {
             text = I18n.tr("More", "更多")
             setTextColor(palette.secondary)
             textSize = 11f
             letterSpacing = .08f
-            setPadding(dp(4), dp(10), dp(4), dp(6))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
         })
         val secondaryRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(actionSheetButton(I18n.tr("Deep Press Bar", "深按条"), false) { showDeepPressSettingsDialog() }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
-            addView(actionSheetButton(I18n.tr("Test Gestures", "测试"), false) { showGestureTestDialog() }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
+            addView(actionSheetButton(I18n.tr("Deep Press Bar", "深按条"), false) {
+                dialog.dismiss()
+                showDeepPressSettingsDialog()
+            }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
+            addView(actionSheetButton(I18n.tr("Test Gestures", "测试"), false) {
+                dialog.dismiss()
+                showGestureTestDialog()
+            }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
         }
-        container.addView(secondaryRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        container.addView(secondaryRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(6) })
         val appearanceRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(actionSheetButton(I18n.tr("Themes", "外观"), false) { showThemeDialog() }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
+            addView(actionSheetButton(I18n.tr("Themes", "外观"), false) {
+                dialog.dismiss()
+                showThemeDialog()
+            }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
             addView(actionSheetButton(I18n.tr("Fullscreen", "全屏"), true) {
                 dialog.dismiss()
                 toggleFullscreen(true)
             }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
         }
-        container.addView(appearanceRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
-        container.addView(actionSheetButton(I18n.tr("Done", "完成"), false) { dialog.dismiss() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(10) })
+        container.addView(appearanceRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(6) })
+        container.addView(actionSheetButton(I18n.tr("Done", "完成"), false) { dialog.dismiss() }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply { topMargin = dp(6) })
 
         val scroll = android.widget.ScrollView(this).apply {
             isFillViewport = true
@@ -1984,7 +1993,6 @@ class MainActivity : Activity() {
         elevation = dp(1).toFloat()
         clipToOutline = true
         setOnClickListener { onClick() }
-        installPressFeedback(this)
     }
 
     private fun installPressFeedback(view: View) {
@@ -2043,7 +2051,7 @@ class MainActivity : Activity() {
         }
         (headerInfo.layoutParams as? LinearLayout.LayoutParams)?.let { infoLp ->
             if (compact) {
-                infoLp.width = dp(48)
+                infoLp.width = dp(68)
                 infoLp.weight = 0f
                 infoLp.marginStart = dp(8)
                 infoLp.marginEnd = dp(4)
@@ -2059,7 +2067,7 @@ class MainActivity : Activity() {
         controlsRail.visibility = if (isFullscreenMode) View.GONE else View.VISIBLE
         headerToggle.visibility = if (isFullscreenMode) View.GONE else View.VISIBLE
         headerToggle.text = "⛶"
-        headerToggle.contentDescription = "进入全屏触控模式"
+        headerToggle.contentDescription = I18n.tr("Enter fullscreen touch mode", "进入全屏触控模式")
         val lp = (header.layoutParams as? FrameLayout.LayoutParams)
             ?: FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52))
         if (compact) {
@@ -2287,30 +2295,30 @@ class MainActivity : Activity() {
             })
             return card
         }
-        container.addView(makeTestBtn("🔍 智能缩放 (Smart Zoom)", I18n.tr("Double tap with 2 fingers: magnify Safari / Preview content", "双指双击：Safari/预览 网页段落或图片平滑放大居中"), 0xFF1E3A8A.toInt()) { GestureTestRunner.runSmartZoom(sender) })
-        container.addView(makeTestBtn("📖 三指查词 (Look Up)", I18n.tr("Three-finger tap: trigger macOS system dictionary lookup", "三指轻点：弹出 macOS 系统词典释义气泡"), 0xFF065F46.toInt()) { GestureTestRunner.runLookup(sender) })
-        container.addView(makeTestBtn("◀️ 四指左轻扫 (Swipe Left)", I18n.tr("Four-finger swipe left: switch to next Spaces desktop", "四指水平左扫：切换到下一个 Spaces 桌面"), 0xFF3730A3.toInt()) { GestureTestRunner.runSwipeLeft(sender) })
-        container.addView(makeTestBtn("▶️ 四指右轻扫 (Swipe Right)", I18n.tr("Four-finger swipe right: switch to previous Spaces desktop", "四指水平右扫：切换到上一个 Spaces 桌面"), 0xFF3730A3.toInt()) { GestureTestRunner.runSwipeRight(sender) })
-        container.addView(makeTestBtn("🔼 四指上滑 (Mission Control)", I18n.tr("Four-finger swipe up: open macOS Mission Control", "四指垂直上推：展开 macOS Mission Control"), 0xFF6B21A8.toInt()) { GestureTestRunner.runSwipeUp(sender) })
-        container.addView(makeTestBtn("🔽 四指下滑 (App Exposé)", I18n.tr("Four-finger swipe down: open App Exposé", "四指垂直下拉：展开 App Exposé 当前应用多窗口"), 0xFF6B21A8.toInt()) { GestureTestRunner.runSwipeDown(sender) })
-        container.addView(makeTestBtn("🔍➕ 双指捏合放大 (+30%)", I18n.tr("Spread two fingers: zoom in Safari/Maps/Documents", "双指向外扩张：Safari/地图/文档 视口无级缩放"), 0xFF831843.toInt()) { GestureTestRunner.runPinchIn(sender) })
-        container.addView(makeTestBtn("🔍➖ 双指捏合缩小 (-30%)", I18n.tr("Pinch two fingers: zoom out Safari/Maps/Documents", "双指向内聚拢：Safari/地图/文档 视口缩小"), 0xFF831843.toInt()) { GestureTestRunner.runPinchOut(sender) })
-        container.addView(makeTestBtn("🔄 双指顺时针旋转 90°", I18n.tr("Two-finger rotate: rotate photos/documents clockwise", "双指圆周旋转：在照片/预览中旋转图片"), 0xFF92400E.toInt()) { GestureTestRunner.runRotate(sender) })
-        container.addView(makeTestBtn("🖱 双指右键点击 (Secondary Click)", I18n.tr("Two-finger tap: open context menu at cursor position", "双指轻点：弹出光标所在处的系统右键上下文菜单"), 0xFF1F2937.toInt()) { GestureTestRunner.runRightClick(sender) })
-        container.addView(makeTestBtn("✋ 三指拖移测试 (3-Finger Drag)", I18n.tr("Three-finger pan: select text or drag window titlebars", "三指接触并平移：选中文本或拖动窗口标题栏"), 0xFF1F2937.toInt()) { GestureTestRunner.runThreeFingerDrag(sender) })
-        container.addView(makeTestBtn("📬 通知中心 (Notification Center)", I18n.tr("Two-finger right-edge swipe: toggle macOS Notification Center", "双指从右边缘向左滑入：打开/关闭 macOS 系统通知中心"), 0xFF0C4A6E.toInt()) { GestureTestRunner.runNotificationCenter(sender) })
-        container.addView(makeTestBtn("🚀 启动台 (Launchpad)", I18n.tr("Four-finger pinch in: open macOS Launchpad", "四指向内捏合：展开 macOS Launchpad 应用程序网格"), 0xFF047857.toInt()) { GestureTestRunner.runLaunchpadPinch(sender) })
-        container.addView(makeTestBtn("🖥️ 显示桌面 (Show Desktop)", I18n.tr("Four-finger spread out: show macOS desktop", "四指向外张开：推开所有应用窗口显示纯净桌面"), 0xFF0369A1.toInt()) { GestureTestRunner.runShowDesktopSpread(sender) })
-        container.addView(makeTestBtn("✊ 软件长按拖拽 (Press-and-Hold Drag)", I18n.tr("Hold 450ms then drag to select, release to lift", "单指原地按住450ms扣住左键并拖拽选中，抬手释放"), 0xFFB45309.toInt()) { GestureTestRunner.runPressAndHoldDrag(sender) })
+        container.addView(makeTestBtn(I18n.tr("🔍 Smart Zoom", "🔍 智能缩放 (Smart Zoom)"), I18n.tr("Double tap with 2 fingers: magnify Safari / Preview content", "双指双击：Safari/预览 网页段落或图片平滑放大居中"), 0xFF1E3A8A.toInt()) { GestureTestRunner.runSmartZoom(sender) })
+        container.addView(makeTestBtn(I18n.tr("📖 Look Up (3-Finger)", "📖 三指查词 (Look Up)"), I18n.tr("Three-finger tap: trigger macOS system dictionary lookup", "三指轻点：弹出 macOS 系统词典释义气泡"), 0xFF065F46.toInt()) { GestureTestRunner.runLookup(sender) })
+        container.addView(makeTestBtn(I18n.tr("◀️ Swipe Left (4-Finger)", "◀️ 四指左轻扫 (Swipe Left)"), I18n.tr("Four-finger swipe left: switch to next Spaces desktop", "四指水平左扫：切换到下一个 Spaces 桌面"), 0xFF3730A3.toInt()) { GestureTestRunner.runSwipeLeft(sender) })
+        container.addView(makeTestBtn(I18n.tr("▶️ Swipe Right (4-Finger)", "▶️ 四指右轻扫 (Swipe Right)"), I18n.tr("Four-finger swipe right: switch to previous Spaces desktop", "四指水平右扫：切换到上一个 Spaces 桌面"), 0xFF3730A3.toInt()) { GestureTestRunner.runSwipeRight(sender) })
+        container.addView(makeTestBtn(I18n.tr("🔼 Mission Control (4-Finger Up)", "🔼 四指上滑 (Mission Control)"), I18n.tr("Four-finger swipe up: open macOS Mission Control", "四指垂直上推：展开 macOS Mission Control"), 0xFF6B21A8.toInt()) { GestureTestRunner.runSwipeUp(sender) })
+        container.addView(makeTestBtn(I18n.tr("🔽 App Exposé (4-Finger Down)", "🔽 四指下滑 (App Exposé)"), I18n.tr("Four-finger swipe down: open App Exposé", "四指垂直下拉：展开 App Exposé 当前应用多窗口"), 0xFF6B21A8.toInt()) { GestureTestRunner.runSwipeDown(sender) })
+        container.addView(makeTestBtn(I18n.tr("🔍➕ Pinch to Zoom In (+30%)", "🔍➕ 双指捏合放大 (+30%)"), I18n.tr("Spread two fingers: zoom in Safari/Maps/Documents", "双指向外扩张：Safari/地图/文档 视口无级缩放"), 0xFF831843.toInt()) { GestureTestRunner.runPinchIn(sender) })
+        container.addView(makeTestBtn(I18n.tr("🔍➖ Pinch to Zoom Out (-30%)", "🔍➖ 双指捏合缩小 (-30%)"), I18n.tr("Pinch two fingers: zoom out Safari/Maps/Documents", "双指向内聚拢：Safari/地图/文档 视口缩小"), 0xFF831843.toInt()) { GestureTestRunner.runPinchOut(sender) })
+        container.addView(makeTestBtn(I18n.tr("🔄 Rotate Clockwise 90°", "🔄 双指顺时针旋转 90°"), I18n.tr("Two-finger rotate: rotate photos/documents clockwise", "双指圆周旋转：在照片/预览中旋转图片"), 0xFF92400E.toInt()) { GestureTestRunner.runRotate(sender) })
+        container.addView(makeTestBtn(I18n.tr("🖱 Secondary Click (2-Finger)", "🖱 双指右键点击 (Secondary Click)"), I18n.tr("Two-finger tap: open context menu at cursor position", "双指轻点：弹出光标所在处的系统右键上下文菜单"), 0xFF1F2937.toInt()) { GestureTestRunner.runRightClick(sender) })
+        container.addView(makeTestBtn(I18n.tr("✋ 3-Finger Drag Test", "✋ 三指拖移测试 (3-Finger Drag)"), I18n.tr("Three-finger pan: select text or drag window titlebars", "三指接触并平移：选中文本或拖动窗口标题栏"), 0xFF1F2937.toInt()) { GestureTestRunner.runThreeFingerDrag(sender) })
+        container.addView(makeTestBtn(I18n.tr("📬 Notification Center", "📬 通知中心 (Notification Center)"), I18n.tr("Two-finger right-edge swipe: toggle macOS Notification Center", "双指从右边缘向左滑入：打开/关闭 macOS 系统通知中心"), 0xFF0C4A6E.toInt()) { GestureTestRunner.runNotificationCenter(sender) })
+        container.addView(makeTestBtn(I18n.tr("🚀 Launchpad (4-Finger Pinch)", "🚀 启动台 (Launchpad)"), I18n.tr("Four-finger pinch in: open macOS Launchpad", "四指向内捏合：展开 macOS Launchpad 应用程序网格"), 0xFF047857.toInt()) { GestureTestRunner.runLaunchpadPinch(sender) })
+        container.addView(makeTestBtn(I18n.tr("🖥️ Show Desktop (4-Finger Spread)", "🖥️ 显示桌面 (Show Desktop)"), I18n.tr("Four-finger spread out: show macOS desktop", "四指向外张开：推开所有应用窗口显示纯净桌面"), 0xFF0369A1.toInt()) { GestureTestRunner.runShowDesktopSpread(sender) })
+        container.addView(makeTestBtn(I18n.tr("✊ Press-and-Hold Drag", "✊ 软件长按拖拽 (Press-and-Hold Drag)"), I18n.tr("Hold 450ms then drag to select, release to lift", "单指原地按住450ms扣住左键并拖拽选中，抬手释放"), 0xFFB45309.toInt()) { GestureTestRunner.runPressAndHoldDrag(sender) })
         val closeBtn = actionSheetButton(I18n.tr("Close", "关闭面板"), false) { dialog.dismiss() }.apply {
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply { topMargin = dp(12) }
         }
         container.addView(closeBtn)
         scroll.addView(container)
         dialog.setContentView(scroll)
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.90).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
         beginModal(dialog)
         dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.90).toInt(), (resources.displayMetrics.heightPixels * 0.86).toInt())
     }
 
     private fun showDeepPressSettingsDialog() {
