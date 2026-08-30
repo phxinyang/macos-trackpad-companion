@@ -1257,6 +1257,13 @@ class MainActivity : Activity() {
         setStatus(false, "已取消连接")
     }
 
+    private fun disconnectFromMac() {
+        connectionAttemptSerial += 1
+        isConnecting = false
+        sender.cancelConnect()
+        setStatus(false, "已断开连接")
+    }
+
     private fun themePalette(): ThemePalette {
         val mode = ThemeMode.from(prefs.getString(KEY_THEME, ThemeMode.LIGHT_GLASS.key))
         val base = paletteFor(mode)
@@ -1817,6 +1824,20 @@ class MainActivity : Activity() {
         }
         container.addView(title)
         container.addView(subtitle)
+
+        if (sender.target != null || isConnecting) {
+            val connectedHost = sender.target?.hostAddress ?: prefs.getString(KEY_HOST, "") ?: ""
+            val disconnectBtn = actionSheetButton("断开当前连接 ($connectedHost)", false) {
+                disconnectFromMac()
+                dialog.dismiss()
+                Toast.makeText(this@MainActivity, "已断开与 Mac 的连接", Toast.LENGTH_SHORT).show()
+            }.apply {
+                setTextColor(0xFFFF453A.toInt()) // Apple Red
+            }
+            container.addView(disconnectBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
+                bottomMargin = dp(14)
+            })
+        }
 
         container.addView(actionSheetButton("扫描二维码", true) {
             startQrScanner(dialog)
