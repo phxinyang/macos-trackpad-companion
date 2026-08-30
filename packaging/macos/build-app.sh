@@ -97,8 +97,8 @@ if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
   codesign --verify --deep --strict --verbose=2 "$APP"
 else
   echo "No CODESIGN_IDENTITY set; signing ad-hoc with stable bundle identifier for local development."
-  codesign --force -s - --identifier "com.scottlamb.TrackpadCompanion.companion-net" "$APP/Contents/Resources/companion-net"
-  codesign --force -s - --identifier "com.scottlamb.TrackpadCompanion.companion-config" "$APP/Contents/Resources/companion-config"
+  codesign --force -s - --identifier "com.scottlamb.TrackpadCompanion" "$APP/Contents/Resources/companion-net"
+  codesign --force -s - --identifier "com.scottlamb.TrackpadCompanion" "$APP/Contents/Resources/companion-config"
   codesign --force -s - --identifier "com.scottlamb.TrackpadCompanion" "$APP/Contents/MacOS/TrackpadCompanion"
   codesign --force --deep -s - --identifier "com.scottlamb.TrackpadCompanion" "$APP"
 fi
