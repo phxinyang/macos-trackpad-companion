@@ -61,7 +61,7 @@ const ROTATE_LOCK_RAD: f64 = 3.0_f64 * std::f64::consts::PI / 180.0;
 /// side. Used in the pinch/rotate lock-admission gate to distinguish
 /// anchored-rotate from the ambiguous "leader committed, trailer in
 /// noise band" case.
-const ANCHORED_FINGER_FLOOR_MM: f64 = 0.15;
+const ANCHORED_FINGER_FLOOR_MM: f64 = 0.30;
 
 /// Two contacts closer together than this cannot be two distinct
 /// fingers — a capacitive panel splitting one fat contact into two
@@ -2958,8 +2958,8 @@ impl<O: Output> State<O> {
                 if self.options.dynamic_transform_compat
                     && ((base.pinch_admitted && scale_rel >= 0.25 && relative_motion_is_gesture)
                         || (base.rotate_admitted
-                            && (frame_rot >= 2.0_f64.to_radians()
-                                || total_rot >= 15.0_f64.to_radians())
+                            && (frame_rot >= 1.5_f64.to_radians()
+                                || total_rot >= 6.0_f64.to_radians())
                             && relative_motion_is_gesture))
                 {
                     log::info!(
