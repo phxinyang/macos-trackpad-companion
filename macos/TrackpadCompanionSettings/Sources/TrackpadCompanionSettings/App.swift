@@ -192,8 +192,8 @@ struct SettingsView: View {
         .accessibilityLabel(model.language.text("Language", "语言"))
     }
 
+    @ViewBuilder
     private var overview: some View {
-        Group {
             Section {
                 OverviewHero(state: supervisor.state, language: model.language)
             }
@@ -364,11 +364,10 @@ struct SettingsView: View {
                         .foregroundStyle(.tint)
                 }
             }
-        }
     }
 
+    @ViewBuilder
     private var connections: some View {
-        Group {
             Section {
                 Text(model.language.text(
                     "Choose which services this Mac exposes on the local network. Changes apply immediately when the helper is running.",
@@ -445,7 +444,6 @@ struct SettingsView: View {
                     }
                 }
             }
-        }
     }
 
     @ViewBuilder
@@ -456,7 +454,13 @@ struct SettingsView: View {
                     active ? model.language.text("Listening", "监听中") : enabled ? model.language.text("Enabled", "已启用") : model.language.text("Off", "已关闭"),
                     systemImage: active ? "checkmark.circle.fill" : enabled ? "circle" : "minus.circle"
                 )
-                .foregroundStyle(active ? .green : enabled ? .secondary : .tertiary)
+                .foregroundStyle(
+                    active
+                        ? Color.green
+                        : enabled
+                            ? Color.secondary
+                            : Color(nsColor: .tertiaryLabelColor)
+                )
                 Text(detail)
                     .font(.caption.monospaced())
                     .foregroundStyle(.secondary)
@@ -493,8 +497,8 @@ struct SettingsView: View {
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 
+    @ViewBuilder
     private var pointAndClick: some View {
-        Group {
             SliderRow(title: "Tracking speed", titleCN: "跟踪速度", value: Binding(get: { model.number("cursor.sensitivity", default: 28) }, set: { model.set("cursor.sensitivity", value: String(format: "%.1f", $0)) }), range: 5...80, language: model.language)
             UnavailableRow(title: "Click", titleCN: "点按力度", description: "Hardware-only setting; unavailable for virtual input.", descriptionCN: "仅适用于实体触控板；虚拟输入不可用。", language: model.language)
             UnavailableRow(title: "Quiet Click", titleCN: "静音点按", description: "Hardware-only setting; unavailable for virtual input.", descriptionCN: "仅适用于实体触控板；虚拟输入不可用。", language: model.language)
@@ -502,11 +506,10 @@ struct SettingsView: View {
             ToggleRow(path: "gestures.secondary_click", title: "Secondary click", titleCN: "辅助点按", description: "Click or tap with two fingers.", descriptionCN: "用两个手指点按来打开辅助菜单。", model: model)
             ToggleRow(path: "gestures.dictionary_lookup", title: "Look up & data detectors", titleCN: "查询与数据检测器", description: "Use a gesture to look up words and detect data.", descriptionCN: "使用手势查询单词并检测数据。", model: model)
             PickerRow(path: "macos.haptic_feedback", title: "Force Click and haptic feedback", titleCN: "用力点按与触觉反馈", options: [("auto", "Automatic", "自动"), ("on", "On", "打开"), ("off", "Off", "关闭")], model: model)
-        }
     }
 
+    @ViewBuilder
     private var scrollAndZoom: some View {
-        Group {
             ToggleRow(path: "scroll.natural", title: "Natural scrolling", titleCN: "自然滚动", description: "Move contents in the same direction as your fingers.", descriptionCN: "让窗口内容与手指移动方向一致。", model: model)
             ToggleRow(path: "scroll.enable", title: "Trackpad scrolling", titleCN: "触控板滚动", description: "Emit two-finger scroll events.", descriptionCN: "发送双指滚动事件。", model: model)
             SliderRow(title: "Scroll sensitivity", titleCN: "滚动灵敏度", value: Binding(get: { model.number("scroll.sensitivity", default: 20) }, set: { model.set("scroll.sensitivity", value: String(format: "%.1f", $0)) }), range: 5...80, language: model.language)
@@ -516,19 +519,17 @@ struct SettingsView: View {
             ToggleRow(path: "gestures.smart_zoom", title: "Smart zoom", titleCN: "智能缩放", description: "Double-tap with two fingers to zoom.", descriptionCN: "用两个手指轻点两下以智能缩放。", model: model)
             ToggleRow(path: "gestures.rotate.enable", title: "Rotate", titleCN: "旋转", description: "Rotate items with two fingers.", descriptionCN: "用两个手指旋转项目。", model: model)
             PickerRow(path: "scroll.modifier_zoom_mask", title: "Zoom modifier", titleCN: "缩放修饰键", options: [("0", "Default (Cmd/Ctrl)", "默认（Command/Control）"), ("262144", "Control", "Control"), ("524288", "Option", "Option"), ("1048576", "Command", "Command")], model: model)
-        }
     }
 
+    @ViewBuilder
     private var moreGestures: some View {
-        Group {
             ToggleRow(path: "gestures.swipe.horizontal.enable", title: "Swipe between pages", titleCN: "在页面之间轻扫", description: "Swipe between document pages.", descriptionCN: "在文档页面之间左右轻扫。", model: model)
             ToggleRow(path: "gestures.swipe.vertical.enable", title: "Mission Control", titleCN: "调度中心", description: "Swipe up to open Mission Control.", descriptionCN: "向上轻扫以打开调度中心。", model: model)
             ToggleRow(path: "gestures.right_edge_swipe", title: "Notification Center", titleCN: "通知中心", description: "Swipe from the right edge for notifications.", descriptionCN: "从右边缘向左轻扫以显示通知中心。", model: model)
-        }
     }
 
+    @ViewBuilder
     private var companion: some View {
-        Group {
             ToggleRow(path: "gestures.three_finger_drag.enable", title: "Three-finger drag", titleCN: "三指拖移", description: "Hold a virtual click while three fingers move.", descriptionCN: "三指移动时保持虚拟点按。", model: model)
             SliderRow(title: "Drag-lock delay", titleCN: "拖移锁定延迟", value: Binding(get: { model.number("gestures.three_finger_drag.release_delay_ms", default: 500) }, set: { model.set("gestures.three_finger_drag.release_delay_ms", value: String(Int($0))) }), range: 0...2000, language: model.language, unit: "ms")
             ToggleRow(path: "gestures.one_finger_tap_drag.enable", title: "One-finger tap-drag", titleCN: "单指轻点拖移", description: "Double-tap and hold to drag.", descriptionCN: "单指双击后保持按住并拖移。", model: model)
@@ -559,7 +560,6 @@ struct SettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.orange)
             }
-        }
     }
 
     private func icon(for section: SettingsSection) -> String {
