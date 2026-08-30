@@ -40,6 +40,11 @@ and `{655,340}` for the Applications shortcut. The staging `.background`
 directory is hidden before the image is created and again after Finder saves
 its icon view, using filesystem flags plus Finder metadata when `SetFile` is
 available through the Xcode tools. No helper manifest is shipped in the image.
+The packaging script also removes the legacy `.hidden` manifest from both the
+staging tree and mounted image before conversion. If Finder is configured to
+show hidden files (`Command-Shift-Period`), `.background` is intentionally
+visible because it is the standard source for the custom Finder background;
+turn that preference off for the normal installer view.
 The background contains only the title, one install instruction, and
 the transfer arrow; Finder owns the two icon labels so explanatory copy cannot
 overlap them.

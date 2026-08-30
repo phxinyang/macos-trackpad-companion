@@ -62,6 +62,10 @@ BACKGROUND="$ROOT/packaging/macos/dmg-background.png"
 if [[ -f "$BACKGROUND" ]]; then
   mkdir -p "$STAGE/.background"
   cp "$BACKGROUND" "$STAGE/.background/dmg-background.png"
+  # Older revisions wrote a helper `.hidden` manifest into the staging root.
+  # Remove it explicitly so a reused workspace or interrupted packaging run
+  # can never copy that implementation detail into the released image.
+  rm -f "$STAGE/.hidden"
   # Mark the staging directory invisible before creating the image. The
   # filesystem flag covers normal Finder sessions; SetFile also writes the
   # Finder invisible bit when the Xcode command-line tools provide it.
@@ -70,6 +74,11 @@ fi
 hdiutil create -volname "Trackpad Companion" -fs HFS+ -srcfolder "$STAGE" -ov -format UDRW "$RW_DMG"
 MOUNT=$(hdiutil attach "$RW_DMG" -readwrite -nobrowse -noautoopen | awk '/\/Volumes\// {print substr($0, index($0, "/Volumes/")); exit}')
 MOUNT_NAME=${MOUNT##*/}
+if [[ -n "$MOUNT" ]]; then
+  # hdiutil/Finder can preserve files from an older read-write image. The
+  # manifest is never needed by Finder, so remove it before saving the layout.
+  rm -f "$MOUNT/.hidden"
+fi
 if [[ -n "$MOUNT" && -d "$MOUNT/.background" ]]; then
   mark_hidden "$MOUNT/.background"
 fi
@@ -136,6 +145,11 @@ if [[ -n "$MOUNT" && -d "$MOUNT/.background" ]]; then
   # Re-apply it immediately before detaching so the released image never
   # exposes its staging folder in a normal Finder window.
   mark_hidden "$MOUNT/.background"
+fi
+if [[ -n "$MOUNT" ]]; then
+  # Keep the final image free of the legacy helper even if Finder recreated it
+  # while persisting the icon view.
+  rm -f "$MOUNT/.hidden"
 fi
 if [[ -n "$MOUNT" ]]; then
   hdiutil detach "$MOUNT" -quiet
