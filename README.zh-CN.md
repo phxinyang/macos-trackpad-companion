@@ -79,7 +79,7 @@ open dist/macos/Trackpad-Companion-*-macos.dmg
 
 `companion-net` 提供浏览器客户端，并通过 UDP 和 WebSocket 接收相同的 ATP1 帧。网络允许组播 DNS 时，Android 应用会通过 Bonjour 发现 `_mtc-trackpad._tcp`。也可以在 macOS 应用里复制 `mtc://pair?...` 链接，或手动填写地址。
 
-推荐流程：在 macOS 应用的“连接”页只打开需要的入口；打开“手机触控板”后，用 Android 的“扫描二维码”读取页面上的二维码，地址、端口和 Token 会自动填入并立即连接。二维码只在局域网内携带配对信息，不经过云端。无法扫码时，在 Android 连接页向下滚动使用“IP 连接（备用）”，填写 Mac 的局域网 IP、端口和配对 Token；两台设备需要连接同一 Wi-Fi。只打开 Web 服务时，直接复制 macOS 页面显示的 Web 地址到浏览器。
+推荐流程：在 macOS 应用的“连接”页只打开需要的入口；打开“手机触控板”后，用 Android 的“扫描二维码”读取页面上的二维码，地址、端口和 Token 会自动填入并立即连接。二维码只在局域网内携带配对信息，不经过云端。扫码页使用 APK 内置的二维码模型，不依赖 Google Play 动态扫码模块；首次使用只需允许相机权限。相机不可用时，在 Android 连接页向下滚动使用“IP 连接（备用）”，填写 Mac 的局域网 IP、端口和配对 Token；两台设备需要连接同一 Wi-Fi。只打开 Web 服务时，直接复制 macOS 页面显示的 Web 地址到浏览器。
 
 ```sh
 ./target/release/companion-net --port 4242 -v

@@ -28,7 +28,8 @@ dependencies {
     // real SDF/AGSL lens with backdrop capture, refraction and dispersion;
     // older devices use the library's blur/scrim fallback.
     implementation("com.github.QWEA0:liquidglass:v2.0.2")
-    // Google Play services provides the camera UI and QR decoder without
-    // forcing this app to own a long-lived camera preview or permission flow.
-    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // Bundled ML Kit keeps the QR model inside the APK. The previous
+    // Play-services Code Scanner required a runtime `barcode_ui` download,
+    // which left devices without a ready Play Store module unable to scan.
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
 }

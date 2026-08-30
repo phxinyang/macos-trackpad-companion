@@ -33,9 +33,6 @@ import com.example.liquidglass.GlassAccessibilityMode
 import com.example.liquidglass.BlurMethod
 import com.example.liquidglass.GlassMaterial
 import com.example.liquidglass.LiquidGlassView
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import java.io.InputStream
 import kotlin.math.max
 
@@ -1768,36 +1765,12 @@ class MainActivity : Activity() {
     }
 
     private fun startQrScanner(dialog: android.app.Dialog) {
-        val options = GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-            .enableAutoZoom()
-            .build()
+        dialog.dismiss()
         runCatching {
-            GmsBarcodeScanning.getClient(this, options)
-                .startScan()
-                .addOnSuccessListener { barcode ->
-                    val target = PairingUri.parse(barcode.rawValue)
-                    if (target == null) {
-                        Toast.makeText(this, "这不是有效的 Trackpad Companion 配对二维码。", Toast.LENGTH_LONG).show()
-                        return@addOnSuccessListener
-                    }
-                    if (!applyPairingTarget(target)) return@addOnSuccessListener
-                    dialog.dismiss()
-                    connectToMac(
-                        target.host,
-                        target.port.toString(),
-                        target.token.orEmpty(),
-                        target.webEnabled,
-                    )
-                }
-                .addOnCanceledListener {
-                    Toast.makeText(this, "已取消扫码。", Toast.LENGTH_SHORT).show()
-                }
-                .addOnFailureListener { error ->
-                    Toast.makeText(this, "扫码不可用：${error.localizedMessage ?: "请改用 IP 连接"}", Toast.LENGTH_LONG).show()
-                }
+            startActivityForResult(Intent(this, QrScannerActivity::class.java), REQUEST_QR_SCANNER)
         }.onFailure {
-            Toast.makeText(this, "扫码组件未就绪，请改用 IP 连接。", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "无法打开扫码页面，请改用 IP 连接。", Toast.LENGTH_LONG).show()
+            showConnectionDialog()
         }
     }
 
@@ -2684,6 +2657,29 @@ class MainActivity : Activity() {
     @Deprecated("Use Activity Result APIs when the app adopts AndroidX")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_QR_SCANNER) {
+            if (resultCode != RESULT_OK) {
+                showConnectionDialog()
+                return
+            }
+            val target = PairingUri.parse(data?.getStringExtra(QrScannerActivity.EXTRA_QR_VALUE))
+            if (target == null) {
+                Toast.makeText(this, "这不是有效的 Trackpad Companion 配对二维码。", Toast.LENGTH_LONG).show()
+                showConnectionDialog()
+                return
+            }
+            if (!applyPairingTarget(target)) {
+                showConnectionDialog()
+                return
+            }
+            connectToMac(
+                target.host,
+                target.port.toString(),
+                target.token.orEmpty(),
+                target.webEnabled,
+            )
+            return
+        }
         if (requestCode != REQUEST_WALLPAPER || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         runCatching {
@@ -2749,6 +2745,7 @@ class MainActivity : Activity() {
         private const val KEY_WALLPAPER_BRIGHTNESS = "wallpaper_brightness"
         private const val KEY_SURFACE_OPACITY = "surface_opacity"
         private const val REQUEST_WALLPAPER = 4201
+        private const val REQUEST_QR_SCANNER = 4202
         private const val DEFAULT_WALLPAPER_OPACITY = 100
         private const val DEFAULT_WALLPAPER_SATURATION = 100
         private const val DEFAULT_WALLPAPER_BRIGHTNESS = 100
