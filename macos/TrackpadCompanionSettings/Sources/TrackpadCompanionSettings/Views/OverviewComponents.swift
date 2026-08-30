@@ -24,7 +24,13 @@ struct SidebarHeader: View {
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(state == .running ? .green : state == .failed ? .red : .secondary)
+                        .fill(
+                            state == .running
+                                ? Color.green
+                                : state == .failed
+                                    ? Color.red
+                                    : Color.secondary
+                        )
                         .frame(width: 6, height: 6)
                     Text(stateLabel)
                         .font(.caption)
