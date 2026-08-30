@@ -131,10 +131,12 @@ Recommended flow: on the macOS **Connections** page, enable only the entry you
 need. With **Phone access** enabled, choose **Scan QR code** in the Android
 connection sheet; the local address, port, and token are filled in and the app
 connects immediately. The QR payload stays on the LAN and never goes through a
-cloud service. If scanning is unavailable, scroll to **IP connection (backup)**
-and enter the Mac's LAN address, port, and pairing token. Both devices should
-be on the same Wi-Fi. With only **Web access** enabled, copy the Web address
-shown by the macOS app into a browser.
+cloud service. The scanner uses a barcode model bundled in the APK, so it does
+not depend on a deferred Google Play scanner module; the first use only needs
+camera permission. If the camera is unavailable, scroll to **IP connection
+(backup)** and enter the Mac's LAN address, port, and pairing token. Both
+devices should be on the same Wi-Fi. With only **Web access** enabled, copy the
+Web address shown by the macOS app into a browser.
 
 ```sh
 ./target/release/companion-net --port 4242 -v
