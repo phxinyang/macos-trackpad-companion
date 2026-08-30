@@ -19,6 +19,12 @@ the conventional `Applications` shortcut for drag-and-drop installation.
 Packaging is intentionally non-interactive: neither script opens the resulting
 DMG. Double-click the generated `Trackpad-Companion-*-macos.dmg` (or run
 `open` yourself) when you want Finder to show the installation window.
+The Finder layout guard can run on any host without mounting a disk image:
+
+```sh
+bash ./packaging/macos/test-package-dmg.sh
+```
+
 `package-dmg.sh` removes older local DMGs first, so opening a wildcard after a
 rebuild cannot select a stale application. If `build-app.sh` fails during
 compilation, it removes the previous local app bundle so a following packaging
