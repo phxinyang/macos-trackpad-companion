@@ -273,7 +273,7 @@ final class ServiceSupervisor: ObservableObject {
         Self.terminateAndWait(process)
     }
 
-    private static func terminateAndWait(_ process: Process) {
+    nonisolated private static func terminateAndWait(_ process: Process) {
         // SIGTERM normally exits immediately. Keep this final wait bounded,
         // then force-kill a wedged helper so the lock is released before
         // NSApplication finishes terminating.
