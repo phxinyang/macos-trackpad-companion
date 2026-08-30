@@ -211,14 +211,22 @@ struct SettingsView: View {
                             ? (supervisor.tokenConfigured ? model.language.text("Protected", "已保护") : model.language.text("Manual", "手动"))
                             : model.language.text("Off", "已关闭"),
                         symbol: supervisor.phoneEnabled ? (supervisor.tokenConfigured ? "lock.shield" : "lock.open") : "minus.circle",
-                        tint: supervisor.phoneEnabled ? (supervisor.tokenConfigured ? .green : .orange) : .secondary
+                        tint: supervisor.phoneEnabled
+                            ? (supervisor.tokenConfigured ? Color.green : Color.orange)
+                            : Color.secondary
                     )
                 }
             }
             Section {
                 LabeledContent(model.language.text("Service", "服务")) {
                     Label(model.language.text(supervisor.state == .running ? "Running" : supervisor.state.rawValue.capitalized, supervisor.state == .running ? "运行中" : supervisor.state.rawValue), systemImage: supervisor.state.symbol)
-                        .foregroundStyle(supervisor.state == .failed ? .red : supervisor.state == .running ? .green : .secondary)
+                        .foregroundStyle(
+                            supervisor.state == .failed
+                                ? Color.red
+                                : supervisor.state == .running
+                                    ? Color.green
+                                    : Color.secondary
+                        )
                 }
                 LabeledContent(model.language.text("Network", "网络")) {
                     Label(
@@ -227,7 +235,7 @@ struct SettingsView: View {
                             : model.language.text("Unavailable", "不可用"),
                         systemImage: supervisor.networkAvailable ? "wifi" : "wifi.exclamationmark"
                     )
-                    .foregroundStyle(supervisor.networkAvailable ? .secondary : .orange)
+                    .foregroundStyle(supervisor.networkAvailable ? Color.secondary : Color.orange)
                 }
                 LabeledContent(model.language.text("Web", "Web")) {
                     if supervisor.webEnabled && !supervisor.endpoint.isEmpty {
@@ -265,7 +273,7 @@ struct SettingsView: View {
             Section(model.language.text("Permissions", "权限")) {
                 Label(model.language.text(supervisor.accessibilityGranted ? "Accessibility is ready." : "Accessibility is required for synthetic cursor, click, scroll, and gesture events.", supervisor.accessibilityGranted ? "辅助功能权限已就绪。" : "合成光标、点击、滚动和手势事件需要辅助功能权限。"), systemImage: supervisor.accessibilityGranted ? "checkmark.shield" : "hand.raised")
                     .font(.callout)
-                    .foregroundStyle(supervisor.accessibilityGranted ? .green : .primary)
+                    .foregroundStyle(supervisor.accessibilityGranted ? Color.green : Color.primary)
                 if !supervisor.accessibilityGranted {
                     PermissionFlowButton(
                         pane: .accessibility,
@@ -292,7 +300,13 @@ struct SettingsView: View {
                                 : model.language.text("Off", "已关闭"),
                         systemImage: supervisor.launchAtLogin ? "checkmark.circle.fill" : supervisor.launchAtLoginRequiresApproval ? "exclamationmark.circle" : "circle"
                     )
-                    .foregroundStyle(supervisor.launchAtLogin ? .green : supervisor.launchAtLoginRequiresApproval ? .orange : .secondary)
+                    .foregroundStyle(
+                        supervisor.launchAtLogin
+                            ? Color.green
+                            : supervisor.launchAtLoginRequiresApproval
+                                ? Color.orange
+                                : Color.secondary
+                    )
                 }
                 if supervisor.launchAtLoginRequiresApproval {
                     Text(model.language.text("Approve this app in System Settings → General → Login Items.", "请在系统设置 → 通用 → 登录项中批准此应用。"))
@@ -334,7 +348,7 @@ struct SettingsView: View {
                 LabeledContent(model.language.text("Decode errors", "解码错误")) {
                     Text(supervisor.metrics.decodeErrors.formatted(.number))
                         .monospacedDigit()
-                        .foregroundStyle(supervisor.metrics.decodeErrors == 0 ? .secondary : .orange)
+                        .foregroundStyle(supervisor.metrics.decodeErrors == 0 ? Color.secondary : Color.orange)
                 }
                 if let updatedAt = supervisor.metrics.updatedAt {
                     Text(model.language.text(
@@ -437,7 +451,7 @@ struct SettingsView: View {
                     ),
                     systemImage: supervisor.tokenConfigured ? "lock.shield" : "exclamationmark.shield"
                 )
-                .foregroundStyle(supervisor.tokenConfigured ? .green : .orange)
+                .foregroundStyle(supervisor.tokenConfigured ? Color.green : Color.orange)
                 if !supervisor.tokenConfigured && (supervisor.webEnabled || supervisor.phoneEnabled) {
                     Button(model.language.text("Create a pairing token", "创建配对 Token"), systemImage: "key.fill") {
                         supervisor.refreshConnectionSettings()
