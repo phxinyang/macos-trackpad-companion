@@ -1,0 +1,159 @@
+name: Development Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: development-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Verify Rust workspace
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace
+          cargo check --all-targets
+          ./scripts/test-diagnose-redaction.sh
+      - name: Verify Android project
+        working-directory: android
+        run: ./gradlew test --no-daemon
+
+  build-android:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Verify and collect debug APK
+        env:
+          DEV_VERSION: dev-${{ github.run_id }}
+        run: |
+          apk="android/app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$apk"
+          apksigner=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          test -x "$apksigner"
+          "$apksigner" verify --verbose "$apk"
+          mkdir -p release-assets
+          cp "$apk" "release-assets/Trackpad-Companion-$DEV_VERSION-android-debug.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: development-android
+          path: release-assets/*
+          if-no-files-found: error
+
+  build-macos:
+    needs: verify
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Select Swift 6.2 toolchain
+        run: |
+          if [[ -d /Applications/Xcode_26.3.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.app
+          elif [[ -d /Applications/Xcode_26.3.0.app ]]; then
+            sudo xcode-select -s /Applications/Xcode_26.3.0.app
+          else
+            echo "Xcode 26.3 is required by PermissionFlow" >&2
+            exit 1
+          fi
+          swift --version
+      - name: Build ad-hoc development app
+        env:
+          VERSION: dev-${{ github.run_id }}
+          CODESIGN_IDENTITY: ''
+        run: |
+          ./packaging/macos/test-package-dmg.sh
+          ./packaging/macos/test-service-lifecycle.sh
+          ./packaging/macos/build-app.sh
+          ./packaging/macos/package-dmg.sh
+      - name: Verify and collect development package
+        env:
+          DEV_VERSION: dev-${{ github.run_id }}
+        run: |
+          app_path="dist/macos/Trackpad Companion.app"
+          zip_path="dist/macos/Trackpad-Companion-$DEV_VERSION-macos.zip"
+          dmg_path="dist/macos/Trackpad-Companion-$DEV_VERSION-macos.dmg"
+          test -d "$app_path"
+          test -s "$zip_path"
+          test -s "$dmg_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          mkdir -p release-assets
+          cp "$zip_path" "$dmg_path" release-assets/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: development-macos
+          path: release-assets/*
+          if-no-files-found: error
+
+  publish:
+    needs: [verify, build-android, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: development-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify development release set and checksums
+        env:
+          DEV_VERSION: dev-${{ github.run_id }}
+        run: |
+          for asset in \
+            "Trackpad-Companion-$DEV_VERSION-macos.dmg" \
+            "Trackpad-Companion-$DEV_VERSION-macos.zip" \
+            "Trackpad-Companion-$DEV_VERSION-android-debug.apk"; do
+            test -s "release-assets/$asset"
+          done
+          (cd release-assets && sha256sum Trackpad-Companion-* > SHA256SUMS)
+          cat release-assets/SHA256SUMS
+      - name: Publish GitHub development pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-${{ github.run_id }}
+          target_commitish: ${{ github.sha }}
+          name: Trackpad Companion Development ${{ github.run_number }}
+          prerelease: true
+          make_latest: false
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          body: |
+            Development build for testing only.
+
+            macOS is ad-hoc signed and Android uses the debug signing key. These
+            artifacts are not intended for production distribution or Google Play.
+          files: |
+            release-assets/Trackpad-Companion-${{ github.run_id }}-macos.dmg
+            release-assets/Trackpad-Companion-${{ github.run_id }}-macos.zip
+            release-assets/Trackpad-Companion-${{ github.run_id }}-android-debug.apk
+            release-assets/SHA256SUMS

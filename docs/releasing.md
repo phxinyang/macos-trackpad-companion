@@ -96,3 +96,21 @@ removed even when the job fails.
 
 Do not move or recreate an already published tag. Fix the problem, increment the
 version, and publish a new tag instead.
+
+## Development pre-releases
+
+If signing secrets are not configured, use the **Development Release** workflow
+from the GitHub Actions tab. Click **Run workflow** on
+`.github/workflows/release-development.yml`. It runs the normal Rust and Android
+checks, builds an ad-hoc macOS DMG/ZIP and a debug Android APK, verifies them, and
+creates a GitHub Pre-release automatically.
+
+Development pre-releases use a `dev-*` tag and never trigger the stable release
+workflow. They are suitable for personal testing and bug reports only:
+
+- macOS may show an unidentified-developer warning;
+- Android uses the debug signing key and is not a Google Play artifact;
+- the app has not passed Apple notarization.
+
+The development workflow still publishes `SHA256SUMS`. Delete old development
+pre-releases from the GitHub Releases page when they are no longer useful.
