@@ -98,11 +98,16 @@ tell application "Finder"
         set visible of item ".background" of disk "${MOUNT_NAME}" to false
       end try
       set layoutReady to false
+      set lastLayoutError to "unknown Finder error"
+      set dmgWindow to missing value
       repeat with attempt from 1 to 16
         try
-          -- Finder creates the container window asynchronously. Operate on
-          -- the live container window rather than a stale object reference.
-          tell container window
+          -- Finder creates the container window asynchronously. Re-resolve
+          -- the live reference on every attempt so a previous failed lookup
+          -- cannot leave us with a stale window object.
+          if not (exists container window) then error "container window not ready"
+          set dmgWindow to container window
+          tell dmgWindow
             set current view to icon view
             set toolbar visible to false
             set statusbar visible to false
@@ -122,12 +127,13 @@ tell application "Finder"
           end tell
           set layoutReady to true
           exit repeat
-        on error
+        on error errMsg number errNum
+          set lastLayoutError to errMsg & " (" & errNum & ")"
           delay 0.25
         end try
       end repeat
-      if not layoutReady then error "Finder DMG window did not become ready"
-      close container window
+      if not layoutReady then error "Finder DMG window did not become ready: " & lastLayoutError
+      close dmgWindow
       open
       delay 0.2
       update without registering applications

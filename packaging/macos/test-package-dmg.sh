@@ -15,10 +15,14 @@ contains() {
   [[ "$SCRIPT_TEXT" == *"$1"* ]]
 }
 
-contains 'tell container window' || {
-  echo "DMG layout must operate on Finder's live container window" >&2
+contains 'set dmgWindow to container window' || {
+  echo "DMG layout must resolve Finder's live container window" >&2
   exit 1
 }
+if contains 'tell container window'; then
+  echo "DMG layout must not use an unqualified Finder container window target" >&2
+  exit 1
+fi
 contains 'set current view to icon view' || {
   echo "DMG layout must select icon view on the live container window" >&2
   exit 1
