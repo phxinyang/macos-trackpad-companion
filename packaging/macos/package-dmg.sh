@@ -56,21 +56,20 @@ tell application "Finder"
   set visible to false
   tell disk "Trackpad Companion"
     open
-    set current view of container window to icon view
-    set toolbar visible of container window to false
-    set statusbar visible of container window to false
-    set bounds of container window to {120, 120, 900, 620}
-    set viewOptions to icon view options of container window
-    tell viewOptions
-      set icon size to 128
-      set arrangement to not arranged
-      if exists file ".background:dmg-background.png" then
-        set background picture to file ".background:dmg-background.png"
-      end if
-    end tell
-    set position of item "Trackpad Companion.app" of container window to {210, 250}
-    set position of item "Applications" of container window to {570, 250}
-    close
+    set dmgWindow to container window
+    set current view of dmgWindow to icon view
+    set toolbar visible of dmgWindow to false
+    set statusbar visible of dmgWindow to false
+    set bounds of dmgWindow to {120, 120, 900, 620}
+    set viewOptions to icon view options of dmgWindow
+    set icon size of viewOptions to 128
+    set arrangement of viewOptions to not arranged
+    try
+      set background picture of viewOptions to file ".background:dmg-background.png"
+    end try
+    set position of item "Trackpad Companion.app" of dmgWindow to {210, 250}
+    set position of item "Applications" of dmgWindow to {570, 250}
+    close dmgWindow
     open
     update without registering applications
   end tell
