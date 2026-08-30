@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Trackpad Outer Glass Surface -->
+    <path
+        android:pathData="M 37,28 L 71,28 A 12,12 0 0,1 83,40 L 83,68 A 12,12 0 0,1 71,80 L 37,80 A 12,12 0 0,1 25,68 L 25,40 A 12,12 0 0,1 37,28 Z"
+        android:strokeWidth="1.5">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="25"
+                android:startY="28"
+                android:endX="83"
+                android:endY="80"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#F0242E42" />
+                <item android:offset="0.5" android:color="#E61A2232" />
+                <item android:offset="1.0" android:color="#F0121722" />
+            </gradient>
+        </aapt:attr>
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:startX="25"
+                android:startY="28"
+                android:endX="83"
+                android:endY="80"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#9093C5FD" />
+                <item android:offset="0.4" android:color="#4060A5FA" />
+                <item android:offset="1.0" android:color="#30334155" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Trackpad Inner Top Glare / Specular highlight -->
+    <path
+        android:pathData="M 37,30 L 71,30 A 10,10 0 0,1 81,40 L 81,44 A 10,10 0 0,1 71,34 L 37,34 A 10,10 0 0,1 27,44 L 27,40 A 10,10 0 0,1 37,30 Z"
+        android:fillColor="#1AFFFFFF" />
+
+    <!-- Green Online Status Indicator -->
+    <path
+        android:pathData="M 75,36 A 2,2 0 1,1 74.9,36 Z"
+        android:fillColor="#22C55E" />
+
+    <!-- Multi-Touch Point 1 (Ripple & Center) -->
+    <path
+        android:pathData="M 45,39 A 9,9 0 1,1 44.9,39 Z"
+        android:fillColor="#1538BDF8"
+        android:strokeColor="#4038BDF8"
+        android:strokeWidth="1" />
+    <path
+        android:pathData="M 45,43.5 A 4.5,4.5 0 1,1 44.9,43.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="42"
+                android:startY="45"
+                android:endX="48"
+                android:endY="51"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF60A5FA" />
+                <item android:offset="1.0" android:color="#FF0284C7" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M 45,46.5 A 1.5,1.5 0 1,1 44.9,46.5 Z"
+        android:fillColor="#FFFFFFFF" />
+
+    <!-- Multi-Touch Point 2 (Ripple & Center) -->
+    <path
+        android:pathData="M 63,39 A 9,9 0 1,1 62.9,39 Z"
+        android:fillColor="#1538BDF8"
+        android:strokeColor="#4038BDF8"
+        android:strokeWidth="1" />
+    <path
+        android:pathData="M 63,43.5 A 4.5,4.5 0 1,1 62.9,43.5 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="60"
+                android:startY="45"
+                android:endX="66"
+                android:endY="51"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#FF60A5FA" />
+                <item android:offset="1.0" android:color="#FF0284C7" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path
+        android:pathData="M 63,46.5 A 1.5,1.5 0 1,1 62.9,46.5 Z"
+        android:fillColor="#FFFFFFFF" />
+
+    <!-- Deep Press / Force Click Bar -->
+    <path
+        android:pathData="M 42,70 L 66,70 A 2,2 0 0,1 68,72 L 68,72 A 2,2 0 0,1 66,74 L 42,74 A 2,2 0 0,1 40,72 L 40,72 A 2,2 0 0,1 42,70 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="40"
+                android:startY="72"
+                android:endX="68"
+                android:endY="72"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#8038BDF8" />
+                <item android:offset="0.5" android:color="#FF38BDF8" />
+                <item android:offset="1.0" android:color="#8038BDF8" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+</vector>
