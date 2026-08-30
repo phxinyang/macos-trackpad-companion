@@ -69,7 +69,7 @@ The Rust binaries are host-specific. Build them on the Mac that will run them;
 do not copy an ELF binary built on Linux to macOS.
 
 ```sh
-git clone https://github.com/scottlamb/macos-trackpad-companion.git
+git clone https://github.com/phxinyang/macos-trackpad-companion.git
 cd macos-trackpad-companion
 cargo build --release
 ```
@@ -88,7 +88,7 @@ Run the network daemon:
 
 Build the native settings app and DMG on macOS:
 
-The current PermissionFlow package requires Swift 6.2 (Xcode 26 or newer) to
+The current PermissionFlow package requires Swift 6 (Xcode 16 or newer) to
 build the macOS settings target.
 
 ```sh
