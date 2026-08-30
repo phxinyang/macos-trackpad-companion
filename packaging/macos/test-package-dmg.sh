@@ -31,6 +31,14 @@ contains 'set visible to true' || {
   echo "Finder must be visible while creating the DMG container window" >&2
   exit 1
 }
+contains 'open "$MOUNT"' || {
+  echo "DMG layout must explicitly ask LaunchServices to open the mounted volume" >&2
+  exit 1
+}
+contains 'with timeout of 20 seconds' || {
+  echo "Finder DMG layout must have a bounded AppleEvent timeout" >&2
+  exit 1
+}
 contains 'set current view of dmgWindow to icon view' || {
   echo "DMG layout must select icon view on the live container window" >&2
   exit 1
