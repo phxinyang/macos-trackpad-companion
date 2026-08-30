@@ -1666,21 +1666,24 @@
   };
   setInterval(() => sendRaw("p"), 15000);            // keepalive text ping
 
-  // ---- Touch Capture --------------------------------------------------
-  const pointers = new Map();                        // pointerId -> cid
+  // ---- Touch & Pointer Event Capture ----------------------------------
+  const pointers = new Map();                        // touch identifier -> cid
   let nextCid = 1;
   const freeIds = [];
-  const pos = new Map();                             // pointerId -> {x,y} mm
+  const pos = new Map();                             // touch identifier -> {x,y} mm
   let touchStartTime = 0, initialPos = { x: 0, y: 0 }, maxFingers = 0;
 
-  function toMm(ev) {
+  function toMmCoords(clientX, clientY) {
     const rect = pad.getBoundingClientRect();
     const mmPerCssPx = VIRTUAL_SURFACE_WIDTH_MM / Math.max(1, rect.width);
     return {
-      x: (ev.clientX - rect.left) * mmPerCssPx * scale,
-      y: (ev.clientY - rect.top) * mmPerCssPx * scale,
+      x: (clientX - rect.left) * mmPerCssPx * scale,
+      y: (clientY - rect.top) * mmPerCssPx * scale,
     };
   }
+
+  function acquireCid() { return freeIds.length ? freeIds.pop() : (nextCid++ % 256); }
+  function releaseCid(cid) { freeIds.push(cid); }
 
   let dirty = false, rafId = 0, visualRafId = 0, lastVisualPaint = 0;
   function snapshot() {
@@ -1694,13 +1697,6 @@
   function loop() {
     rafId = 0;
     if (pointers.size > 0 || deepPressed) {
-      // Keep reporting every frame while contacts are down, moving or
-      // not. A browser stops delivering pointermove for a finger that
-      // is held still, and from the receiver's side a stream that goes
-      // quiet is indistinguishable from a client that went away — it
-      // used to resolve that by ending the touch, which turned a held
-      // finger into a phantom tap. A real trackpad reports at a fixed
-      // rate regardless of motion; so does this now.
       dirty = false;
       sendRaw(encodeFrame(snapshot(), deepPressed));
       rafId = requestAnimationFrame(loop);
@@ -1739,79 +1735,162 @@
     liftTimers.push(setTimeout(() => sendRaw(encodeFrame([])), 90));
   }
 
-  const pad = $("pad-container");
-  function acquireCid() { return freeIds.length ? freeIds.pop() : (nextCid++ % 256); }
-  function releaseCid(cid) { freeIds.push(cid); }
+  const useTouchEvents = "ontouchstart" in window;
 
-  pad.addEventListener("pointerdown", e => {
-    e.preventDefault(); wake();
-    try { pad.setPointerCapture(e.pointerId); } catch (_) {}
-    padFrame.dataset.active = "true";
-    if (pointers.size === 0) {
-      touchStartTime = performance.now();
-      maxFingers = 1;
-      initialPos = { x: e.clientX, y: e.clientY };
-      frameRect = padFrame.getBoundingClientRect();
+  if (useTouchEvents) {
+    // Native Touch Events: 100% reliable 1-5 finger raw contact streams on mobile
+    pad.addEventListener("touchstart", e => {
+      e.preventDefault(); wake();
+      padFrame.dataset.active = "true";
+      if (pointers.size === 0) {
+        touchStartTime = performance.now();
+        maxFingers = e.touches.length;
+        if (e.touches[0]) initialPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        frameRect = padFrame.getBoundingClientRect();
+      }
+      for (let i = 0; i < e.touches.length; i++) {
+        const t = e.touches[i];
+        if (!pointers.has(t.identifier)) {
+          const cid = acquireCid();
+          pointers.set(t.identifier, cid);
+        }
+        pos.set(t.identifier, toMmCoords(t.clientX, t.clientY));
+        if (!visualTouches.has(t.identifier)) {
+          visualTouches.set(t.identifier, { pointerId: t.identifier, x: t.clientX, y: t.clientY, cid: pointers.get(t.identifier), vx: 0, vy: 0, lastTime: e.timeStamp, trail: [] });
+        }
+      }
+      if (e.touches.length > maxFingers) maxFingers = e.touches.length;
+      if (e.touches[0] && padLens) {
+        padLens.style.transform = `translate3d(${e.touches[0].clientX - frameRect.left}px, ${e.touches[0].clientY - frameRect.top}px, 0)`;
+      }
+      sendRaw(encodeFrame(snapshot(), deepPressed));
+      kick();
+    }, { passive: false });
+
+    pad.addEventListener("touchmove", e => {
+      e.preventDefault();
+      for (let i = 0; i < e.touches.length; i++) {
+        const t = e.touches[i];
+        pos.set(t.identifier, toMmCoords(t.clientX, t.clientY));
+        const visual = visualTouches.get(t.identifier);
+        if (visual) {
+          const dt = Math.max(1, Math.min(64, e.timeStamp - visual.lastTime));
+          visual.trail.push({ x: visual.x, y: visual.y });
+          if (visual.trail.length > 8) visual.trail.shift();
+          visual.vx = visual.vx * .60 + ((t.clientX - visual.x) / dt * 16) * .40;
+          visual.vy = visual.vy * .60 + ((t.clientY - visual.y) / dt * 16) * .40;
+          visual.x = t.clientX; visual.y = t.clientY; visual.lastTime = e.timeStamp;
+        }
+      }
+      if (e.touches.length > maxFingers) maxFingers = e.touches.length;
+      if (e.touches[0] && padLens) {
+        padLens.style.transform = `translate3d(${e.touches[0].clientX - frameRect.left}px, ${e.touches[0].clientY - frameRect.top}px, 0)`;
+      }
+      kick();
+    }, { passive: false });
+
+    const handleTouchEnd = e => {
+      e.preventDefault();
+      const activeIds = new Set();
+      for (let i = 0; i < e.touches.length; i++) activeIds.add(e.touches[i].identifier);
+      for (const [id, cid] of Array.from(pointers.entries())) {
+        if (!activeIds.has(id)) {
+          releaseCid(cid);
+          pointers.delete(id);
+          pos.delete(id);
+          const visual = visualTouches.get(id);
+          if (visual) {
+            visual.releasedAt = performance.now();
+            releasedVisualTouches.push(visual);
+            visualTouches.delete(id);
+          }
+        }
+      }
+      if (pointers.size === 0) {
+        padFrame.dataset.active = "false";
+        const dur = performance.now() - touchStartTime;
+        if (dur < 280) {
+          if (maxFingers === 2) vibrate([30]);
+          else if (maxFingers === 1) vibrate(12);
+        }
+      }
+      kick();
+    };
+
+    pad.addEventListener("touchend", handleTouchEnd, { passive: false });
+    pad.addEventListener("touchcancel", handleTouchEnd, { passive: false });
+  } else {
+    // PointerEvent fallback for desktop browsers & styluses
+    pad.addEventListener("pointerdown", e => {
+      e.preventDefault(); wake();
+      try { pad.setPointerCapture(e.pointerId); } catch (_) {}
+      padFrame.dataset.active = "true";
+      if (pointers.size === 0) {
+        touchStartTime = performance.now();
+        maxFingers = 1;
+        initialPos = { x: e.clientX, y: e.clientY };
+        frameRect = padFrame.getBoundingClientRect();
+      }
+      if (pointers.has(e.pointerId)) return;
+      const cid = acquireCid();
+      pointers.set(e.pointerId, cid);
+      pos.set(e.pointerId, toMmCoords(e.clientX, e.clientY));
+      visualTouches.set(e.pointerId, { pointerId: e.pointerId, x: e.clientX, y: e.clientY, cid, vx: 0, vy: 0, lastTime: e.timeStamp, trail: [] });
+      if (padLens) padLens.style.transform = `translate3d(${e.clientX - frameRect.left}px, ${e.clientY - frameRect.top}px, 0)`;
+      if (pointers.size > maxFingers) maxFingers = pointers.size;
+
+      sendRaw(encodeFrame(snapshot(), deepPressed));
+      kick();
+    }, { passive: false });
+
+    pad.addEventListener("pointermove", e => {
+      e.preventDefault();
+      if (!pointers.has(e.pointerId)) return;
+      pos.set(e.pointerId, toMmCoords(e.clientX, e.clientY));
+      const visual = visualTouches.get(e.pointerId);
+      if (visual) {
+        const dt = Math.max(1, Math.min(64, e.timeStamp - visual.lastTime));
+        visual.trail.push({ x: visual.x, y: visual.y });
+        if (visual.trail.length > 8) visual.trail.shift();
+        visual.vx = visual.vx * .60 + ((e.clientX - visual.x) / dt * 16) * .40;
+        visual.vy = visual.vy * .60 + ((e.clientY - visual.y) / dt * 16) * .40;
+        visual.x = e.clientX; visual.y = e.clientY; visual.lastTime = e.timeStamp;
+      }
+      if (padLens) padLens.style.transform = `translate3d(${e.clientX - frameRect.left}px, ${e.clientY - frameRect.top}px, 0)`;
+      if (pointers.size > maxFingers) maxFingers = pointers.size;
+      kick();
+    }, { passive: false });
+
+    function releasePointer(e) {
+      if (!pointers.has(e.pointerId)) return;
+      try { pad.releasePointerCapture(e.pointerId); } catch (_) {}
+      releaseCid(pointers.get(e.pointerId));
+      pointers.delete(e.pointerId);
+      pos.delete(e.pointerId);
+      const visual = visualTouches.get(e.pointerId);
+      if (visual) {
+        visual.releasedAt = performance.now();
+        releasedVisualTouches.push(visual);
+        visualTouches.delete(e.pointerId);
+      }
+      if (pointers.size === 0) padFrame.dataset.active = "false";
+      kick();
     }
-    if (pointers.has(e.pointerId)) return;
-    const cid = acquireCid();
-    pointers.set(e.pointerId, cid);
-    pos.set(e.pointerId, toMm(e));
-    visualTouches.set(e.pointerId, { pointerId: e.pointerId, x: e.clientX, y: e.clientY, cid, vx: 0, vy: 0, lastTime: e.timeStamp, trail: [] });
-    if (padLens) padLens.style.transform = `translate3d(${e.clientX - frameRect.left}px, ${e.clientY - frameRect.top}px, 0)`;
-    if (pointers.size > maxFingers) maxFingers = pointers.size;
 
-    sendRaw(encodeFrame(snapshot(), deepPressed));
-    kick();
-  }, { passive: false });
+    pad.addEventListener("pointerup", e => {
+      e.preventDefault();
+      const dur = performance.now() - touchStartTime;
+      const dx = Math.abs(e.clientX - initialPos.x);
+      const dy = Math.abs(e.clientY - initialPos.y);
+      if (dur < 280 && dx < 15 && dy < 15) {
+        if (maxFingers === 2) vibrate([30]);
+        else if (maxFingers === 1) vibrate(12);
+      }
+      releasePointer(e);
+    }, { passive: false });
 
-  pad.addEventListener("pointermove", e => {
-    e.preventDefault();
-    if (!pointers.has(e.pointerId)) return;
-    pos.set(e.pointerId, toMm(e));
-    const visual = visualTouches.get(e.pointerId);
-    if (visual) {
-      const dt = Math.max(1, Math.min(64, e.timeStamp - visual.lastTime));
-      visual.trail.push({ x: visual.x, y: visual.y });
-      if (visual.trail.length > 8) visual.trail.shift();
-      visual.vx = visual.vx * .60 + ((e.clientX - visual.x) / dt * 16) * .40;
-      visual.vy = visual.vy * .60 + ((e.clientY - visual.y) / dt * 16) * .40;
-      visual.x = e.clientX; visual.y = e.clientY; visual.lastTime = e.timeStamp;
-    }
-    if (padLens) padLens.style.transform = `translate3d(${e.clientX - frameRect.left}px, ${e.clientY - frameRect.top}px, 0)`;
-    if (pointers.size > maxFingers) maxFingers = pointers.size;
-    kick();
-  }, { passive: false });
-
-  function releasePointer(e) {
-    if (!pointers.has(e.pointerId)) return;
-    try { pad.releasePointerCapture(e.pointerId); } catch (_) {}
-    releaseCid(pointers.get(e.pointerId));
-    pointers.delete(e.pointerId);
-    pos.delete(e.pointerId);
-    const visual = visualTouches.get(e.pointerId);
-    if (visual) {
-      visual.releasedAt = performance.now();
-      releasedVisualTouches.push(visual);
-      visualTouches.delete(e.pointerId);
-    }
-    if (pointers.size === 0) padFrame.dataset.active = "false";
-    kick();
+    pad.addEventListener("pointercancel", e => releasePointer(e));
   }
-
-  pad.addEventListener("pointerup", e => {
-    e.preventDefault();
-    const dur = performance.now() - touchStartTime;
-    const dx = Math.abs(e.clientX - initialPos.x);
-    const dy = Math.abs(e.clientY - initialPos.y);
-    if (dur < 280 && dx < 15 && dy < 15) {
-      if (maxFingers === 2) vibrate([30]);
-      else if (maxFingers === 1) vibrate(12);
-    }
-    releasePointer(e);
-  }, { passive: false });
-
-  pad.addEventListener("pointercancel", e => releasePointer(e));
 
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) return;
