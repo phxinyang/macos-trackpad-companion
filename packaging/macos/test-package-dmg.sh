@@ -15,7 +15,7 @@ contains() {
   [[ "$SCRIPT_TEXT" == *"$1"* ]]
 }
 
-contains 'set dmgWindow to container window' || {
+contains 'set dmgWindow to container window of disk' || {
   echo "DMG layout must resolve Finder's live container window" >&2
   exit 1
 }
@@ -23,7 +23,7 @@ if contains 'tell container window'; then
   echo "DMG layout must not use an unqualified Finder container window target" >&2
   exit 1
 fi
-contains 'set current view to icon view' || {
+contains 'set current view of dmgWindow to icon view' || {
   echo "DMG layout must select icon view on the live container window" >&2
   exit 1
 }
@@ -43,10 +43,6 @@ contains 'MOUNT_NAME=${MOUNT##*/}' || {
   echo "DMG layout must bind the AppleScript to the mounted volume name" >&2
   exit 1
 }
-if contains 'set current view of dmgWindow to icon view'; then
-  echo "stale Finder window reference is still used" >&2
-  exit 1
-fi
 if contains 'printf %s\\n ".hidden"' || contains "printf '%s\\n' \".hidden\""; then
   echo "helper .hidden manifest must not be created in the DMG staging tree" >&2
   exit 1

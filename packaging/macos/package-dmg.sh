@@ -105,26 +105,27 @@ tell application "Finder"
           -- Finder creates the container window asynchronously. Re-resolve
           -- the live reference on every attempt so a previous failed lookup
           -- cannot leave us with a stale window object.
-          if not (exists container window) then error "container window not ready"
-          set dmgWindow to container window
-          tell dmgWindow
-            set current view to icon view
-            set toolbar visible to false
-            set statusbar visible to false
-            set bounds to {${WINDOW_LEFT}, ${WINDOW_TOP}, ${WINDOW_RIGHT}, ${WINDOW_BOTTOM}}
-            set viewOptions to icon view options
-            set icon size of viewOptions to 128
-            set arrangement of viewOptions to not arranged
-            try
-              set background picture of viewOptions to file ".background:dmg-background.png"
-            end try
-            if exists item "Trackpad Companion.app" then
-              set position of item "Trackpad Companion.app" to {245, 340}
-            end if
-            if exists item "Applications" then
-              set position of item "Applications" to {655, 340}
-            end if
-          end tell
+          if not (exists container window of disk "${MOUNT_NAME}") then error "container window not ready"
+          set dmgWindow to container window of disk "${MOUNT_NAME}"
+          -- Keep the explicit Finder object form here. Setting properties
+          -- implicitly inside `tell dmgWindow` is rejected by some Finder
+          -- builds with error -10006 even when the window is valid.
+          set current view of dmgWindow to icon view
+          set toolbar visible of dmgWindow to false
+          set statusbar visible of dmgWindow to false
+          set bounds of dmgWindow to {${WINDOW_LEFT}, ${WINDOW_TOP}, ${WINDOW_RIGHT}, ${WINDOW_BOTTOM}}
+          set viewOptions to icon view options of dmgWindow
+          set icon size of viewOptions to 128
+          set arrangement of viewOptions to not arranged
+          try
+            set background picture of viewOptions to file ".background:dmg-background.png"
+          end try
+          if exists item "Trackpad Companion.app" of dmgWindow then
+            set position of item "Trackpad Companion.app" of dmgWindow to {245, 340}
+          end if
+          if exists item "Applications" of dmgWindow then
+            set position of item "Applications" of dmgWindow to {655, 340}
+          end if
           set layoutReady to true
           exit repeat
         on error errMsg number errNum
