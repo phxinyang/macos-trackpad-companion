@@ -2,94 +2,66 @@
 
 [简体中文](README.zh-CN.md) | English
 
-Trackpad Companion turns a phone, browser, or compatible PTP (Precision
-Touchpad) device into a touch surface for macOS. The Rust engine recognizes
-pointer movement, clicks, scrolling, pinch, rotation, and 3/4-finger gestures,
-then emits macOS events that applications can consume.
+Trackpad Companion is a high-precision touch bridge crafted for macOS. It transforms your mobile phone (native Android App or any mobile browser) and compatible Windows PTP (Precision Touchpad) devices into an authentic Apple Magic Trackpad experience.
 
-This is a beta userspace bridge. It does not register as Apple's private
-MultitouchSupport device and it cannot synthesize Force Touch pressure levels.
-Public Quartz events are broadly compatible; private gesture events remain
-macOS-version and application dependent.
+Powered by a high-precision Rust gesture engine, it detects pointer movements, clicks, smooth scrolling, pinch-to-zoom, two-finger rotation, and full 3/4-finger native gestures in real time, synthesizing corresponding macOS system events.
 
-## What you get
+> **Note**: This is a userspace bridge. It does not register as Apple's proprietary internal trackpad driver and cannot simulate Force Touch physical piezoelectric pressure levels. Public Quartz events offer broad application compatibility; private gestures (e.g. pinch, rotate) depend on macOS version and target application support.
 
-| Surface | Use it for | Permission |
+## Supported Surfaces & Features
+
+| Client / Surface | Features & Capabilities | Required Permissions |
 | --- | --- | --- |
-| macOS SwiftUI app | Settings, service control, pairing, diagnostics | Accessibility |
-| Android client | Full touch surface with haptics and deep-press bar | Network |
-| Browser client | No-install touch surface at `http://<mac>:4242/` | Network |
-| USB PTP daemon | A compatible HID touch device | Input Monitoring + Accessibility |
-| TUI and CLI | SSH, Mac mini, automation, recovery | None for config; daemon still needs its normal permission |
+| **macOS SwiftUI App** | Menu bar quick controls, daemon supervisor, QR pairing, and diagnostics | Accessibility |
+| **Android Native App** | 120Hz low-latency touch surface, haptic feedback, deep-press bar, and QR pairing | Local Network & Camera (for QR scan) |
+| **Web Touchpad (Browser)** | Zero-install touch surface (`http://<mac-ip>:4242/`) on any modern browser | Local Network |
+| **USB PTP Daemon** | Direct HID digitizer communication for Windows Precision Touchpads | Input Monitoring + Accessibility |
+| **TUI & CLI Tools** | Headless mode, SSH remote, Mac mini maintenance, and automation | None for config; daemon requires Accessibility |
 
-The macOS app and TUI use the same `companion-config` helper. There is one
-configuration model and one gesture engine, so changing a value in one client
-does not create a second incompatible behavior.
+The macOS app, TUI, and CLI share the same `companion-config` helper and Rust gesture engine, ensuring synchronized settings and consistent gesture behavior across all clients.
 
-## Choose a setup
+## Common Use Cases
 
-### Mac mini, no physical trackpad
+### 1. Mac mini / Headless Mac (No Physical Trackpad)
+Run the macOS app or `companion-net` to use full trackpad gestures from a phone or browser. macOS hides the system Trackpad settings pane when no physical trackpad is detected, and writing `defaults` cannot create virtual hardware. Trackpad Companion manages its own settings independently without intrusive system hacks.
 
-Install the macOS app or run `companion-net`, then use the Android or browser
-client. macOS intentionally hides Apple's Trackpad pane when no internal or
-wireless trackpad is present. Writing `com.apple.AppleMultitouchTrackpad` with
-`defaults` does not register virtual hardware and does not make that pane
-appear. Trackpad Companion keeps its own settings, so no system workaround is
-needed.
+### 2. Connect USB PTP Touchpad Hardware
+Run `companion` to directly read HID digitizer input. The hardware must expose a standard Digitizer Touch Pad collection and contact descriptors. The decoder dynamically parses descriptors and bit-packed layouts at runtime (reference layout is 6 bytes per contact).
 
-### Mac with a USB PTP device
+### 3. Zero-Install Instant Browser Experience
+Start `companion-net` and open the printed URL on any mobile device on the same local network. This is the fastest way to test the gesture engine without installing any mobile application.
 
-Run `companion` to open the HID digitizer directly. The device must expose a
-Digitizer Touch Pad collection with descriptor-defined contact fields. The
-decoder reads the descriptor at runtime, including supported bit-packed
-layouts; the reference profile is six bytes per contact.
+## macOS Installation Guide
 
-### Browser only
+Download the latest DMG installer from [GitHub Releases](https://github.com/phxinyang/macos-trackpad-companion/releases), open it, and drag `Trackpad Companion` to your `Applications` folder.
 
-Run `companion-net`, open the printed URL on a device on the same LAN, and use
-the touch surface. This is the fastest way to test the gesture engine without
-installing Android software.
+* **First Launch & Permissions**: On first launch, navigate to "Overview > Permissions" and click "Request Accessibility Permission". The built-in PermissionFlow module will open macOS "Privacy & Security > Accessibility" and guide you through authorization.
+* **System Requirements**: macOS 13 or newer (the application bundle embeds all Rust network and configuration helpers).
+* **Open Source Distribution**: Local builds use Ad-hoc signing; production distributions can be signed and notarized with an Apple Developer ID.
 
-## Install on macOS
+## Build from Source
 
-Download the DMG from a GitHub Release, open it, and drag `Trackpad Companion`
-to `Applications`. On first launch, open Overview > Permissions and click the
-Accessibility action; PermissionFlow opens the correct Privacy & Security page
-and guides you through dragging the app into the authorization list. The app
-runs on macOS 13 or newer and includes the Rust network and configuration
-helpers inside the application bundle.
-
-Unsigned development packages are produced when release signing is not
-configured. A trusted distribution build must be signed with Developer ID and
-notarized before sharing it outside a development machine.
-
-## Build from source
-
-The Rust binaries are host-specific. Build them on the Mac that will run them;
-do not copy an ELF binary built on Linux to macOS.
+> 💡 **Tip**: Rust binaries depend on macOS system frameworks; please compile directly on your target Mac instead of copying Linux-built ELF binaries.
 
 ```sh
+# Clone repository and build core engine
 git clone https://github.com/phxinyang/macos-trackpad-companion.git
 cd macos-trackpad-companion
 cargo build --release
 ```
 
-Run the HID daemon:
-
+Run the HID hardware daemon:
 ```sh
 ./target/release/companion -v
 ```
 
-Run the network daemon:
-
+Run the network listener daemon:
 ```sh
 ./target/release/companion-net -v
 ```
 
-Build the native settings app and DMG on macOS:
-
-The current PermissionFlow package requires Swift 6 (Xcode 16 or newer) to
-build the macOS settings target.
+Build the native macOS SwiftUI app and DMG installer:
+> Building the macOS settings app requires Swift 6 (Xcode 16 or newer).
 
 ```sh
 ./packaging/macos/build-app.sh
@@ -97,134 +69,80 @@ build the macOS settings target.
 open dist/macos/Trackpad-Companion-*-macos.dmg
 ```
 
-The app bundle contains `companion-net` and `companion-config` under
-`Contents/Resources`, so a user does not need a separate Homebrew install.
-The menu bar provides Web/phone switches, launch-at-login, service recovery,
-live frame counters, and copy actions without reopening the full settings window.
-It also watches the active network interface, rebinds after Wi-Fi/Ethernet
-changes, retries one unexpected helper exit, and keeps the last local endpoint
-for troubleshooting without storing the pairing token in macOS preferences.
-Quitting the app synchronously stops the embedded `companion-net` helper and
-waits for its instance lock to be released before exit, so an immediate relaunch
-does not collide with the old service.
+The app bundle packages `companion-net`, `companion-config`, and localization assets into `Contents/Resources`, eliminating any Homebrew dependency for end users.
 
-## Connect a phone or browser
+## Connect Phone & Clients
 
-The macOS app's **Connections** page has two independent switches:
+The macOS app's **Connections** page provides two independent switches:
+* **Web Access**: Opens the browser touch interface and WebSocket service over TCP.
+* **Phone Access**: Opens the high-frequency touch channel over UDP and advertises Bonjour (mDNS) pairing services.
 
-- **Web access** exposes the browser page and WebSocket on TCP.
-- **Phone access** exposes the Android/native client on UDP and publishes the
-  Bonjour pairing service.
+### Recommended Connection Flow
 
-Both are enabled by default for backwards compatibility. Turning one off
-stops its socket entirely and leaves the other connection path untouched. If
-both are off, the helper exits without opening a port. The Android app reads
-the capability flags from Bonjour/`mtc://pair` and can connect to a UDP-only
-Mac without requiring a TCP health probe.
+1. **Choose Channel**: In the Mac menu bar or Settings "Connections" page, enable the desired channels (both enabled by default).
+2. **Android App QR Pairing**:
+   * Open the Android App and tap "Scan QR Code".
+   * Scan the pairing QR code on the Mac screen. Mac IP, port, and pairing token are automatically resolved for low-latency connection (all data stays strictly on your local LAN).
+   * *Fallback Connection*: If the camera is unavailable, select "IP Connection (Backup)" in the app to enter Mac IP, port, and token manually.
+3. **Instant Browser Access**:
+   * Copy the Web URL displayed on the Mac (e.g. `http://192.168.1.100:4242/?token=...`) into any mobile browser.
 
-`companion-net` accepts ATP1 frames over the enabled transports. The Android
-app discovers `_mtc-trackpad._tcp` through Bonjour when the network allows
-multicast DNS. You can also paste a manual address or an `mtc://pair?...` link
-from the macOS app.
+### Protocol Test Probes (No Phone Needed)
 
-Recommended flow: on the macOS **Connections** page, enable only the entry you
-need. With **Phone access** enabled, choose **Scan QR code** in the Android
-connection sheet; the local address, port, and token are filled in and the app
-connects immediately. The QR payload stays on the LAN and never goes through a
-cloud service. The scanner uses a barcode model bundled in the APK, so it does
-not depend on a deferred Google Play scanner module; the first use only needs
-camera permission. If the camera is unavailable, scroll to **IP connection
-(backup)** and enter the Mac's LAN address, port, and pairing token. Both
-devices should be on the same Wi-Fi. With only **Web access** enabled, copy the
-Web address shown by the macOS app into a browser.
+If a phone is not immediately at hand, use the built-in Python test probes to test protocol streams and gesture responses directly:
 
 ```sh
-./target/release/companion-net --port 4242 -v
-```
-
-For a quick protocol check without a phone:
-
-```sh
+# Simulate contact displacement motion
 python3 tools/synthetic_sender.py --host 127.0.0.1 --mode circle
+# Simulate two-finger scrolling
 python3 tools/ws_probe.py --host 127.0.0.1 --mode scroll
-# Guided, one-gesture-at-a-time visual verification on the Mac
+# Visually verify gestures step-by-step on macOS
 python3 tools/gesture_probe.py
 ```
 
-For an authenticated UDP listener, pass the same `--token` to
-`synthetic_sender.py` or `gesture_probe.py`.
+*If the UDP listener has authentication enabled, append `--token <your-token>` to the probe command.*
 
-The Android and browser clients use millimetres as their coordinate unit and a
-single isotropic scale. The browser maps the surface to the configured 65 mm
-virtual width. Android prefers the panel's physical DPI and falls back to the
-device density.
+## Security & Permissions
 
-## Security and permissions
-
-The network listener can inject pointer and gesture events into the Mac. Use a
-token on every untrusted LAN and never expose the listener to the public
-internet:
+Because network listeners can synthesize mouse and keyboard events on your Mac, security is paramount:
 
 ```sh
+# Generate a random pairing token and inspect config
 ./target/release/companion-config ensure-token
 ./target/release/companion-config dump
 ```
 
-The macOS app creates a token for its managed configuration on first launch.
-The browser sends it as `?token=...`; WebSocket clients may use a bearer
-header; UDP clients wrap ATP1 in the documented ATK1 envelope.
+* **Tokenless Protection**: Without a configured token, `companion-net` **strictly binds to `127.0.0.1` loopback only**; attempting an explicit non-loopback bind (e.g. `0.0.0.0`) is **actively rejected at startup** to prevent unauthorized network exposure.
+* **Token-Protected LAN**: With a configured token, the listener defaults to `0.0.0.0`, allowing authenticated LAN clients to connect.
+* **Redaction Policy**: Pairing links and tokens act as access keys. Diagnostic scripts automatically redact sensitive credentials when generating logs. See [SECURITY.md](SECURITY.md).
 
-When `token` is absent or empty and `listen_ip` is omitted, `companion-net`
-binds only to `127.0.0.1`. It refuses an explicit non-loopback `listen_ip`
-without a token. When a token is configured and `listen_ip` is omitted, the
-default remains `0.0.0.0` so authenticated LAN clients can connect.
+## Configuration Manual
 
-Permission requirements depend on the input path:
-
-- `companion-net` needs Accessibility to post synthetic events. It does not
-  need Input Monitoring because it reads no local HID device.
-- `companion` needs Input Monitoring to read raw HID reports and Accessibility
-  to post synthetic events.
-- Android and browser clients need local network access only.
-
-Pairing links contain the network token. Treat them as secrets and redact
-tokens, host names, full paths, and raw diagnostic logs before sharing an issue.
-See [SECURITY.md](SECURITY.md) for the reporting policy.
-
-## Configuration
-
-The default file is:
-
+Default configuration path:
 ```text
 $XDG_CONFIG_HOME/macos-trackpad-companion/config.toml
+# If the environment variable is unset, falls back to: ~/.config/macos-trackpad-companion/config.toml
 ```
 
-If `XDG_CONFIG_HOME` is unset, the fallback is
-`~/.config/macos-trackpad-companion/config.toml`. A missing file is valid and
-uses defaults. Unknown keys are rejected.
-
-Use the GUI or TUI for interactive editing. For scripts, use the JSON helper:
+Missing configuration files automatically use default parameters. Interactive configuration via GUI or TUI is recommended, or use the CLI helper:
 
 ```sh
+# View parsed configuration
 ./target/release/companion-config dump
-./target/release/companion-config set \
-  --path cursor.sensitivity --value 28
+# Adjust pointer sensitivity
+./target/release/companion-config set --path cursor.sensitivity --value 28
+# Run configuration and environment diagnostics
 ./target/release/companion-config doctor
-
-# Disable one transport without opening the GUI
-./target/release/companion-config set --path net.web_enabled --value false
-./target/release/companion-config set --path net.phone_enabled --value true
 ```
 
-A compact configuration example:
+Compact configuration example:
 
 ```toml
 [net]
 port = 4242
 web_enabled = true
 phone_enabled = true
-# listen_ip = "192.168.1.20" # requires a non-empty token
-# token = "replace-with-a-random-token"
+# token = "your-pairing-token" # Required for non-loopback LAN listening
 
 [cursor]
 sensitivity = 28.0
@@ -233,9 +151,9 @@ accel_ref = 70.0
 
 [scroll]
 sensitivity = 20.0
-natural = true
-horizontal = true
-momentum = true
+natural = true       # Natural scroll direction
+horizontal = true    # Two-finger horizontal scroll
+momentum = true      # Momentum inertia deceleration
 
 [macos]
 sync_system_settings = true
@@ -264,94 +182,80 @@ persistent_drag_lock = true
 release_delay_ms = 500
 ```
 
-See [docs/configuration.md](docs/configuration.md) for the complete schema,
-per-app policies, swipe backends, and all defaults.
+For complete field specifications, per-application policies, and swipe backend options, see [docs/configuration.md](docs/configuration.md).
 
-## Gesture behavior
+## Native Gestures Guide
 
-- **1 Finger**:
-  - Point & Move: Linear/accelerated cursor motion.
-  - Tap to Click / Double Click / Tap-and-Drag / Press-and-Hold Drag.
-- **2 Fingers**:
-  - Smooth Scrolling: Phased 2D scroll with natural/inverted direction, momentum inertia, and Shift-scroll compatibility remap.
-  - Pinch to Zoom & Two-Finger Rotate (AppKit/Safari compatible).
-  - Right-Edge Swipe: Swipe inward from right edge to toggle macOS Notification Center.
-  - Smart Zoom: Double-tap with two fingers to magnify.
-- **3 Fingers**:
-  - Three-Finger Drag: Left-button drag with jitter filtering and optional `persistent_drag_lock` (carry a drag across Space switches).
-  - Three-Finger Tap: Dictionary lookup and data detectors.
-- **4 Fingers**:
-  - Swipe Up: Mission Control (调度中心).
-  - Swipe Down: App Exposé (应用程序窗口).
-  - Swipe Left / Right: Switch between Fullscreen Spaces and Desktops.
-  - Radial Pinch In: Launchpad (启动台).
-  - Radial Spread Out: Show Desktop (显示桌面).
-- **Modifier Keys**:
-  - Control, Option, Command, and Shift modifiers are preserved on app-facing mouse, scroll, pinch, rotate, and drag events. System shortcuts use only the registered chord when additional modifiers would make WindowServer reject it.
+- **1-Finger Gestures**:
+  - **Pointer Movement**: Linear tracking with macOS-like acceleration curve.
+  - **Click Actions**: Tap to Click, Double Click, Tap-to-Drag, and Press-and-Hold Drag.
+- **2-Finger Gestures**:
+  - **Smooth Scrolling**: High-precision 2D phased scrolling (natural/inverted, momentum inertia decay, Shift horizontal scroll remap).
+  - **Pinch & Rotate**: Pinch to Zoom and Two-Finger Rotation (compatible with AppKit, Safari, and creative apps).
+  - **Edge Swipe**: Inward swipe from right edge to toggle macOS Notification Center (Right-Edge Swipe).
+  - **Smart Zoom**: Double-tap with two fingers to magnify or reset web content (Smart Zoom).
+- **3-Finger Gestures**:
+  - **Three-Finger Drag**: Jitter-filtered left-button drag, supporting `persistent_drag_lock` (carry a drag across fullscreen Spaces).
+  - **Three-Finger Tap**: Dictionary lookup and data detectors.
+- **4-Finger Gestures**:
+  - **Swipe Up**: Open Mission Control.
+  - **Swipe Down**: Open App Exposé.
+  - **Swipe Left / Right**: Smooth switching between fullscreen Spaces and Desktops.
+  - **Radial Pinch In (4-Finger Collapse)**: Open Launchpad.
+  - **Radial Spread Out (4-Finger Expand)**: Show Desktop.
+- **Physical Modifier Keys Passthrough**:
+  - Control, Option, Command, and Shift modifiers are merged into mouse, scroll, zoom, and rotate event streams in real time.
 
-The native macOS settings page exposes gesture enable switches, but Apple does
-not publish a pinch or rotation sensitivity preference. `gestures.pinch.gain`
-and `gestures.rotate.gain` are explicit Companion compatibility controls, not
-claimed Apple calibration values. The `chromium_os` profile is an experiment
-based on a public recognizer, not a macOS setting.
+## Technical Boundaries with Native Hardware
 
-## Native boundary
+To provide clear, transparent expectations, here is how each capability is implemented alongside its technical boundaries:
 
-Trackpad Companion is explicit about where it can match macOS and where it
-cannot:
-
-| Gesture | Implementation | Compatibility |
+| Gesture / Feature | Implementation Mechanism | Compatibility & Behavior |
 | --- | --- | --- |
-| Pointer, click, drag | Public Quartz mouse events | Broad application support |
-| Scroll | Public phased scroll plus optional inertia | App-compatible, not Apple's private stream |
-| Pinch, rotate | Reverse-engineered private CGEvent fields | Works in some apps and OS versions |
-| Spaces, Mission Control | Private Dock/System shortcut paths | Version-sensitive and synthesized |
-| Force Click pressure | Not available through public CGEvent | No pressure-level emulation |
+| **Pointer, Clicks, Drag** | Public Quartz `CGEvent` mouse events | Broad system-wide and third-party application support |
+| **Smooth Scrolling & Inertia** | Public phased scroll events with mathematical inertia | Full Safari, Chrome, document, and IDE support |
+| **Pinch-to-Zoom & Rotation** | Reverse-engineered private `CGEvent` fields | Compatible with major AppKit and Safari native apps |
+| **Spaces, Mission Control, Launchpad** | Emulated DockSwipe and shortcut routing | Synthesized for modern macOS versions |
+| **Force Touch Pressure Levels** | Public `CGEvent` cannot simulate hardware piezoelectric sensors | Does not emulate physical pressure levels |
 
-The complete research record is in
-[docs/reverse-engineering-sources.md](docs/reverse-engineering-sources.md),
-including captured fields, open-source comparisons, and the limits of the
-available evidence.
+Complete reverse-engineering documentation and protocol details are available in [docs/reverse-engineering-sources.md](docs/reverse-engineering-sources.md).
 
-## Diagnostics and development
+## Diagnostics & Development
 
 ```sh
+# Run configuration and environment doctor check
 ./target/release/companion-config doctor
+# Launch terminal interactive TUI
 ./target/release/companion-tui
-./scripts/diagnose-mac.sh
+# Collect read-only diagnostics report (app state, permissions, processes, ports)
+./scripts/diagnose-mac.sh collect
+# Probe port 4242 and network reachability
+./scripts/diagnose-mac.sh probe --port 4242
+# Run foreground live trace capture
+./scripts/diagnose-mac.sh trace --port 4242
 ```
 
-Run the test suite before submitting changes:
-
+Run the complete test suite before submitting code:
 ```sh
 cargo test --workspace
 cargo check --all-targets
 ```
 
-macOS packaging is validated in GitHub Actions on a macOS runner. Pushing a
-tag such as `v0.2.0` runs `.github/workflows/release-macos.yml` and publishes
-the generated ZIP and DMG as release assets. Signing and notarization stay
-outside the repository.
-
-## Repository map
+## Repository Map
 
 | Directory | Responsibility |
 | --- | --- |
-| `src/` | Rust daemon, network listener, gesture engine, and macOS output |
-| `crates/touchpad-proto/` | Shared ATP1 encoder and decoder |
-| `macos/TrackpadCompanionSettings/` | Native SwiftUI settings app |
-| `android/` | Android touch client and tests |
-| `static/` | Browser touch surface and gesture test page |
-| `packaging/macos/` | App bundle and DMG scripts |
-| `docs/` | Architecture, configuration, protocol, research, and plans |
-| `tools/` | Deterministic senders and protocol probes |
-
-See [docs/architecture.md](docs/architecture.md) for runtime ownership and
-[CONTRIBUTING.md](CONTRIBUTING.md) for the development checks.
+| `src/` | Core Rust daemon, network listener, gesture state machine, and macOS event output |
+| `crates/touchpad-proto/` | Shared ATP1 touch protocol encoder and decoder |
+| `macos/TrackpadCompanionSettings/` | Native macOS SwiftUI settings app and menu bar supervisor |
+| `android/` | Android native 120Hz touch client and test suites |
+| `static/` | Web touch surface with GPU-accelerated liquid glass and test page |
+| `packaging/macos/` | macOS app packaging, code signing, and DMG installer scripts |
+| `docs/` | Architecture design, wire protocols, configuration manuals, and research notes |
+| `tools/` | Protocol probes and deterministic synthetic touch senders |
 
 ## License
 
-MIT. See [LICENSE](LICENSE). Third-party research sources and asset origins
-are recorded in the relevant documents under `docs/` and `static/assets/`.
-The macOS settings app also includes [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow)
-via SwiftPM under its [MIT license](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE).
+This project is licensed under the [MIT License](LICENSE).
+
+The macOS settings app includes [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow) via SwiftPM under its [MIT License](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE). Third-party research references and asset origins are documented under `docs/` and `static/assets/`.

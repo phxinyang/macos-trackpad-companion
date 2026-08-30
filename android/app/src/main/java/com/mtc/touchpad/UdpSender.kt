@@ -60,7 +60,7 @@ class UdpSender {
         val generation = connectGeneration.incrementAndGet()
         handler.post {
             if (!isCurrent(generation)) return@post
-            listener.onState(false, "连接中…")
+            listener.onState(false, I18n.tr("Connecting…", "连接中…"))
             var nextSocket: DatagramSocket? = null
             try {
                 if (!isCurrent(generation)) return@post
@@ -83,10 +83,10 @@ class UdpSender {
                 }
                 if (!isCurrent(generation)) return@post
                 if (!probe.reachable) {
-                    error("Mac 服务不可达")
+                    error(I18n.tr("Mac service unreachable", "Mac 服务不可达"))
                 }
                 if (!probe.authenticated) {
-                    error(probe.message ?: "Token 无效")
+                    error(probe.message ?: I18n.tr("Invalid Token", "Token 无效"))
                 }
                 if (!isCurrent(generation)) return@post
                 nextSocket = DatagramSocket().apply { trafficClass = 0x10 /* IPTOS_LOWDELAY */ }
@@ -98,12 +98,12 @@ class UdpSender {
                 target = addr
                 this.portField = port
                 this.token = normalizedToken
-                listener.onState(true, "已连接 $host")
+                listener.onState(true, I18n.tr("Connected to $host", "已连接 $host"))
             } catch (e: Exception) {
                 runCatching { nextSocket?.close() }
                 if (!isCurrent(generation)) return@post
                 socket = null; target = null; this.token = null
-                listener.onState(false, "连接失败：${e.message}")
+                listener.onState(false, I18n.tr("Connection failed: ${e.message}", "连接失败：${e.message}"))
             }
         }
     }
@@ -143,10 +143,10 @@ class UdpSender {
             }
             when {
                 status == 200 -> ProbeResult(reachable = true, authenticated = true)
-                status == 401 -> ProbeResult(reachable = true, authenticated = false, message = "Token 无效")
+                status == 401 -> ProbeResult(reachable = true, authenticated = false, message = I18n.tr("Invalid Token", "Token 无效"))
                 status in setOf(404, 405) && token.isNullOrEmpty() -> ProbeResult(reachable = true, authenticated = true)
-                status in setOf(404, 405) -> ProbeResult(reachable = true, authenticated = false, message = "Mac 服务不支持 Token 握手")
-                else -> ProbeResult(reachable = true, authenticated = false, message = "Mac 服务响应异常")
+                status in setOf(404, 405) -> ProbeResult(reachable = true, authenticated = false, message = I18n.tr("Mac service does not support Token handshake", "Mac 服务不支持 Token 握手"))
+                else -> ProbeResult(reachable = true, authenticated = false, message = I18n.tr("Mac service abnormal response", "Mac 服务响应异常"))
             }
         } catch (_: Exception) {
             ProbeResult(reachable = false, authenticated = false)
@@ -173,7 +173,7 @@ class UdpSender {
             if (packet.address == addr && packet.port == port && packet.length >= UDP_PROBE_ACK.size && response.copyOfRange(0, UDP_PROBE_ACK.size).contentEquals(UDP_PROBE_ACK)) {
                 ProbeResult(reachable = true, authenticated = true)
             } else {
-                ProbeResult(reachable = true, authenticated = false, message = "Mac 服务响应异常")
+                ProbeResult(reachable = true, authenticated = false, message = I18n.tr("Mac service abnormal response", "Mac 服务响应异常"))
             }
         } catch (_: java.net.SocketTimeoutException) {
             ProbeResult(reachable = false, authenticated = false)

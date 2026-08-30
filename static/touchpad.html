@@ -571,6 +571,7 @@
       <span class="dock-divider" aria-hidden="true"></span>
       <button class="dock-btn" id="haptic-btn" data-on="true" aria-pressed="true">震动开</button>
       <button class="dock-btn" id="pad-status-btn" aria-label="查看连接状态">连接状态</button>
+      <button class="dock-btn" id="lang-btn" aria-label="Toggle language">EN / 中</button>
     </nav>
   </section>
   <section class="sheet-section" aria-labelledby="profile-heading">
@@ -721,7 +722,7 @@
   const VIRTUAL_SURFACE_WIDTH_MM = 65;
   const $ = id => document.getElementById(id);
   const dot = $("dot"), st = $("st"), bar = $("bar"), dock = $("action-dock"), floatBtn = $("float-btn"), connectionBtn = $("connection-btn");
-  const hostHint = $("host-hint"), padStatusBtn = $("pad-status-btn"), padFrame = $("pad-frame"), padLens = $("pad-lens");
+  const hostHint = $("host-hint"), padStatusBtn = $("pad-status-btn"), langBtn = $("lang-btn"), padFrame = $("pad-frame"), padLens = $("pad-lens");
   let frameRect = padFrame.getBoundingClientRect();
   window.addEventListener("resize", () => { frameRect = padFrame.getBoundingClientRect(); });
   const canvas = $("pad-canvas"), ctx = canvas.getContext("2d");
@@ -756,6 +757,379 @@
   const glassSaturation = $("glass-saturation-range"), glassSaturationLabel = $("glass-saturation-label");
   const glassBrightness = $("glass-brightness-range"), glassBrightnessLabel = $("glass-brightness-label");
   const glassHighlight = $("glass-highlight-range"), glassHighlightLabel = $("glass-highlight-label");
+
+  let currentLang = localStorage.getItem("atp_lang") || (navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en");
+  const I18N = {
+    zh: {
+      lang_btn: "中 / EN",
+      eyebrow: "Mac touchpad",
+      connecting: "连接中…",
+      connected: "已连接",
+      disconnected: "断开",
+      retry_connect: "重试连接",
+      cancel_connect: "取消连接",
+      conn_status: "连接状态",
+      click_to_cancel: "点击取消连接",
+      click_to_reconnect: "点击重新连接",
+      control_center: "控制中心",
+      fullscreen: "全屏",
+      exit_fullscreen: "退出全屏并显示控制栏",
+      deep_press: "深按",
+      deep_holding: "确认中…",
+      deep_pressed: "按下",
+      settings_title: "控制中心",
+      settings_desc: "把手机变成更接近 Mac 的触控板。设置保存在本机，不会上传触摸数据。",
+      quick_controls: "快速控制",
+      sensitivity: "灵敏度",
+      dec_sensitivity: "降低灵敏度",
+      inc_sensitivity: "提高灵敏度",
+      haptic_on: "震动开",
+      haptic_off: "震动关",
+      touch_and_press: "触控与按压",
+      use_mode: "使用模式",
+      use_mode_desc: "快速切换一组适合的灵敏度",
+      mode_precise: "精准",
+      mode_natural: "自然",
+      mode_presentation: "演示",
+      mode_custom: "自定义",
+      pointer_sensitivity: "指针灵敏度",
+      touch_points: "触点显示",
+      touch_points_desc: "显示当前手指位置、拖尾和方向高光",
+      deep_hold_duration: "深按确认时长",
+      deep_width: "深按条宽度",
+      deep_height: "深按条高度",
+      deep_pos: "深按条位置",
+      deep_pos_label: val => `底部 ${val}%`,
+      deep_x_pos: "深按条横向位置",
+      show_deep: "显示深按条",
+      show_deep_desc: "按住后发送左键按下，松开时释放",
+      edit_deep: "编辑深按条",
+      deep_editor_tip: "拖动预览修改位置，拖右下角修改宽高",
+      custom_glass: "自定义液态玻璃",
+      refraction: "折射强度",
+      glass_saturation: "玻璃饱和度",
+      glass_brightness: "玻璃亮度",
+      edge_highlight: "边缘高光",
+      background: "背景",
+      wallpaper: "壁纸",
+      wallpaper_desc: "玻璃会根据壁纸自动调整对比度",
+      wp_none: "主题背景",
+      wp_mountain: "晨光山野",
+      wp_night: "霓虹夜城",
+      wp_canyon: "荒野公路",
+      wp_anime: "二次元红幕",
+      wp_custom: "自定义图片",
+      local_image: "本地图片",
+      choose_image: "选择一张图片",
+      image_selected: "已选择本地图片",
+      image_size_err: "图片需小于 4 MB",
+      browse: "选择",
+      bg_opacity: "背景可见度",
+      bg_saturation: "背景饱和度",
+      bg_brightness: "背景亮度",
+      surface_opacity: "触控面透明度",
+      reset_bg: "恢复主题背景",
+      tools: "工具",
+      test: "测试",
+      theme: "主题",
+      command: "命令",
+      done: "完成",
+      search_actions: "搜索动作…",
+      no_matching_actions: "没有匹配的动作",
+      theme_liquid_glass: "液态玻璃",
+      theme_editors: "编辑器主题",
+      theme_classic_group: "经典与辅助",
+      theme_light_glass: "晨曦玻璃",
+      theme_dark_glass: "夜幕玻璃",
+      theme_ocean_glass: "海洋玻璃",
+      theme_sunset_glass: "日落玻璃",
+      theme_aurora_glass: "极光玻璃",
+      theme_graphite_glass: "石墨玻璃",
+      theme_custom_glass: "自定义液态玻璃",
+      theme_classic_light: "经典浅色",
+      theme_classic_dark: "经典深色",
+      theme_high_contrast: "高对比",
+      cmd_settings: "打开控制中心",
+      cmd_settings_hint: "设置",
+      cmd_connect: "重新连接 Mac",
+      cmd_connect_hint: "网络",
+      cmd_fullscreen: "进入全屏触控模式",
+      cmd_fullscreen_hint: "显示",
+      cmd_deep: "打开深按设置",
+      cmd_deep_hint: "触控",
+      cmd_haptic: "切换震动反馈",
+      cmd_haptic_on: "已开启",
+      cmd_haptic_off: "已关闭",
+      cmd_theme: "切换到晨曦玻璃",
+      cmd_theme_hint: "外观",
+    },
+    en: {
+      lang_btn: "EN / 中",
+      eyebrow: "Mac touchpad",
+      connecting: "Connecting…",
+      connected: "Connected",
+      disconnected: "Disconnected",
+      retry_connect: "Reconnect",
+      cancel_connect: "Cancel",
+      conn_status: "Status",
+      click_to_cancel: "Click to cancel",
+      click_to_reconnect: "Click to reconnect",
+      control_center: "Control Center",
+      fullscreen: "Fullscreen",
+      exit_fullscreen: "Exit fullscreen and show control bar",
+      deep_press: "Deep Press",
+      deep_holding: "Holding…",
+      deep_pressed: "Pressed",
+      settings_title: "Control Center",
+      settings_desc: "Transform your mobile device into a Mac trackpad. Settings are saved locally.",
+      quick_controls: "Quick Controls",
+      sensitivity: "Sensitivity",
+      dec_sensitivity: "Decrease sensitivity",
+      inc_sensitivity: "Increase sensitivity",
+      haptic_on: "Haptics On",
+      haptic_off: "Haptics Off",
+      touch_and_press: "Touch & Press",
+      use_mode: "Preset Profile",
+      use_mode_desc: "Quickly switch sensitivity profile",
+      mode_precise: "Precise",
+      mode_natural: "Natural",
+      mode_presentation: "Presentation",
+      mode_custom: "Custom",
+      pointer_sensitivity: "Pointer Sensitivity",
+      touch_points: "Touch Points",
+      touch_points_desc: "Show finger contacts, motion trails, and direction highlights",
+      deep_hold_duration: "Deep Press Hold Time",
+      deep_width: "Deep Press Bar Width",
+      deep_height: "Deep Press Bar Height",
+      deep_pos: "Deep Press Position",
+      deep_pos_label: val => `Bottom ${val}%`,
+      deep_x_pos: "Deep Press Horizontal Position",
+      show_deep: "Enable Deep Press Bar",
+      show_deep_desc: "Hold to send left-button press, release to lift",
+      edit_deep: "Edit Deep Press Bar",
+      deep_editor_tip: "Drag preview to reposition, drag corner handle to resize",
+      custom_glass: "Custom Liquid Glass",
+      refraction: "Refraction Index",
+      glass_saturation: "Glass Saturation",
+      glass_brightness: "Glass Brightness",
+      edge_highlight: "Edge Highlight",
+      background: "Backdrop",
+      wallpaper: "Wallpaper",
+      wallpaper_desc: "Glass dynamically adapts contrast to the backdrop",
+      wp_none: "Theme Default",
+      wp_mountain: "Morning Peak",
+      wp_night: "Neon Night",
+      wp_canyon: "Canyon Road",
+      wp_anime: "Crimson Silk",
+      wp_custom: "Custom Image",
+      local_image: "Local Image",
+      choose_image: "Select an image file",
+      image_selected: "Local image selected",
+      image_size_err: "Image must be under 4 MB",
+      browse: "Browse",
+      bg_opacity: "Backdrop Opacity",
+      bg_saturation: "Backdrop Saturation",
+      bg_brightness: "Backdrop Brightness",
+      surface_opacity: "Surface Opacity",
+      reset_bg: "Reset to Theme Default",
+      tools: "Tools",
+      test: "Test Gestures",
+      theme: "Themes",
+      command: "Commands",
+      done: "Done",
+      search_actions: "Search actions…",
+      no_matching_actions: "No matching actions",
+      theme_liquid_glass: "Liquid Glass",
+      theme_editors: "Editor Themes",
+      theme_classic_group: "Classic & Accessibility",
+      theme_light_glass: "Morning Glass",
+      theme_dark_glass: "Midnight Glass",
+      theme_ocean_glass: "Ocean Glass",
+      theme_sunset_glass: "Sunset Glass",
+      theme_aurora_glass: "Aurora Glass",
+      theme_graphite_glass: "Graphite Glass",
+      theme_custom_glass: "Custom Glass",
+      theme_classic_light: "Classic Light",
+      theme_classic_dark: "Classic Dark",
+      theme_high_contrast: "High Contrast",
+      cmd_settings: "Open Control Center",
+      cmd_settings_hint: "Settings",
+      cmd_connect: "Reconnect to Mac",
+      cmd_connect_hint: "Network",
+      cmd_fullscreen: "Enter Fullscreen Mode",
+      cmd_fullscreen_hint: "Display",
+      cmd_deep: "Open Deep Press Settings",
+      cmd_deep_hint: "Touch",
+      cmd_haptic: "Toggle Haptic Feedback",
+      cmd_haptic_on: "Enabled",
+      cmd_haptic_off: "Disabled",
+      cmd_theme: "Switch to Morning Glass",
+      cmd_theme_hint: "Appearance",
+    }
+  };
+
+  const t = (key, arg) => {
+    const dict = I18N[currentLang] || I18N.en;
+    const val = dict[key] || I18N.en[key] || key;
+    return typeof val === "function" ? val(arg) : val;
+  };
+
+  function applyLanguage(lang) {
+    currentLang = lang === "zh" ? "zh" : "en";
+    localStorage.setItem("atp_lang", currentLang);
+    document.documentElement.lang = currentLang === "zh" ? "zh-CN" : "en";
+    if (langBtn) langBtn.textContent = t("lang_btn");
+
+    const settingsBtnLabel = settingsBtn?.querySelector(".btn-label");
+    if (settingsBtnLabel) settingsBtnLabel.textContent = t("control_center");
+    settingsBtn?.setAttribute("aria-label", t("control_center"));
+    const fsBtnLabel = $("fs-btn")?.querySelector(".btn-label");
+    if (fsBtnLabel) fsBtnLabel.textContent = t("fullscreen");
+    $("fs-btn")?.setAttribute("aria-label", t("fullscreen"));
+    floatBtn?.setAttribute("aria-label", t("exit_fullscreen"));
+    if (floatBtn) floatBtn.title = t("exit_fullscreen");
+
+    const sheetHeading = settingsSheet?.querySelector("h2");
+    if (sheetHeading) sheetHeading.textContent = t("settings_title");
+    const sheetDesc = settingsSheet?.querySelector("p");
+    if (sheetDesc) sheetDesc.textContent = t("settings_desc");
+    const qcHeading = $("quick-controls-heading");
+    if (qcHeading) qcHeading.textContent = t("quick_controls");
+    const dockCaption = dock?.querySelector(".dock-caption");
+    if (dockCaption) dockCaption.textContent = t("sensitivity");
+    $("smaller")?.setAttribute("aria-label", t("dec_sensitivity"));
+    $("bigger")?.setAttribute("aria-label", t("inc_sensitivity"));
+
+    const profileHeading = $("profile-heading");
+    if (profileHeading) profileHeading.textContent = t("touch_and_press");
+    const profileLabel = profileSelect?.closest(".setting-row")?.querySelector("label");
+    if (profileLabel) profileLabel.textContent = t("use_mode");
+    const profileSmall = profileSelect?.closest(".setting-row")?.querySelector("small");
+    if (profileSmall) profileSmall.textContent = t("use_mode_desc");
+    profileSelect?.setAttribute("aria-label", t("use_mode"));
+    const optPrecise = profileSelect?.querySelector("option[value='precise']");
+    if (optPrecise) optPrecise.textContent = t("mode_precise");
+    const optNatural = profileSelect?.querySelector("option[value='natural']");
+    if (optNatural) optNatural.textContent = t("mode_natural");
+    const optPres = profileSelect?.querySelector("option[value='presentation']");
+    if (optPres) optPres.textContent = t("mode_presentation");
+    const optCustom = profileSelect?.querySelector("option[value='custom']");
+    if (optCustom) optCustom.textContent = t("mode_custom");
+
+    const sensLabel = sensitivityRange?.closest(".setting-row")?.querySelector("label");
+    if (sensLabel) sensLabel.textContent = t("pointer_sensitivity");
+    const tpLabel = touchPointsInput?.closest(".setting-row")?.querySelector("label");
+    if (tpLabel) tpLabel.textContent = t("touch_points");
+    const tpSmall = touchPointsInput?.closest(".setting-row")?.querySelector("small");
+    if (tpSmall) tpSmall.textContent = t("touch_points_desc");
+
+    const dhLabel = deepHoldRange?.closest(".setting-row")?.querySelector("label");
+    if (dhLabel) dhLabel.textContent = t("deep_hold_duration");
+    const dwLabel = deepWidthRange?.closest(".setting-row")?.querySelector("label");
+    if (dwLabel) dwLabel.textContent = t("deep_width");
+    const dhgLabel = deepHeightRange?.closest(".setting-row")?.querySelector("label");
+    if (dhgLabel) dhgLabel.textContent = t("deep_height");
+    const dpLabel = deepPositionRange?.closest(".setting-row")?.querySelector("label");
+    if (dpLabel) dpLabel.textContent = t("deep_pos");
+    const dxLabel = deepXRange?.closest(".setting-row")?.querySelector("label");
+    if (dxLabel) dxLabel.textContent = t("deep_x_pos");
+    const deLabel = deepEnabledInput?.closest(".setting-row")?.querySelector("label");
+    if (deLabel) deLabel.textContent = t("show_deep");
+    const deSmall = deepEnabledInput?.closest(".setting-row")?.querySelector("small");
+    if (deSmall) deSmall.textContent = t("show_deep_desc");
+    if (deepEditorToggle) deepEditorToggle.textContent = t("edit_deep");
+    const deTip = deepEditor?.querySelector("small");
+    if (deTip) deTip.textContent = t("deep_editor_tip");
+
+    const cgHeading = $("custom-glass-heading");
+    if (cgHeading) cgHeading.textContent = t("custom_glass");
+    const grLabel = glassRefraction?.closest(".setting-row")?.querySelector("label");
+    if (grLabel) grLabel.textContent = t("refraction");
+    const gsLabel = glassSaturation?.closest(".setting-row")?.querySelector("label");
+    if (gsLabel) gsLabel.textContent = t("glass_saturation");
+    const gbLabel = glassBrightness?.closest(".setting-row")?.querySelector("label");
+    if (gbLabel) gbLabel.textContent = t("glass_brightness");
+    const ghLabel = glassHighlight?.closest(".setting-row")?.querySelector("label");
+    if (ghLabel) ghLabel.textContent = t("edge_highlight");
+
+    const bgHeading = $("background-heading");
+    if (bgHeading) bgHeading.textContent = t("background");
+    const bgSelLabel = backgroundSelect?.closest(".setting-row")?.querySelector("label");
+    if (bgSelLabel) bgSelLabel.textContent = t("wallpaper");
+    const bgSelSmall = backgroundSelect?.closest(".setting-row")?.querySelector("small");
+    if (bgSelSmall) bgSelSmall.textContent = t("wallpaper_desc");
+    backgroundSelect?.setAttribute("aria-label", t("wallpaper"));
+    const optNone = backgroundSelect?.querySelector("option[value='none']");
+    if (optNone) optNone.textContent = t("wp_none");
+    const optMountain = backgroundSelect?.querySelector("option[value='mountain']");
+    if (optMountain) optMountain.textContent = t("wp_mountain");
+    const optNight = backgroundSelect?.querySelector("option[value='night']");
+    if (optNight) optNight.textContent = t("wp_night");
+    const optCanyon = backgroundSelect?.querySelector("option[value='canyon']");
+    if (optCanyon) optCanyon.textContent = t("wp_canyon");
+    const optAnime = backgroundSelect?.querySelector("option[value='anime']");
+    if (optAnime) optAnime.textContent = t("wp_anime");
+    const optCustomWp = backgroundSelect?.querySelector("option[value='custom']");
+    if (optCustomWp) optCustomWp.textContent = t("wp_custom");
+
+    const bgFileRowLabel = backgroundFile?.closest(".setting-row")?.querySelector("label");
+    if (bgFileRowLabel) bgFileRowLabel.textContent = t("local_image");
+    if (backgroundFileBtn) backgroundFileBtn.textContent = t("browse");
+    if (backgroundFileLabel) backgroundFileLabel.textContent = customBackground ? t("image_selected") : t("choose_image");
+
+    const boLabel = backgroundOpacityRange?.closest(".setting-row")?.querySelector("label");
+    if (boLabel) boLabel.textContent = t("bg_opacity");
+    const bsLabel = backgroundSaturationRange?.closest(".setting-row")?.querySelector("label");
+    if (bsLabel) bsLabel.textContent = t("bg_saturation");
+    const bbLabel = backgroundBrightnessRange?.closest(".setting-row")?.querySelector("label");
+    if (bbLabel) bbLabel.textContent = t("bg_brightness");
+    const soLabel = surfaceOpacityRange?.closest(".setting-row")?.querySelector("label");
+    if (soLabel) soLabel.textContent = t("surface_opacity");
+    if (backgroundReset) backgroundReset.textContent = t("reset_bg");
+
+    const toolsHeading = $("tools-heading");
+    if (toolsHeading) toolsHeading.textContent = t("tools");
+    const testBtn = settingsSheet?.querySelector("a.diagnostic .btn-label");
+    if (testBtn) testBtn.textContent = t("test");
+    const themeBtnLabel = themeBtn?.querySelector(".btn-label");
+    if (themeBtnLabel) themeBtnLabel.textContent = t("theme");
+    const cmdBtnLabel = commandBtn?.querySelector(".btn-label");
+    if (cmdBtnLabel) cmdBtnLabel.textContent = t("command");
+    if (settingsClose) settingsClose.textContent = t("done");
+
+    if (commandSearch) {
+      commandSearch.placeholder = t("search_actions");
+      commandSearch.setAttribute("aria-label", t("search_actions"));
+    }
+    commandPalette?.setAttribute("aria-label", t("command"));
+
+    const themeLabels = themeMenu?.querySelectorAll(".theme-group-label");
+    if (themeLabels && themeLabels[0]) themeLabels[0].textContent = t("theme_liquid_glass");
+    if (themeLabels && themeLabels[1]) themeLabels[1].textContent = t("theme_editors");
+    if (themeLabels && themeLabels[2]) themeLabels[2].textContent = t("theme_classic_group");
+
+    const setItemText = (choice, key) => {
+      const btn = themeMenu?.querySelector(`[data-theme-choice='${choice}']`);
+      if (btn) btn.textContent = t(key);
+    };
+    setItemText("light-glass", "theme_light_glass");
+    setItemText("dark-glass", "theme_dark_glass");
+    setItemText("ocean-glass", "theme_ocean_glass");
+    setItemText("sunset-glass", "theme_sunset_glass");
+    setItemText("aurora-glass", "theme_aurora_glass");
+    setItemText("graphite-glass", "theme_graphite_glass");
+    setItemText("custom-glass", "theme_custom_glass");
+    setItemText("classic-light", "theme_classic_light");
+    setItemText("classic-dark", "theme_classic_dark");
+    setItemText("high-contrast", "theme_high_contrast");
+
+    if (typeof updateHapticBtn === "function") updateHapticBtn();
+    if (deepPositionLabel) deepPositionLabel.textContent = t("deep_pos_label", deepBottom);
+    if (typeof updateDeepPressUI === "function") updateDeepPressUI();
+    if (typeof lastConnectionState !== "undefined" && typeof setStatus === "function") setStatus(lastConnectionState);
+    if (commandPalette?.dataset.open === "true" && typeof renderCommands === "function") renderCommands();
+  }
+
   const THEME_KEYS = new Set([
     "light-glass", "dark-glass", "ocean-glass", "sunset-glass", "aurora-glass", "graphite-glass", "custom-glass",
     "tokyo-night", "nord", "dracula",
@@ -1238,19 +1612,21 @@
     else settingsSheet.style.setProperty("--sheet-drag", "0px");
   }, { passive: true }));
 
-  const commands = [
-    { id: "settings", label: "打开控制中心", hint: "设置", run: () => setSettingsOpen(true) },
-    { id: "connect", label: "重新连接 Mac", hint: "网络", run: () => connect() },
-    { id: "fullscreen", label: "进入全屏触控模式", hint: "显示", run: () => toggleFullscreen(true) },
-    { id: "deep", label: "打开深按设置", hint: "触控", run: () => { setSettingsOpen(true); requestAnimationFrame(() => deepHoldRange.focus()); } },
-    { id: "haptic", label: "切换震动反馈", hint: () => hapticEnabled ? "已开启" : "已关闭", run: () => hapticBtn.click() },
-    { id: "theme", label: "切换到晨曦玻璃", hint: "外观", run: () => applyTheme("light-glass") },
-  ];
+  function getCommands() {
+    return [
+      { id: "settings", label: t("cmd_settings"), hint: t("cmd_settings_hint"), run: () => setSettingsOpen(true) },
+      { id: "connect", label: t("cmd_connect"), hint: t("cmd_connect_hint"), run: () => connect() },
+      { id: "fullscreen", label: t("cmd_fullscreen"), hint: t("cmd_fullscreen_hint"), run: () => toggleFullscreen(true) },
+      { id: "deep", label: t("cmd_deep"), hint: t("cmd_deep_hint"), run: () => { setSettingsOpen(true); requestAnimationFrame(() => deepHoldRange.focus()); } },
+      { id: "haptic", label: t("cmd_haptic"), hint: () => hapticEnabled ? t("cmd_haptic_on") : t("cmd_haptic_off"), run: () => hapticBtn.click() },
+      { id: "theme", label: t("cmd_theme"), hint: t("cmd_theme_hint"), run: () => applyTheme("light-glass") },
+    ];
+  }
   let commandIndex = 0;
   let commandPreviouslyFocused = null;
   function filteredCommands() {
     const query = commandSearch.value.trim().toLocaleLowerCase();
-    return commands.filter(command => {
+    return getCommands().filter(command => {
       const hint = typeof command.hint === "function" ? command.hint() : command.hint;
       return !query || `${command.label} ${hint}`.toLocaleLowerCase().includes(query);
     });
@@ -1583,14 +1959,16 @@
 
   // ---- WebSocket ------------------------------------------------------
   let ws = null, wsTimer = 0, backoff = 1000, connectionGeneration = 0;
+  let lastConnectionState = "wait";
   function setStatus(state) {
+    lastConnectionState = state;
     dot.className = state === "on" ? "on" : state === "off" ? "off" : "";
-    st.textContent = state === "on" ? "已连接" : state === "off" ? "断开" : "连接中…";
-    padStatusBtn.textContent = state === "on" ? "已连接" : state === "off" ? "重试连接" : "连接中";
-    padStatusBtn.setAttribute("aria-label", state === "off" ? "重试连接" : "连接状态");
+    st.textContent = state === "on" ? t("connected") : state === "off" ? t("disconnected") : t("connecting");
+    padStatusBtn.textContent = state === "on" ? t("connected") : state === "off" ? t("retry_connect") : t("connecting");
+    padStatusBtn.setAttribute("aria-label", state === "off" ? t("retry_connect") : t("conn_status"));
     padStatusBtn.dataset.state = state;
-    connectionBtn.setAttribute("aria-label", state === "wait" ? "取消连接" : state === "off" ? "重新连接 Mac" : "连接状态");
-    connectionBtn.title = state === "wait" ? "点击取消连接" : state === "off" ? "点击重新连接" : "连接状态";
+    connectionBtn.setAttribute("aria-label", state === "wait" ? t("cancel_connect") : state === "off" ? t("click_to_reconnect") : t("conn_status"));
+    connectionBtn.title = state === "wait" ? t("click_to_cancel") : state === "off" ? t("click_to_reconnect") : t("conn_status");
     connectionBtn.dataset.state = state;
     setChromeCollapsed(state === "on");
   }
@@ -1653,6 +2031,13 @@
     setStatus("off");
   }
   function sendRaw(data) { if (ws && ws.readyState === 1) { try { ws.send(data); } catch (_) {} } }
+
+  applyLanguage(currentLang);
+  if (langBtn) {
+    langBtn.onclick = () => {
+      applyLanguage(currentLang === "zh" ? "en" : "zh");
+    };
+  }
 
   connect();
   hostHint.textContent = location.host;
