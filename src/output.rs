@@ -363,7 +363,7 @@ const SHK_SPACE_RIGHT: u32 = 81;
 /// the `Notification` swipe backend — `Synthetic` defers commit
 /// decisions to the Dock itself based on origin offset and lift
 /// velocity, like a real trackpad.
-const SWIPE_VERTICAL_COMMIT_PROGRESS: f64 = 0.2;
+const SWIPE_VERTICAL_COMMIT_PROGRESS: f64 = 0.12;
 
 /// Soft cap on the End-event velocity (mm/s). The Dock interprets
 /// large lift velocities as a deliberate flick and commits the

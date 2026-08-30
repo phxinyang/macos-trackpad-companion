@@ -363,6 +363,10 @@ struct MultiBaseline {
     /// immune to finger-count drop/rejoin jumps.
     cumulative_dx: f64,
     cumulative_dy: f64,
+    /// Peak signed displacement magnitude reached during the gesture, preserving
+    /// intended swipe distance across asynchronous multi-finger lift decay.
+    peak_dx: f64,
+    peak_dy: f64,
     /// Locked swipe axis. None until cumulative centroid motion
     /// crosses [`SWIPE_AXIS_LOCK_MM`]; after that, the dominant
     /// component (whichever of horizontal/vertical is larger at the
@@ -1873,8 +1877,24 @@ impl<O: Output> State<O> {
                     && let Some(axis) = b.axis
                 {
                     let cumulative_mm = match axis {
-                        SwipeAxis::Horizontal => b.cumulative_dx,
-                        SwipeAxis::Vertical => b.cumulative_dy,
+                        SwipeAxis::Horizontal => {
+                            if b.cumulative_dx.signum() == b.peak_dx.signum()
+                                && b.peak_dx.abs() > b.cumulative_dx.abs()
+                            {
+                                b.peak_dx
+                            } else {
+                                b.cumulative_dx
+                            }
+                        }
+                        SwipeAxis::Vertical => {
+                            if b.cumulative_dy.signum() == b.peak_dy.signum()
+                                && b.peak_dy.abs() > b.cumulative_dy.abs()
+                            {
+                                b.peak_dy
+                            } else {
+                                b.cumulative_dy
+                            }
+                        }
                     };
                     let progress = (cumulative_mm / SWIPE_PROGRESS_REF_MM).clamp(-1.0, 1.0);
                     let velocity = match axis {
@@ -2069,6 +2089,8 @@ impl<O: Output> State<O> {
                     finger_count: active.len(),
                     cumulative_dx: 0.0,
                     cumulative_dy: 0.0,
+                    peak_dx: 0.0,
+                    peak_dy: 0.0,
                     axis: None,
                     began_posted: false,
                     last_centroid: (cx, cy),
@@ -3100,6 +3122,12 @@ impl<O: Output> State<O> {
         let delta_y = cy - base.last_centroid.1;
         base.cumulative_dx += delta_x;
         base.cumulative_dy += delta_y;
+        if base.cumulative_dx.abs() > base.peak_dx.abs() {
+            base.peak_dx = base.cumulative_dx;
+        }
+        if base.cumulative_dy.abs() > base.peak_dy.abs() {
+            base.peak_dy = base.cumulative_dy;
+        }
 
         let dx = base.cumulative_dx;
         let dy = base.cumulative_dy;
