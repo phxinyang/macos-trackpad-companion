@@ -259,20 +259,25 @@ per-app policies, swipe backends, and all defaults.
 
 ## Gesture behavior
 
-- One finger moves the pointer. Tap-to-click, double-click, tap-drag, and the
-  optional press-and-hold drag use public mouse events.
-- Two-finger translation locks to scrolling after the movement is clear. Pinch
-  and rotation use separate private gesture streams and keep their lifecycle
-  until the touch session ends.
-- Three-finger drag holds a left-button drag after the jitter guard. With
-  `persistent_drag_lock = true`, lift all fingers, swipe with four fingers to
-  change Space, lift again, then land three fingers to continue dragging.
-- Three- and four-finger swipes can route to Spaces, Mission Control, App
-  Expose, or the configured compatibility backend. macOS 26 and later may use
-  different private paths, so the result depends on WindowServer version.
-- Control, Option, Command, and Shift modifiers are preserved on app-facing
-  mouse, scroll, pinch, rotate, and drag events. System shortcuts use only the
-  registered chord when additional modifiers would make WindowServer reject it.
+- **1 Finger**:
+  - Point & Move: Linear/accelerated cursor motion.
+  - Tap to Click / Double Click / Tap-and-Drag / Press-and-Hold Drag.
+- **2 Fingers**:
+  - Smooth Scrolling: Phased 2D scroll with natural/inverted direction, momentum inertia, and Shift-scroll compatibility remap.
+  - Pinch to Zoom & Two-Finger Rotate (AppKit/Safari compatible).
+  - Right-Edge Swipe: Swipe inward from right edge to toggle macOS Notification Center.
+  - Smart Zoom: Double-tap with two fingers to magnify.
+- **3 Fingers**:
+  - Three-Finger Drag: Left-button drag with jitter filtering and optional `persistent_drag_lock` (carry a drag across Space switches).
+  - Three-Finger Tap: Dictionary lookup and data detectors.
+- **4 Fingers**:
+  - Swipe Up: Mission Control (调度中心).
+  - Swipe Down: App Exposé (应用程序窗口).
+  - Swipe Left / Right: Switch between Fullscreen Spaces and Desktops.
+  - Radial Pinch In: Launchpad (启动台).
+  - Radial Spread Out: Show Desktop (显示桌面).
+- **Modifier Keys**:
+  - Control, Option, Command, and Shift modifiers are preserved on app-facing mouse, scroll, pinch, rotate, and drag events. System shortcuts use only the registered chord when additional modifiers would make WindowServer reject it.
 
 The native macOS settings page exposes gesture enable switches, but Apple does
 not publish a pinch or rotation sensitivity preference. `gestures.pinch.gain`
