@@ -696,6 +696,9 @@ pub struct State<O: Output> {
     /// Reset on transitions out of `OneFinger`.
     cursor_carry_x_px: f64,
     cursor_carry_y_px: f64,
+    cursor_sub_deadzone_dx: f64,
+    cursor_sub_deadzone_dy: f64,
+    cursor_sub_deadzone_dt: Duration,
     /// Timestamp of the previous `on_frame_at` call. Used to derive
     /// per-frame `dt`, which is stamped onto `pending_motion` so the
     /// curve sees the actual sample interval (matters when chip
@@ -787,6 +790,9 @@ impl<O: Output> State<O> {
             cursor_accel,
             cursor_carry_x_px: 0.0,
             cursor_carry_y_px: 0.0,
+            cursor_sub_deadzone_dx: 0.0,
+            cursor_sub_deadzone_dy: 0.0,
+            cursor_sub_deadzone_dt: Duration::ZERO,
             prev_frame_at: None,
             pending_two_finger_tap: None,
             pending_three_finger_tap: None,
@@ -1049,10 +1055,17 @@ impl<O: Output> State<O> {
         self.two_baseline = None;
         self.multi_baseline = None;
         self.drag_baseline = None;
-        self.cursor_carry_x_px = 0.0;
-        self.cursor_carry_y_px = 0.0;
+        self.reset_cursor_residuals();
         self.prev_frame_at = Some(now);
         self.born_during_coast = false;
+    }
+
+    fn reset_cursor_residuals(&mut self) {
+        self.cursor_carry_x_px = 0.0;
+        self.cursor_carry_y_px = 0.0;
+        self.cursor_sub_deadzone_dx = 0.0;
+        self.cursor_sub_deadzone_dy = 0.0;
+        self.cursor_sub_deadzone_dt = Duration::ZERO;
     }
 
     /// Advance time-based gesture state. Called from the transport
@@ -1119,8 +1132,7 @@ impl<O: Output> State<O> {
         self.multi_baseline = None;
         self.drag_baseline = None;
         self.pending_motion = None;
-        self.cursor_carry_x_px = 0.0;
-        self.cursor_carry_y_px = 0.0;
+        self.reset_cursor_residuals();
         self.born_during_coast = false;
     }
 
@@ -1329,13 +1341,7 @@ impl<O: Output> State<O> {
                 // transition to TwoFinger* it's stale single-finger
                 // motion that's no longer meaningful.
                 let dropped = self.pending_motion.take();
-                // Reset the sub-pixel carry so a fresh OneFinger
-                // session can't inherit a residual pixel from the
-                // previous one — without this, a long slow movement
-                // followed by a quick second touch could see a
-                // visible "jump-on-arrival" worth up to one pixel.
-                self.cursor_carry_x_px = 0.0;
-                self.cursor_carry_y_px = 0.0;
+                self.reset_cursor_residuals();
                 // A pending two-finger tap that doesn't get consumed by
                 // an Idle transition (e.g. the residual finger gets
                 // joined by a third — back to a 2F gesture) must be
@@ -1963,8 +1969,7 @@ impl<O: Output> State<O> {
         // Sub-pixel carries belong to whichever mode streams cursor
         // motion (`OneFinger` / `ThreeFingerDrag`); a kind switch means
         // a fresh stream either way.
-        self.cursor_carry_x_px = 0.0;
-        self.cursor_carry_y_px = 0.0;
+        self.reset_cursor_residuals();
         // `born_during_coast` is a session-level flag. Clear it once
         // the user has fully lifted; surviving gesture sub-transitions
         // (e.g. OneFinger → TwoFingerUnclassified during a roll-on) is
@@ -2266,8 +2271,7 @@ impl<O: Output> State<O> {
             base.regrip_started_at = Some(now);
             base.regrip_deadline = regrip_deadline;
             self.pending_motion = None;
-            self.cursor_carry_x_px = 0.0;
-            self.cursor_carry_y_px = 0.0;
+            self.reset_cursor_residuals();
             self.drag_baseline = Some(base);
             return;
         }
@@ -2338,13 +2342,13 @@ impl<O: Output> State<O> {
 
         let dx = cx - base.last_centroid.0;
         let dy = cy - base.last_centroid.1;
-        base.last_centroid = (cx, cy);
-        self.drag_baseline = Some(base);
 
         // Dragging is already committed, so there is no tap/lift artifact
         // to protect against. Emit this frame immediately; deferring it
         // would add latency and would drop the final useful delta on lift.
         if dx.abs() > MOTION_DEAD_ZONE_MM || dy.abs() > MOTION_DEAD_ZONE_MM {
+            base.last_centroid = (cx, cy);
+            self.drag_baseline = Some(base);
             let (dx_px, dy_px) = self.cursor_pixels_for(dx, dy, frame_dt);
             if dx_px != 0 || dy_px != 0 {
                 log::debug!("3f drag: emit d=({dx:+.3},{dy:+.3})mm → ({dx_px:+},{dy_px:+})px");
@@ -2449,14 +2453,17 @@ impl<O: Output> State<O> {
         // the centroid-shift jump that capacitive trackpads commonly
         // report on the last with-finger frame.
         if let Some((bdx, bdy, bdt)) = self.pending_motion.take() {
-            if bdx.abs() > MOTION_DEAD_ZONE_MM || bdy.abs() > MOTION_DEAD_ZONE_MM {
-                let (dx_px, dy_px) = self.cursor_pixels_for(bdx, bdy, bdt);
+            let eff_dx = self.cursor_sub_deadzone_dx + bdx;
+            let eff_dy = self.cursor_sub_deadzone_dy + bdy;
+            let eff_dt = self.cursor_sub_deadzone_dt + bdt;
+            if eff_dx.abs() > MOTION_DEAD_ZONE_MM || eff_dy.abs() > MOTION_DEAD_ZONE_MM {
+                let (dx_px, dy_px) = self.cursor_pixels_for(eff_dx, eff_dy, eff_dt);
                 if dx_px != 0 || dy_px != 0 {
                     log::debug!(
                         "cursor: emit deferred d=({:+.3},{:+.3})mm → ({:+},{:+})px \
                          (cur frame at=({:.2},{:.2})mm)",
-                        bdx,
-                        bdy,
+                        eff_dx,
+                        eff_dy,
                         dx_px,
                         dy_px,
                         c.x,
@@ -2464,6 +2471,13 @@ impl<O: Output> State<O> {
                     );
                     self.out.move_cursor_by(dx_px, dy_px);
                 }
+                self.cursor_sub_deadzone_dx = 0.0;
+                self.cursor_sub_deadzone_dy = 0.0;
+                self.cursor_sub_deadzone_dt = Duration::ZERO;
+            } else {
+                self.cursor_sub_deadzone_dx = eff_dx;
+                self.cursor_sub_deadzone_dy = eff_dy;
+                self.cursor_sub_deadzone_dt = eff_dt;
             }
         }
         self.pending_motion = Some((dx, dy, frame_dt));
@@ -5200,6 +5214,43 @@ mod tests {
             !changed_emits.is_empty(),
             "slow drift below per-frame dead zone must still emit scroll \
              events as cumulative motion (~0.2 mm here) crosses it ({log:?})",
+        );
+    }
+
+    /// Single-finger slow steady cursor drift below `MOTION_DEAD_ZONE_MM`
+    /// (0.02 mm/frame, i.e. ~1.2 mm/s at 60 Hz or 2.4 mm/s at 120 Hz)
+    /// must still emit cursor motion events as cumulative sub-deadzone
+    /// deltas cross the threshold.
+    #[test]
+    fn slow_cursor_drift_below_dead_zone_still_emits() {
+        let r = Recorder::default();
+        let mut s = State::new(&r, CursorAccel::default());
+        let t0 = Timestamp::now();
+        let frame_one_mm = |x: f64, y: f64| Frame {
+            contacts: vec![Contact {
+                id: 1,
+                x,
+                y,
+                tip: true,
+                confidence: true,
+            }],
+            scan_time_100us: 0,
+            button: false,
+        };
+
+        // Initial contact frame
+        s.on_frame_at(frame_one_mm(20.0, 20.0), t0);
+        // Slow steady single-finger drift: 0.02 mm per frame over 20 frames (total 0.40 mm)
+        for i in 1..=20u64 {
+            let x = 20.0 + 0.02 * i as f64;
+            s.on_frame_at(frame_one_mm(x, 20.0), at(t0, 16 * i));
+        }
+
+        let log = r.pop();
+        let move_emits: Vec<&String> = log.iter().filter(|l| l.starts_with("move ")).collect();
+        assert!(
+            !move_emits.is_empty(),
+            "slow single-finger drift below per-frame dead zone must emit cursor moves ({log:?})",
         );
     }
 
