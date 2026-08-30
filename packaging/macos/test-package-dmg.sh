@@ -43,9 +43,17 @@ if contains 'set current view of dmgWindow to icon view'; then
   echo "stale Finder window reference is still used" >&2
   exit 1
 fi
-if contains '.hidden'; then
-  echo "helper .hidden manifest must not ship in the DMG" >&2
+if contains 'printf %s\\n ".hidden"' || contains "printf '%s\\n' \".hidden\""; then
+  echo "helper .hidden manifest must not be created in the DMG staging tree" >&2
   exit 1
 fi
+contains 'rm -f "$STAGE/.hidden"' || {
+  echo "DMG staging must remove a legacy .hidden manifest" >&2
+  exit 1
+}
+contains 'rm -f "$MOUNT/.hidden"' || {
+  echo "mounted DMG must remove a legacy .hidden manifest" >&2
+  exit 1
+}
 
 echo "DMG Finder layout regression guard passed"
