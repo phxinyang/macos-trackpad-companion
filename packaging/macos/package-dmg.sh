@@ -108,7 +108,7 @@ tell application "Finder"
           if not (exists container window of disk "${MOUNT_NAME}") then error "container window not ready"
           set dmgWindow to container window of disk "${MOUNT_NAME}"
           -- Keep the explicit Finder object form here. Setting properties
-          -- implicitly inside `tell dmgWindow` is rejected by some Finder
+          -- implicitly inside tell dmgWindow is rejected by some Finder
           -- builds with error -10006 even when the window is valid.
           set current view of dmgWindow to icon view
           set toolbar visible of dmgWindow to false
