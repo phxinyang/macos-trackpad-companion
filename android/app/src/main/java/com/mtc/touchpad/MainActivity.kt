@@ -33,6 +33,9 @@ import com.example.liquidglass.GlassAccessibilityMode
 import com.example.liquidglass.BlurMethod
 import com.example.liquidglass.GlassMaterial
 import com.example.liquidglass.LiquidGlassView
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import java.io.InputStream
 import kotlin.math.max
 
@@ -1764,6 +1767,54 @@ class MainActivity : Activity() {
         )
     }
 
+    private fun startQrScanner(dialog: android.app.Dialog) {
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .enableAutoZoom()
+            .build()
+        runCatching {
+            GmsBarcodeScanning.getClient(this, options)
+                .startScan()
+                .addOnSuccessListener { barcode ->
+                    val target = PairingUri.parse(barcode.rawValue)
+                    if (target == null) {
+                        Toast.makeText(this, "这不是有效的 Trackpad Companion 配对二维码。", Toast.LENGTH_LONG).show()
+                        return@addOnSuccessListener
+                    }
+                    if (!applyPairingTarget(target)) return@addOnSuccessListener
+                    dialog.dismiss()
+                    connectToMac(
+                        target.host,
+                        target.port.toString(),
+                        target.token.orEmpty(),
+                        target.webEnabled,
+                    )
+                }
+                .addOnCanceledListener {
+                    Toast.makeText(this, "已取消扫码。", Toast.LENGTH_SHORT).show()
+                }
+                .addOnFailureListener { error ->
+                    Toast.makeText(this, "扫码不可用：${error.localizedMessage ?: "请改用 IP 连接"}", Toast.LENGTH_LONG).show()
+                }
+        }.onFailure {
+            Toast.makeText(this, "扫码组件未就绪，请改用 IP 连接。", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun applyPairingTarget(target: PairingTarget): Boolean {
+        if (!target.phoneEnabled) {
+            Toast.makeText(this, "该 Mac 未开放手机连接。", Toast.LENGTH_LONG).show()
+            return false
+        }
+        prefs.edit()
+            .putString(KEY_HOST, target.host)
+            .putString(KEY_PORT, target.port.toString())
+            .putString(KEY_TOKEN, target.token.orEmpty())
+            .putBoolean(KEY_WEB_ENABLED, target.webEnabled)
+            .apply()
+        return true
+    }
+
     private fun showConnectionDialog() {
         val palette = themePalette()
         val dialog = android.app.Dialog(this).apply {
@@ -1794,6 +1845,18 @@ class MainActivity : Activity() {
         container.addView(title)
         container.addView(subtitle)
 
+        container.addView(actionSheetButton("扫描二维码", true) {
+            startQrScanner(dialog)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)).apply {
+            bottomMargin = dp(14)
+        })
+        container.addView(TextView(this).apply {
+            text = "推荐：扫描 Mac 设置页里的二维码，自动带入地址、端口和 Token。"
+            setTextColor(palette.secondary)
+            textSize = 12f
+            setPadding(0, 0, 0, dp(10))
+        })
+
         val nearby = discovery.snapshot()
         if (nearby.isNotEmpty()) {
             container.addView(TextView(this).apply {
@@ -1819,7 +1882,8 @@ class MainActivity : Activity() {
                     setOnClickListener {
                         val token = prefs.getString(KEY_TOKEN, "") ?: ""
                         if (endpoint.authentication == "token" && token.isEmpty()) {
-                            Toast.makeText(this@MainActivity, "该 Mac 需要配对 Token，请使用二维码或手动输入。", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this@MainActivity, "该 Mac 需要配对 Token，请扫描二维码。", Toast.LENGTH_LONG).show()
+                            startQrScanner(dialog)
                         } else {
                             prefs.edit().putBoolean(KEY_WEB_ENABLED, endpoint.webEnabled).apply()
                             connectToMac(endpoint.host.hostAddress ?: "", endpoint.port.toString(), token, endpoint.webEnabled)
@@ -1871,11 +1935,18 @@ class MainActivity : Activity() {
             return field
         }
 
-        val host = input("Mac IP 地址", prefs.getString(KEY_HOST, "") ?: "")
+        container.addView(TextView(this).apply {
+            text = "IP 连接（备用）"
+            setTextColor(palette.label)
+            textSize = 14f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+            setPadding(0, dp(6), 0, dp(8))
+        })
+        val host = input("Mac IP 地址或主机名", prefs.getString(KEY_HOST, "") ?: "")
         val port = input("端口（默认 4242）", prefs.getString(KEY_PORT, "4242") ?: "4242").apply {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
-        val token = input("Token（可选）", prefs.getString(KEY_TOKEN, "") ?: "", true)
+        val token = input("配对 Token（二维码会自动带入）", prefs.getString(KEY_TOKEN, "") ?: "", true)
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1895,10 +1966,23 @@ class MainActivity : Activity() {
         actions.addView(connect, LinearLayout.LayoutParams(0, dp(48), 1f))
         container.addView(actions)
 
-        dialog.setContentView(container)
+        val scroll = android.widget.ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(container, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+        }
+        dialog.setContentView(scroll)
         beginModal(dialog)
         dialog.show()
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.90f).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.92f).toInt(),
+            (resources.displayMetrics.heightPixels * 0.82f).toInt(),
+        )
     }
 
     private fun actionSheetButton(label: String, accent: Boolean, onClick: () -> Unit): Button = Button(this).apply {
@@ -2614,17 +2698,7 @@ class MainActivity : Activity() {
 
     private fun applyPairingIntent(intent: Intent?): Boolean {
         val target = PairingUri.parse(intent?.dataString) ?: return false
-        if (!target.phoneEnabled) {
-            Toast.makeText(this, "该 Mac 未开放手机连接。", Toast.LENGTH_LONG).show()
-            return false
-        }
-        prefs.edit()
-            .putString(KEY_HOST, target.host)
-            .putString(KEY_PORT, target.port.toString())
-            .putString(KEY_TOKEN, target.token.orEmpty())
-            .putBoolean(KEY_WEB_ENABLED, target.webEnabled)
-            .apply()
-        return true
+        return applyPairingTarget(target)
     }
 
     override fun onDestroy() {
