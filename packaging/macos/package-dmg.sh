@@ -85,11 +85,18 @@ fi
 if [[ -n "$MOUNT" && -d "$MOUNT/.background" ]]; then
   mark_hidden "$MOUNT/.background"
 fi
+if [[ -n "$MOUNT" && -x "$(command -v open 2>/dev/null || true)" ]]; then
+  # Ask LaunchServices to create the volume window explicitly. Finder's
+  # AppleScript `open` command is asynchronous and can be ignored for a
+  # freshly attached image on some macOS releases.
+  open "$MOUNT" >/dev/null 2>&1 || true
+fi
 if [[ -n "$MOUNT" && -x "$(command -v osascript 2>/dev/null || true)" ]]; then
-  # Finder must briefly open the hidden staging volume to persist its icon
-  # view. Finder is hidden for this internal step, and the final DMG is never
-  # opened by this packaging script.
+  # Finder must briefly open the staging volume to persist its icon view. The
+  # AppleScript transaction has a hard timeout so a broken Finder connection
+  # cannot hold the packaging command indefinitely.
   osascript <<APPLESCRIPT || echo "Warning: Finder DMG layout could not be applied; using the default layout." >&2
+with timeout of 20 seconds
 tell application "Finder"
   set finderWasVisible to visible
   try
@@ -152,6 +159,7 @@ tell application "Finder"
   end try
   set visible to finderWasVisible
 end tell
+end timeout
 APPLESCRIPT
 fi
 if [[ -n "$MOUNT" && -d "$MOUNT/.background" ]]; then
