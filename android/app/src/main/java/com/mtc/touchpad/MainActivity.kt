@@ -905,7 +905,14 @@ class MainActivity : Activity() {
             }
             addView(headerInfo)
             connectButton = actionButton("连接 Mac", true) {
-                if (isConnecting) cancelMacConnection() else showConnectionDialog()
+                if (isConnecting) {
+                    cancelMacConnection()
+                } else if (isConnected) {
+                    disconnectFromMac()
+                    android.widget.Toast.makeText(this@MainActivity, "已断开连接", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    showConnectionDialog()
+                }
             }.apply {
                 contentDescription = "配置并连接 Mac"
                 layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40))
@@ -913,33 +920,19 @@ class MainActivity : Activity() {
             addView(connectButton)
         }
 
-        val sensitivity = TextView(this).apply {
-            setTextColor(palette.label)
-            textSize = 12f
-            gravity = Gravity.CENTER
-            minWidth = dp(86)
-            text = "灵敏度 ${(pad.scale * 100).toInt()}%"
-        }
-        fun updateSensitivity() {
-            sensitivity.text = "灵敏度 ${(pad.scale * 100).toInt()}%"
-        }
-
         controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(14), dp(2), dp(14), dp(4))
 
-            addView(actionButton("−") {
-                pad.scale = (pad.scale / 1.15f).coerceIn(0.55f, 1.6f)
-                prefs.edit().putFloat(KEY_SCALE, pad.scale).apply()
-                updateSensitivity()
-            }.apply { contentDescription = "降低灵敏度" })
-            addView(sensitivity, LinearLayout.LayoutParams(dp(94), dp(44)))
-            addView(actionButton("+") {
-                pad.scale = (pad.scale * 1.15f).coerceIn(0.55f, 1.6f)
-                prefs.edit().putFloat(KEY_SCALE, pad.scale).apply()
-                updateSensitivity()
-            }.apply { contentDescription = "提高灵敏度" })
+            val quickDisconnectBtn = actionButton("断开连接") {
+                disconnectFromMac()
+                android.widget.Toast.makeText(this@MainActivity, "已断开与 Mac 的连接", android.widget.Toast.LENGTH_SHORT).show()
+            }.apply {
+                setTextColor(0xFFFF453A.toInt())
+                contentDescription = "断开当前连接"
+            }
+            addView(quickDisconnectBtn)
 
             lateinit var hapticBtn: Button
             val hapticsOn = prefs.getBoolean(KEY_HAPTIC, true)
@@ -1677,31 +1670,19 @@ class MainActivity : Activity() {
             setPadding(dp(4), 0, dp(4), dp(6))
         }
         container.addView(sectionLabel)
-        val sensitivityValue = TextView(this).apply {
-            setTextColor(palette.label)
-            textSize = 13f
-            gravity = Gravity.CENTER
-            minWidth = dp(88)
-            text = "灵敏度 ${(pad.scale * 100).toInt()}%"
+
+        if (isConnected || isConnecting) {
+            val disconnectBtn = actionSheetButton("断开与 Mac 的连接", false) {
+                disconnectFromMac()
+                dialog.dismiss()
+                android.widget.Toast.makeText(this@MainActivity, "已断开连接", android.widget.Toast.LENGTH_SHORT).show()
+            }.apply {
+                setTextColor(0xFFFF453A.toInt())
+            }
+            container.addView(disconnectBtn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)).apply {
+                bottomMargin = dp(10)
+            })
         }
-        fun refreshSensitivity() { sensitivityValue.text = "灵敏度 ${(pad.scale * 100).toInt()}%" }
-        val sensitivityRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(2), 0, dp(8))
-            addView(actionSheetButton("−", false) {
-                pad.scale = (pad.scale / 1.15f).coerceIn(.55f, 1.6f)
-                prefs.edit().putFloat(KEY_SCALE, pad.scale).apply()
-                refreshSensitivity()
-            }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(6) })
-            addView(sensitivityValue, LinearLayout.LayoutParams(dp(96), dp(46)))
-            addView(actionSheetButton("+", false) {
-                pad.scale = (pad.scale * 1.15f).coerceIn(.55f, 1.6f)
-                prefs.edit().putFloat(KEY_SCALE, pad.scale).apply()
-                refreshSensitivity()
-            }, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(6) })
-        }
-        container.addView(sensitivityRow)
 
         val hapticsOn = prefs.getBoolean(KEY_HAPTIC, true)
         pad.haptics.enabled = hapticsOn
@@ -2596,8 +2577,8 @@ class MainActivity : Activity() {
         }
         dot.background = d
         if (::connectButton.isInitialized) {
-            connectButton.text = if (isConnecting) "取消连接" else "连接 Mac"
-            connectButton.contentDescription = if (isConnecting) "取消连接 Mac" else "配置并连接 Mac"
+            connectButton.text = if (isConnecting) "取消连接" else if (connected) "断开" else "连接 Mac"
+            connectButton.contentDescription = if (isConnecting) "取消连接 Mac" else if (connected) "断开与 Mac 的连接" else "配置并连接 Mac"
         }
         setHeaderExpanded(!connected)
     }
