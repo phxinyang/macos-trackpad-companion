@@ -350,8 +350,11 @@
 - [x] X4. SwiftUI 新增独立“连接”页：Web 访问、手机连接、监听状态、复制 Web 地址/配对链接和安全提示；运行中的开关修改自动重启 helper，停止状态不被意外拉起。
 - [x] X5. Bonjour TXT 与 `mtc://pair` 增加 `web`/`phone` 能力字段；Android 发现/配对读取字段并支持 UDP-only Mac。
 - [x] X6. `companion-config doctor` 输出两项服务状态；配置文档、协议文档和架构说明同步更新。
+- [x] X7. macOS 连接页生成离线二维码并展示可复制的局域网 IP；二维码携带地址、端口、能力和 Token，Android 扫码后自动连接。
+- [x] X8. Android 连接弹窗统一为“扫码优先、Bonjour 发现、IP 备用”的可滚动流程；扫码模块不可用时明确回退到 IP 连接，保留 Token 校验和 UDP-only 探测。
+- [x] X9. 使用 ARM 主机上的 AAPT2/QEMU 兼容 wrapper 完成 `testDebugUnitTest assembleDebug`，并通过 ADB 重装启动 `192.168.3.137:44899`；APK SHA-256：`e495f9c258aea591a2e3875b0f60c4035ad7f38e166385150718ec04cf496dc8`。
 
-阶段 X：**代码与 Rust workspace 测试已完成；SwiftUI/macOS 真机、Bonjour 网络隔离和 Android UDP-only 连接待在 Mac + Android 环境验收。**
+阶段 X：**代码、Android 单测/Debug 构建和 ADB 真机连接页验收已完成；扫码首用依赖 Google Play 的 `barcode_ui` 模块下载，目标设备需允许其完成下载；SwiftUI/macOS 真机、Bonjour 网络隔离和 DMG 最终验收仍待 Mac 执行。**
 
 ### 阶段 Y：PermissionFlow Accessibility 权限引导（2026-08-30）
 

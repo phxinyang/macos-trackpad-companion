@@ -245,8 +245,12 @@ struct SettingsView: View {
                     }
                 }
                 if supervisor.phoneEnabled && !supervisor.pairingURI.isEmpty {
-                    LabeledContent(model.language.text("Pairing link", "配对链接")) {
-                        Text(supervisor.pairingURI).font(.caption.monospaced()).textSelection(.enabled)
+                    LabeledContent(model.language.text("Phone pairing", "手机配对")) {
+                        Label(
+                            model.language.text("QR ready", "二维码已就绪"),
+                            systemImage: "qrcode"
+                        )
+                        .foregroundStyle(.green)
                     }
                 }
                 if let recent = supervisor.recentConnection {
@@ -314,10 +318,18 @@ struct SettingsView: View {
                         .foregroundStyle(.orange)
                 }
             }
-            if !supervisor.pairingURI.isEmpty {
-                Section(model.language.text("Pairing", "配对")) {
-                    Button(model.language.text("Copy pairing link", "复制配对链接"), systemImage: "doc.on.doc") { supervisor.copyPairingURI() }
-                        .help(model.language.text("Paste this link into the Android app or a QR generator on the same LAN.", "可将此链接粘贴到 Android 应用或局域网内的二维码工具。"))
+            if supervisor.phoneEnabled && !supervisor.pairingURI.isEmpty {
+                Section(model.language.text("Phone pairing", "手机配对")) {
+                    PairingQRCodeView(payload: supervisor.pairingURI, language: model.language)
+                    HStack {
+                        Button(model.language.text("Copy pairing link", "复制配对链接"), systemImage: "doc.on.doc") {
+                            supervisor.copyPairingURI()
+                        }
+                        Button(model.language.text("Copy IP", "复制 IP"), systemImage: "network") {
+                            supervisor.copyLocalAddress()
+                        }
+                        .disabled(supervisor.localAddress.isEmpty)
+                    }
                 }
             }
             Section(model.language.text("Diagnostics", "诊断")) {
@@ -382,82 +394,106 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var connections: some View {
-            Section {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(model.language.text("Two ways to connect", "两种连接方式"))
+                    .font(.title3.weight(.semibold))
                 Text(model.language.text(
-                    "Choose which services this Mac exposes on the local network. Changes apply immediately when the helper is running.",
-                    "选择这台 Mac 要在局域网开放的服务。服务运行中修改会立即生效。"
+                    "Turn on only the services you need. Web is for a browser; Phone is for the native touch surface.",
+                    "只开放需要的服务。Web 用于浏览器，手机连接用于原生触控板。"
                 ))
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
-            Section(model.language.text("Services", "服务")) {
-                ConnectionToggleRow(
-                    path: "net.web_enabled",
-                    title: "Web access",
-                    titleCN: "Web 访问",
-                    description: "Serve the browser touchpad and WebSocket input.",
-                    descriptionCN: "提供浏览器触控板页面和 WebSocket 输入。",
-                    model: model,
-                    onChange: { _ in supervisor.applyConnectionConfiguration() }
-                )
-                ConnectionToggleRow(
-                    path: "net.phone_enabled",
-                    title: "Phone access",
-                    titleCN: "手机连接",
-                    description: "Accept the native phone app over authenticated UDP.",
-                    descriptionCN: "允许手机应用通过受保护的 UDP 连接。",
-                    model: model,
-                    onChange: { _ in supervisor.applyConnectionConfiguration() }
-                )
-            }
-            Section(model.language.text("Web", "Web")) {
-                connectionStatus(
-                    title: model.language.text("Browser touchpad", "浏览器触控板"),
-                    enabled: supervisor.webEnabled,
-                    active: supervisor.webEnabled && supervisor.boundPort != nil,
-                    symbol: "safari",
-                    detail: supervisor.webEnabled && !supervisor.endpoint.isEmpty
-                        ? supervisor.endpoint
-                        : model.language.text("Not available", "未开放")
-                )
-                if supervisor.webEnabled && !supervisor.endpoint.isEmpty {
-                    Button(model.language.text("Copy Web URL", "复制 Web 地址"), systemImage: "doc.on.doc") {
-                        supervisor.copyWebURL()
-                    }
+        }
+        Section(model.language.text("Services on this Mac", "Mac 上的服务")) {
+            ConnectionToggleRow(
+                path: "net.web_enabled",
+                title: "Web service",
+                titleCN: "Web 服务",
+                description: "Open the browser touchpad and WebSocket endpoint.",
+                descriptionCN: "开放浏览器触控板和 WebSocket 入口。",
+                model: model,
+                onChange: { _ in supervisor.applyConnectionConfiguration() }
+            )
+            ConnectionToggleRow(
+                path: "net.phone_enabled",
+                title: "Phone touchpad",
+                titleCN: "手机触控板",
+                description: "Let the Android app connect over protected UDP.",
+                descriptionCN: "允许 Android 应用通过受保护的 UDP 连接。",
+                model: model,
+                onChange: { _ in supervisor.applyConnectionConfiguration() }
+            )
+        }
+        Section(model.language.text("Web service", "Web 服务")) {
+            connectionStatus(
+                title: model.language.text("Browser touchpad", "浏览器触控板"),
+                enabled: supervisor.webEnabled,
+                active: supervisor.webEnabled && supervisor.boundPort != nil,
+                symbol: "safari",
+                detail: supervisor.webEnabled && !supervisor.endpoint.isEmpty
+                    ? supervisor.endpoint
+                    : model.language.text("Not available", "未开放")
+            )
+            if supervisor.webEnabled && !supervisor.endpoint.isEmpty {
+                Button(model.language.text("Copy Web address", "复制 Web 地址"), systemImage: "doc.on.doc") {
+                    supervisor.copyWebURL()
                 }
             }
-            Section(model.language.text("Phone", "手机")) {
-                connectionStatus(
-                    title: model.language.text("Native phone connection", "手机触控板"),
-                    enabled: supervisor.phoneEnabled,
-                    active: supervisor.phoneEnabled && supervisor.boundPort != nil,
-                    symbol: "iphone",
-                    detail: supervisor.phoneEnabled
-                        ? (supervisor.tokenConfigured
-                            ? model.language.text("Protected and discoverable", "已保护，可被发现"): model.language.text("Available without a token", "可用，但未配置 Token"))
-                        : model.language.text("Not available", "未开放")
-                )
-                if supervisor.phoneEnabled && !supervisor.pairingURI.isEmpty {
-                    Button(model.language.text("Copy pairing link", "复制配对链接"), systemImage: "qrcode") {
+        }
+        Section(model.language.text("Phone touchpad", "手机触控板")) {
+            connectionStatus(
+                title: model.language.text("Native phone connection", "手机连接"),
+                enabled: supervisor.phoneEnabled,
+                active: supervisor.phoneEnabled && supervisor.boundPort != nil,
+                symbol: "iphone",
+                detail: supervisor.phoneEnabled
+                    ? (supervisor.tokenConfigured
+                        ? model.language.text("Protected and discoverable", "已保护，可被发现")
+                        : model.language.text("Available without a token", "可用，但未配置 Token"))
+                    : model.language.text("Not available", "未开放")
+            )
+            if supervisor.phoneEnabled && !supervisor.pairingURI.isEmpty {
+                PairingQRCodeView(payload: supervisor.pairingURI, language: model.language)
+                    .padding(.vertical, 4)
+                LabeledContent(model.language.text("LAN IP", "局域网 IP")) {
+                    Text(supervisor.localAddress.isEmpty ? model.language.text("Detecting…", "检测中…") : supervisor.localAddress)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
+                HStack {
+                    Button(model.language.text("Copy pairing link", "复制配对链接"), systemImage: "doc.on.doc") {
                         supervisor.copyPairingURI()
                     }
-                }
-            }
-            Section(model.language.text("Security", "安全")) {
-                Label(
-                    model.language.text(
-                        supervisor.tokenConfigured ? "A pairing token protects both enabled services." : "No token is configured; anyone on the bound network can connect.",
-                        supervisor.tokenConfigured ? "配对 Token 会保护所有已开放的服务。" : "未配置 Token；绑定网络上的设备都可以连接。"
-                    ),
-                    systemImage: supervisor.tokenConfigured ? "lock.shield" : "exclamationmark.shield"
-                )
-                .foregroundStyle(supervisor.tokenConfigured ? Color.green : Color.orange)
-                if !supervisor.tokenConfigured && (supervisor.webEnabled || supervisor.phoneEnabled) {
-                    Button(model.language.text("Create a pairing token", "创建配对 Token"), systemImage: "key.fill") {
-                        supervisor.refreshConnectionSettings()
+                    Button(model.language.text("Copy IP", "复制 IP"), systemImage: "network") {
+                        supervisor.copyLocalAddress()
                     }
+                    .disabled(supervisor.localAddress.isEmpty)
+                }
+                DisclosureGroup(model.language.text("Show pairing link", "显示配对链接")) {
+                    Text(supervisor.pairingURI)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
                 }
             }
+        }
+        Section(model.language.text("Security", "安全")) {
+            Label(
+                model.language.text(
+                    supervisor.tokenConfigured ? "A pairing token protects enabled services." : "No token is configured; devices on the bound network can connect.",
+                    supervisor.tokenConfigured ? "配对 Token 会保护已开放的服务。" : "未配置 Token；绑定网络上的设备都可以连接。"
+                ),
+                systemImage: supervisor.tokenConfigured ? "lock.shield" : "exclamationmark.shield"
+            )
+            .foregroundStyle(supervisor.tokenConfigured ? Color.green : Color.orange)
+            if !supervisor.tokenConfigured && (supervisor.webEnabled || supervisor.phoneEnabled) {
+                Button(model.language.text("Create a pairing token", "创建配对 Token"), systemImage: "key.fill") {
+                    supervisor.refreshConnectionSettings()
+                }
+            }
+        }
     }
 
     @ViewBuilder

@@ -4,6 +4,7 @@ import AppKit
 import ApplicationServices
 import ServiceManagement
 import Network
+import Darwin
 
 @MainActor
 final class ServiceSupervisor: ObservableObject {
@@ -11,6 +12,7 @@ final class ServiceSupervisor: ObservableObject {
     @Published private(set) var message = ""
     @Published private(set) var endpoint = ""
     @Published private(set) var pairingURI = ""
+    @Published private(set) var localAddress = ""
     @Published private(set) var webEnabled = true
     @Published private(set) var phoneEnabled = true
     @Published private(set) var boundPort: Int?
@@ -327,6 +329,13 @@ final class ServiceSupervisor: ObservableObject {
         NSPasteboard.general.setString(value, forType: .string)
     }
 
+    func copyLocalAddress() {
+        guard !localAddress.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(localAddress, forType: .string)
+        message = "Local IP address copied."
+    }
+
     /// Apply a changed net.* switch without starting a service that the user
     /// had stopped. A running helper is restarted so the socket boundary is
     /// updated immediately.
@@ -340,6 +349,7 @@ final class ServiceSupervisor: ObservableObject {
     }
 
     func refreshConnectionSettings() {
+        refreshLocalAddress()
         preparePairing()
     }
 
@@ -429,7 +439,7 @@ final class ServiceSupervisor: ObservableObject {
         components.scheme = "mtc"
         components.host = "pair"
         components.queryItems = [
-            URLQueryItem(name: "host", value: localHostName),
+            URLQueryItem(name: "host", value: advertisedHost),
             URLQueryItem(name: "port", value: String(port)),
             URLQueryItem(name: "web", value: webEnabled ? "1" : "0"),
             URLQueryItem(name: "phone", value: phoneEnabled ? "1" : "0"),
@@ -447,15 +457,53 @@ final class ServiceSupervisor: ObservableObject {
         return candidate.isEmpty ? "localhost" : candidate
     }
 
+    private var advertisedHost: String {
+        localAddress.isEmpty ? localHostName : localAddress
+    }
+
+    private func refreshLocalAddress() {
+        var addresses: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&addresses) == 0, let first = addresses else {
+            localAddress = ""
+            return
+        }
+        defer { freeifaddrs(addresses) }
+
+        var preferred = ""
+        var fallback = ""
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = cursor {
+            let entry = current.pointee
+            cursor = entry.ifa_next
+            guard let rawAddress = entry.ifa_addr,
+                  rawAddress.pointee.sa_family == sa_family_t(AF_INET) else { continue }
+            let name = String(cString: entry.ifa_name)
+            let address = rawAddress.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { pointer in
+                var value = pointer.pointee.sin_addr
+                var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                guard inet_ntop(AF_INET, &value, &buffer, socklen_t(INET_ADDRSTRLEN)) != nil else { return "" }
+                return String(cString: buffer)
+            }
+            guard !address.isEmpty, address != "127.0.0.1" else { continue }
+            if name == "en0" || name == "en1" {
+                preferred = address
+                break
+            }
+            if fallback.isEmpty { fallback = address }
+        }
+        localAddress = preferred.isEmpty ? fallback : preferred
+    }
+
     private func updateEndpoint(port: Int) {
         guard webEnabled else {
             endpoint = ""
             return
         }
-        endpoint = "http://\(localHostName):\(port)/"
+        endpoint = "http://\(advertisedHost):\(port)/"
     }
 
     private func preparePairing() {
+        refreshLocalAddress()
         guard let executable = locate("COMPANION_CONFIG_BIN", bundledName: "companion-config") else {
             webEnabled = true
             phoneEnabled = true
@@ -607,7 +655,7 @@ final class ServiceSupervisor: ObservableObject {
     }
 
     private func rememberConnection(port: Int) {
-        let connection = RecentConnection(host: localHostName, port: port, lastConnectedAt: Date())
+        let connection = RecentConnection(host: advertisedHost, port: port, lastConnectedAt: Date())
         recentConnection = connection
         if let data = try? JSONEncoder().encode(connection) {
             UserDefaults.standard.set(data, forKey: "TrackpadCompanion.recentConnection")

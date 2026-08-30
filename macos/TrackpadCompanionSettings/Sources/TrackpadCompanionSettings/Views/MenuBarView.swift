@@ -124,6 +124,10 @@ struct MenuBarView: View {
                 supervisor.copyWebURL()
             }
         }
+        Button(language.text("Copy local IP", "复制局域网 IP"), systemImage: "network") {
+            supervisor.copyLocalAddress()
+        }
+        .disabled(supervisor.localAddress.isEmpty)
         Button(language.text("Copy pairing link", "复制配对链接"), systemImage: "qrcode") {
             supervisor.copyPairingURI()
         }
