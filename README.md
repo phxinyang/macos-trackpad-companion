@@ -104,6 +104,9 @@ live frame counters, and copy actions without reopening the full settings window
 It also watches the active network interface, rebinds after Wi-Fi/Ethernet
 changes, retries one unexpected helper exit, and keeps the last local endpoint
 for troubleshooting without storing the pairing token in macOS preferences.
+Quitting the app synchronously stops the embedded `companion-net` helper and
+waits for its instance lock to be released before exit, so an immediate relaunch
+does not collide with the old service.
 
 ## Connect a phone or browser
 

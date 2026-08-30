@@ -77,6 +77,8 @@ jobs:
           swift --version
       - name: Build unsigned app bundle
         run: |
+          ./packaging/macos/test-package-dmg.sh
+          ./packaging/macos/test-service-lifecycle.sh
           ./packaging/macos/build-app.sh
           ./packaging/macos/package-dmg.sh
       - name: Verify bundle contents
