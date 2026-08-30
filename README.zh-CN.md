@@ -37,7 +37,7 @@ macOS 客户端、TUI 与命令行均共用同一个 `companion-config` 工具�
 
 * **首次启动与权限引导**：打开应用后，进入「总览 > 权限」，点击「请求辅助功能权限」。内置的 PermissionFlow 模块会自动打开系统「隐私与安全性 > 辅助功能」设置页，并引导完成授权。
 * **系统要求**：支持 macOS 13 及更高版本（二进制已内置所有 Rust 网络与配置 helper）。
-* **开源分发说明**：本地构建默认采用 Ad-hoc 签名；公开发布时可结合 Apple Developer ID 签名与公证。
+* **开源分发说明**：本地构建默认采用 ad-hoc 签名。由 tag 触发的 GitHub Release 必须配置 Developer ID 签名与 Apple 公证凭据；缺少发布密钥时工作流会停止，不会上传开发包。
 
 ## 从源码构建
 
@@ -61,7 +61,7 @@ cargo build --release
 ```
 
 构建 macOS 原生 SwiftUI 应用与 DMG 安装包：
-> 构建 macOS 设置端依赖 Swift 6（Xcode 16 或更高版本）。
+> 当前 PermissionFlow 依赖需要 Swift 6.2（Xcode 26 或更高版本）。
 
 ```sh
 ./packaging/macos/build-app.sh
@@ -241,6 +241,13 @@ cargo test --workspace
 cargo check --all-targets
 ```
 
+## 正式发布
+
+推送版本 tag 后，GitHub Actions 会创建一个同时包含 Android 签名 APK/AAB、
+Developer ID 签名并完成公证的 macOS DMG/ZIP、自动发布说明和 `SHA256SUMS`
+的 GitHub Release。发布凭据仅保存在 GitHub Actions Secrets 中。所需密钥、
+版本字段和 tag 流程见 [docs/releasing.md](docs/releasing.md)。
+
 ## 目录结构速览
 
 | 目录 | 职责 |
@@ -259,4 +266,3 @@ cargo check --all-targets
 本项目采用 [MIT 许可证](LICENSE)。
 
 macOS 客户端通过 SwiftPM 引入了 [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow)（采用 [MIT 许可证](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE)）。各端素材与调研引用详见 `docs/` 及 `static/assets/` 下的相关文档。
-

@@ -58,7 +58,10 @@ env/
 
 # Local Apple signing, credentials, and secrets
 *.p12
+*.jks
+*.keystore
 *.mobileprovision
+*.provisionprofile
 notarytool-credentials.json
 .env
 .env.*
