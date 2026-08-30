@@ -153,7 +153,7 @@ jobs:
             macOS is ad-hoc signed and Android uses the debug signing key. These
             artifacts are not intended for production distribution or Google Play.
           files: |
-            release-assets/Trackpad-Companion-${{ github.run_id }}-macos.dmg
-            release-assets/Trackpad-Companion-${{ github.run_id }}-macos.zip
-            release-assets/Trackpad-Companion-${{ github.run_id }}-android-debug.apk
+            release-assets/Trackpad-Companion-dev-${{ github.run_id }}-macos.dmg
+            release-assets/Trackpad-Companion-dev-${{ github.run_id }}-macos.zip
+            release-assets/Trackpad-Companion-dev-${{ github.run_id }}-android-debug.apk
             release-assets/SHA256SUMS
