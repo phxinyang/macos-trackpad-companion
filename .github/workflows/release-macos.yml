@@ -31,6 +31,8 @@ jobs:
           swift --version
       - name: Build and package DMG
         run: |
+          ./packaging/macos/test-package-dmg.sh
+          ./packaging/macos/test-service-lifecycle.sh
           ./packaging/macos/build-app.sh
           ./packaging/macos/package-dmg.sh
           shasum -a 256 dist/macos/*.dmg dist/macos/*.zip

@@ -73,6 +73,7 @@ open dist/macos/Trackpad-Companion-*-macos.dmg
 应用包会把 `companion-net`、`companion-config` 和 PermissionFlow 本地化资源放到 `Contents/Resources`，用户运行时不需要另外安装 Homebrew。
 菜单栏提供 Web/手机入口开关、登录时启动、服务重试、实时帧统计和复制操作，不需要每次打开完整设置窗口。
 应用会监视当前 Wi-Fi/以太网接口，网络切换后自动重新绑定并发布 Bonjour；helper 意外退出时自动重试一次，连续失败会保留明确的诊断状态。最近使用的本地端点会保存在 Mac 上，但配对 Token 不会写入 macOS 偏好。
+退出应用时会同步停止内嵌的 `companion-net`，等待实例锁释放后再结束进程，立即重新打开不会再撞上旧服务。
 
 ## 连接手机或浏览器
 

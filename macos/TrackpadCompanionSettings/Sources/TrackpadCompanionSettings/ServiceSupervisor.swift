@@ -53,8 +53,11 @@ final class ServiceSupervisor: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in
-                self?.stop()
+            // `willTerminate` is the last synchronous cleanup point. A Task
+            // scheduled here can be abandoned while NSApplication exits,
+            // leaving companion-net alive and holding the instance flock.
+            MainActor.assumeIsolated {
+                self?.stopForApplicationTermination()
             }
         }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -80,7 +83,10 @@ final class ServiceSupervisor: ObservableObject {
 
     deinit {
         outputPipe?.fileHandleForReading.readabilityHandler = nil
-        process?.terminate()
+        if let process, process.isRunning {
+            process.terminate()
+            Self.terminateAndWait(process)
+        }
         bonjour.stop()
         restartWorkItem?.cancel()
         pathMonitor?.cancel()
@@ -233,7 +239,18 @@ final class ServiceSupervisor: ObservableObject {
         stopProcess()
     }
 
-    private func stopProcess() {
+    /// Stop synchronously during application termination so a relaunch cannot
+    /// race the helper's instance lock. The normal user stop remains
+    /// asynchronous; only the final app teardown waits for the child.
+    func stopForApplicationTermination() {
+        desiredRunning = false
+        automaticRestartCount = 0
+        restartAfterTermination = false
+        restartWorkItem?.cancel()
+        stopProcess(waitForExit: true)
+    }
+
+    private func stopProcess(waitForExit: Bool = false) {
         outputPipe?.fileHandleForReading.readabilityHandler = nil
         outputPipe = nil
         guard let process, process.isRunning else {
@@ -252,6 +269,22 @@ final class ServiceSupervisor: ObservableObject {
         endpoint = ""
         pairingURI = ""
         process.terminate()
+        guard waitForExit else { return }
+        Self.terminateAndWait(process)
+    }
+
+    private static func terminateAndWait(_ process: Process) {
+        // SIGTERM normally exits immediately. Keep this final wait bounded,
+        // then force-kill a wedged helper so the lock is released before
+        // NSApplication finishes terminating.
+        let deadline = Date().addingTimeInterval(2)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+            _ = kill(process.processIdentifier, SIGKILL)
+            process.waitUntilExit()
+        }
     }
 
     /// Retry the service from a user-facing recovery action. This keeps the

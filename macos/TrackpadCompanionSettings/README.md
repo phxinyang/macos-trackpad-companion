@@ -41,6 +41,10 @@ The menu bar is the quick-control surface: Web and phone exposure, launch at
 login, service recovery, live frame counters, and copy actions are available
 there. Detailed gesture tuning remains in the settings window.
 
+Quitting the app synchronously stops the embedded `companion-net` helper and
+waits for its per-user instance lock to be released, so reopening the app does
+not race a still-shutting-down service.
+
 The GUI does not write `defaults`, register a fake trackpad, or require the
 Trackpad pane to exist in System Settings. It is therefore usable on a Mac mini
 without a physical trackpad.
