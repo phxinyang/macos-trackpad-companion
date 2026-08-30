@@ -249,6 +249,11 @@ notes, and `SHA256SUMS`. Release credentials remain in GitHub Actions Secrets.
 See [docs/releasing.md](docs/releasing.md) for required secrets, version fields,
 and the tag procedure.
 
+For a test build without signing secrets, run the **Development Release**
+workflow manually from the GitHub Actions tab. It creates a clearly marked
+Pre-release with an ad-hoc macOS DMG/ZIP and a debug Android APK; these packages
+are for testing only.
+
 ## Repository Map
 
 | Directory | Responsibility |
