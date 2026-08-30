@@ -60,6 +60,7 @@ if [[ -f "$BACKGROUND" ]]; then
 fi
 hdiutil create -volname "Trackpad Companion" -fs HFS+ -srcfolder "$STAGE" -ov -format UDRW "$RW_DMG"
 MOUNT=$(hdiutil attach "$RW_DMG" -readwrite -nobrowse -noautoopen | awk '/\/Volumes\// {print substr($0, index($0, "/Volumes/")); exit}')
+MOUNT_NAME=${MOUNT##*/}
 if [[ -n "$MOUNT" && -d "$MOUNT/.background" ]]; then
   chflags hidden "$MOUNT/.background" 2>/dev/null || true
   if [[ -x "$(command -v SetFile 2>/dev/null || true)" ]]; then
@@ -75,31 +76,41 @@ tell application "Finder"
   set finderWasVisible to visible
   try
     set visible to false
-    tell disk "Trackpad Companion"
+    tell disk "${MOUNT_NAME}"
       open
-      delay 0.4
-      set dmgWindow to container window
       try
-        set visible of item ".background" of disk "Trackpad Companion" to false
-        set visible of item ".hidden" of disk "Trackpad Companion" to false
+        set visible of item ".background" of disk "${MOUNT_NAME}" to false
+        set visible of item ".hidden" of disk "${MOUNT_NAME}" to false
       end try
-      set current view of dmgWindow to icon view
-      set toolbar visible of dmgWindow to false
-      set statusbar visible of dmgWindow to false
-      set bounds of dmgWindow to {${WINDOW_LEFT}, ${WINDOW_TOP}, ${WINDOW_RIGHT}, ${WINDOW_BOTTOM}}
-      set viewOptions to icon view options of dmgWindow
-      set icon size of viewOptions to 128
-      set arrangement of viewOptions to not arranged
-      try
-        set background picture of viewOptions to file ".background:dmg-background.png"
-      end try
-      if exists item "Trackpad Companion.app" of dmgWindow then
-        set position of item "Trackpad Companion.app" of dmgWindow to {245, 340}
-      end if
-      if exists item "Applications" of dmgWindow then
-        set position of item "Applications" of dmgWindow to {655, 340}
-      end if
-      close dmgWindow
+      set layoutReady to false
+      repeat with attempt from 1 to 12
+        try
+          -- Finder creates the container window asynchronously. Operate on
+          -- the live container window rather than a stale object reference.
+          set current view of container window to icon view
+          set toolbar visible of container window to false
+          set statusbar visible of container window to false
+          set bounds of container window to {${WINDOW_LEFT}, ${WINDOW_TOP}, ${WINDOW_RIGHT}, ${WINDOW_BOTTOM}}
+          set viewOptions to icon view options of container window
+          set icon size of viewOptions to 128
+          set arrangement of viewOptions to not arranged
+          try
+            set background picture of viewOptions to file ".background:dmg-background.png"
+          end try
+          if exists item "Trackpad Companion.app" of container window then
+            set position of item "Trackpad Companion.app" of container window to {245, 340}
+          end if
+          if exists item "Applications" of container window then
+            set position of item "Applications" of container window to {655, 340}
+          end if
+          set layoutReady to true
+          exit repeat
+        on error
+          delay 0.25
+        end try
+      end repeat
+      if not layoutReady then error "Finder DMG window did not become ready"
+      close container window
       open
       delay 0.2
       update without registering applications
