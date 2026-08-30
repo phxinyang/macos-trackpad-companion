@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="560" viewBox="0 0 900 560">
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
   <defs>
     <linearGradient id="surface" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#f8fbff"/>
@@ -9,13 +9,11 @@
       <stop offset="1" stop-color="#0a63d8"/>
     </linearGradient>
   </defs>
-  <rect width="900" height="560" fill="url(#surface)"/>
+  <rect width="900" height="620" fill="url(#surface)"/>
   <path d="M0 0h900v112H0z" fill="#fff" opacity="0.86"/>
   <path d="M0 111h900" stroke="#d9e3f0"/>
   <text x="52" y="58" fill="#1d1d1f" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="26" font-weight="600">Trackpad Companion</text>
   <text x="52" y="88" fill="#6e7890" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="15">Drag the app to Applications to install</text>
-  <path d="M300 288c86-54 184-54 270 0" fill="none" stroke="#477eb9" stroke-width="8" stroke-linecap="round" stroke-dasharray="2 18"/>
-  <path d="m544 266 27 22-30 18" fill="none" stroke="#477eb9" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="450" y="424" text-anchor="middle" fill="#1d1d1f" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="18" font-weight="600">Drag to Applications to install</text>
-  <text x="450" y="508" text-anchor="middle" fill="#7b879b" font-family="-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif" font-size="14">Your Mac, touch-ready</text>
+  <path d="M292 288c104-54 224-54 328 0" fill="none" stroke="#477eb9" stroke-width="8" stroke-linecap="round" stroke-dasharray="2 18"/>
+  <path d="m604 266 27 22-30 18" fill="none" stroke="#477eb9" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

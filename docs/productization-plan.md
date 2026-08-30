@@ -422,7 +422,8 @@ helper 恢复仍需在 macOS 真机/签名 DMG 上验收，Z4f 本地化资源�
 - [x] T4. 打磨原生 SwiftUI 窗口：稳定默认尺寸、sidebar 产品头部、状态徽标、
   总览指标、深浅色系统颜色、语言持久化、Mac mini 无实体触控板说明和配对 URL 处理。
 - [x] T5. 完善 `build-app.sh`/`package-dmg.sh`：版本清洗、可选图标、嵌套 helper
-  签名、DMG 临时目录清理和高压缩，并新增 tag 触发的 macOS Release workflow。
+  签名、DMG 临时目录清理、高压缩和 Finder 安装布局（900×620 背景、明确图标坐标、
+  隐藏 `.background` staging 目录），并新增 tag 触发的 macOS Release workflow。
 - [x] T6. README 增加 `.dmg` 安装和 GitHub Release 说明；CI 在 macOS runner 上同时
   构建 `.app`、ZIP 和 DMG，并验证 bundle 内容。
 

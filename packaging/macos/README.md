@@ -25,6 +25,11 @@ step cannot silently package an old build.
 creates the standard 1x/2x iconset with macOS `sips` and `iconutil` in the
 ignored `dist/macos` directory. `dmg-background.png` is embedded only in the
 DMG staging volume and is not copied into the installed app.
+The installer background is a `900x620` asset. Finder receives explicit app
+and Applications coordinates, and the staging `.background` directory is
+marked hidden with filesystem and Finder metadata. The background contains
+only the title, one install instruction, and the transfer arrow; Finder owns
+the two icon labels so explanatory copy cannot overlap them.
 Set `CODESIGN_IDENTITY='Developer ID Application: ...'` for a hardened runtime
 signature. Notarization remains a release-pipeline concern: after signing,
 submit the DMG with `xcrun notarytool submit` and staple it with
