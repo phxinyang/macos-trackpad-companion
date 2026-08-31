@@ -192,9 +192,9 @@ The macOS app's **Connections** page provides two independent switches:
 3. **Instant Browser Access**:
    * Copy the Web URL displayed on the Mac (e.g. `http://192.168.1.100:4242/?token=...`) into any mobile browser.
 
-### Protocol Test Probes (No Phone Needed)
+### Protocol Probes & Automated Testing
 
-If a phone is not immediately at hand, use the built-in Python test probes to test protocol streams and gesture responses directly:
+Use the built-in Python test probes to test protocol streams, gesture responses, and CI automation directly:
 
 ```sh
 # Simulate contact displacement motion
