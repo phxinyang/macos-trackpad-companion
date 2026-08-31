@@ -342,11 +342,7 @@ cargo test --workspace
 cargo check --all-targets
 ```
 
----
 
-## 发布版本
-
-推送版本 tag 会触发构建一个包含经签名的 Android APK/AAB、Developer ID 签名及公证的 macOS DMG/ZIP、自动生成的 Release Notes 以及 `SHA256SUMS` 的 GitHub Release。签名密钥严格保存在 GitHub Actions Secrets 中。详情请见 [docs/releasing.md](docs/releasing.md)。
 
 ---
 

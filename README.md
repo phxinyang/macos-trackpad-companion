@@ -342,11 +342,7 @@ cargo test --workspace
 cargo check --all-targets
 ```
 
----
 
-## Releases
-
-Pushing a version tag builds one GitHub Release containing the signed Android APK/AAB, the Developer ID signed and notarized macOS DMG/ZIP, generated release notes, and `SHA256SUMS`. Release credentials remain in GitHub Actions Secrets. See [docs/releasing.md](docs/releasing.md) for required secrets, version fields, and the tag procedure.
 
 ---
 
