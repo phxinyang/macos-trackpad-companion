@@ -138,7 +138,6 @@ Download the latest DMG installer from [GitHub Releases](https://github.com/phxi
 
 * **First Launch & Permissions**: On first launch, navigate to "Overview > Permissions" and click "Request Accessibility Permission". The built-in PermissionFlow module will open macOS "Privacy & Security > Accessibility" and guide you through authorization.
 * **System Requirements**: macOS 13 or newer (the application bundle embeds all Rust network and configuration helpers).
-* **Open Source Distribution**: Local builds use ad-hoc signing. Tag-triggered GitHub Releases require Developer ID signing and Apple notarization credentials; missing release secrets stop publication instead of uploading a development package.
 
 ---
 
