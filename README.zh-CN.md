@@ -317,21 +317,7 @@ release_delay_ms = 500
 - **物理修饰键穿透**：
   - Control、Option、Command 与 Shift 修饰键实时注入鼠标、滚动、缩放与旋转事件流。
 
----
 
-## 原生硬件技术边界
-
-为保持透明与清晰的预期，以下为各项特性的实现机制与技术边界：
-
-| 手势 / 特性 | 实现机制 | 兼容性与行为表现 |
-| --- | --- | --- |
-| **指针移动、点击、拖移** | 公开 Quartz `CGEvent` 鼠标事件 | 全系统及第三方应用广泛支持 |
-| **平滑滚动与动量惯性** | 公开分阶段滚动事件与数学惯性模型 | 完美支持 Safari、Chrome、文档与开发工具 |
-| **捏合缩放与旋转** | 逆向提取的私有 `CGEvent` 字段 | 兼容主流 AppKit 与 Safari 原生应用 |
-| **Space 切换、调度中心、启动台** | 模拟 DockSwipe 与系统快捷键路由 | 专为现代 macOS 版本适配 |
-| **Force Touch 物理压感** | 公开 `CGEvent` 无法模拟硬件压电传感器 | 不模拟硬件物理多级压感 |
-
-完整的逆向工程文档与协议细节见 [docs/reverse-engineering-sources.md](docs/reverse-engineering-sources.md)。
 
 ---
 

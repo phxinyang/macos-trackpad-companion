@@ -317,21 +317,7 @@ For complete field specifications, per-application policies, and swipe backend o
 - **Physical Modifier Keys Passthrough**:
   - Control, Option, Command, and Shift modifiers are merged into mouse, scroll, zoom, and rotate event streams in real time.
 
----
 
-## Technical Boundaries with Native Hardware
-
-To provide clear, transparent expectations, here is how each capability is implemented alongside its technical boundaries:
-
-| Gesture / Feature | Implementation Mechanism | Compatibility & Behavior |
-| --- | --- | --- |
-| **Pointer, Clicks, Drag** | Public Quartz `CGEvent` mouse events | Broad system-wide and third-party application support |
-| **Smooth Scrolling & Inertia** | Public phased scroll events with mathematical inertia | Full Safari, Chrome, document, and IDE support |
-| **Pinch-to-Zoom & Rotation** | Reverse-engineered private `CGEvent` fields | Compatible with major AppKit and Safari native apps |
-| **Spaces, Mission Control, Launchpad** | Emulated DockSwipe and shortcut routing | Synthesized for modern macOS versions |
-| **Force Touch Pressure Levels** | Public `CGEvent` cannot simulate hardware piezoelectric sensors | Does not emulate physical pressure levels |
-
-Complete reverse-engineering documentation and protocol details are available in [docs/reverse-engineering-sources.md](docs/reverse-engineering-sources.md).
 
 ---
 
