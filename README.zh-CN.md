@@ -365,4 +365,4 @@ cargo check --all-targets
 
 本项目采用 [MIT License](LICENSE) 开源协议。
 
-macOS 设置应用通过 SwiftPM 引入了 [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow)（采用 [MIT License](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE)）。第三方研究参考与资产来源详见 `docs/` 与 `static/assets/`。
+macOS 设置应用通过 SwiftPM 引入了 [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow)（采用 [MIT License](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE)）。

@@ -365,4 +365,4 @@ cargo check --all-targets
 
 This project is licensed under the [MIT License](LICENSE).
 
-The macOS settings app includes [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow) via SwiftPM under its [MIT License](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE). Third-party research references and asset origins are documented under `docs/` and `static/assets/`.
+The macOS settings app includes [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow) via SwiftPM under its [MIT License](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE).
