@@ -1,0 +1,228 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 480" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient - Crisp Light Pearl & Morning Sky -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="45%" stop-color="#F1F5F9"/>
+      <stop offset="100%" stop-color="#E2E8F0"/>
+    </linearGradient>
+
+    <!-- Ambient Spectral Glows -->
+    <radialGradient id="glow-cyan" cx="85%" cy="30%" r="55%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.32"/>
+      <stop offset="50%" stop-color="#0284C7" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow-indigo" cx="15%" cy="85%" r="60%">
+      <stop offset="0%" stop-color="#818CF8" stop-opacity="0.25"/>
+      <stop offset="55%" stop-color="#6366F1" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow-rose" cx="50%" cy="10%" r="45%">
+      <stop offset="0%" stop-color="#F472B6" stop-opacity="0.18"/>
+      <stop offset="70%" stop-color="#FB7185" stop-opacity="0.02"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Light Frosted Glass Surface Gradients -->
+    <linearGradient id="glass-card" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.88"/>
+      <stop offset="100%" stop-color="#F8FAFC" stop-opacity="0.65"/>
+    </linearGradient>
+    <linearGradient id="glass-border" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="50%" stop-color="#CBD5E1" stop-opacity="0.60"/>
+      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.40"/>
+    </linearGradient>
+    <linearGradient id="trackpad-lens" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.92"/>
+      <stop offset="40%" stop-color="#F0F9FF" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#E0F2FE" stop-opacity="0.85"/>
+    </linearGradient>
+
+    <!-- Typography Gradients -->
+    <linearGradient id="title-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="60%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+    <linearGradient id="accent-blue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284C7"/>
+      <stop offset="50%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+
+    <!-- Drop Shadows & Filters -->
+    <filter id="shadow-card" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#0F172A" flood-opacity="0.10"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0284C7" flood-opacity="0.08"/>
+    </filter>
+    <filter id="shadow-soft" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+    <filter id="glow-pill" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0284C7" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <style>
+    .font-title { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif; font-weight: 800; }
+    .font-sans { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; }
+    .font-mono { font-family: "SF Mono", "Fira Code", monospace; }
+  </style>
+
+  <!-- Background Base Canvas -->
+  <rect width="1200" height="480" fill="url(#bg-grad)" rx="20"/>
+  <rect width="1200" height="480" fill="url(#glow-cyan)" rx="20"/>
+  <rect width="1200" height="480" fill="url(#glow-indigo)" rx="20"/>
+  <rect width="1200" height="480" fill="url(#glow-rose)" rx="20"/>
+
+  <!-- Delicate Precision Engineering Grid Lines -->
+  <g stroke="#94A3B8" stroke-opacity="0.22" stroke-width="1">
+    <line x1="0" y1="120" x2="1200" y2="120" stroke-dasharray="3 3"/>
+    <line x1="0" y1="240" x2="1200" y2="240" stroke-dasharray="3 3"/>
+    <line x1="0" y1="360" x2="1200" y2="360" stroke-dasharray="3 3"/>
+    <line x1="240" y1="0" x2="240" y2="480" stroke-dasharray="3 3"/>
+    <line x1="480" y1="0" x2="480" y2="480" stroke-dasharray="3 3"/>
+    <line x1="720" y1="0" x2="720" y2="480" stroke-dasharray="3 3"/>
+    <line x1="960" y1="0" x2="960" y2="480" stroke-dasharray="3 3"/>
+  </g>
+
+  <!-- Outer Glass Canvas Border -->
+  <rect width="1198" height="478" x="1" y="1" fill="none" stroke="#CBD5E1" stroke-opacity="0.8" stroke-width="1.5" rx="19"/>
+
+  <!-- ================= LEFT BRAND & FEATURES ================= -->
+  <!-- Category Pill Badge -->
+  <g transform="translate(68, 52)">
+    <rect width="286" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.85" stroke="#BAE6FD" stroke-width="1.2" filter="url(#glow-pill)"/>
+    <circle cx="17" cy="17" r="4.5" fill="#10B981"/>
+    <text x="32" y="22" fill="#0284C7" font-size="12" font-weight="700" class="font-sans" letter-spacing="0.8">APPLE TRACKPAD</text>
+    <text x="160" y="22" fill="#64748B" font-size="12" font-weight="500" class="font-sans" letter-spacing="0.4">EMULATION SUITE</text>
+  </g>
+
+  <!-- Main Headline -->
+  <text x="68" y="142" fill="url(#title-grad)" font-size="44" class="font-title" letter-spacing="-0.8">
+    macOS Trackpad
+  </text>
+  <text x="68" y="196" fill="url(#accent-blue)" font-size="44" class="font-title" letter-spacing="-0.8">
+    Companion
+  </text>
+
+  <!-- Subtitle Description -->
+  <text x="68" y="244" fill="#475569" font-size="16.5" font-weight="400" class="font-sans">
+    Turn any Phone or Browser into a fluid Apple Magic Trackpad.
+  </text>
+  <text x="68" y="272" fill="#64748B" font-size="14.5" font-weight="400" class="font-sans">
+    Low-latency UDP engine, 100% native multi-touch gestures &amp; Liquid Glass UI.
+  </text>
+
+  <!-- Feature Pills Badges Grid -->
+  <g transform="translate(68, 316)">
+    <!-- Pill 1: Ultra Low Latency -->
+    <g transform="translate(0, 0)">
+      <rect width="148" height="36" rx="10" fill="#FFFFFF" fill-opacity="0.9" stroke="#E2E8F0" stroke-width="1.2" filter="url(#shadow-soft)"/>
+      <circle cx="18" cy="18" r="4" fill="#0284C7"/>
+      <text x="32" y="23" fill="#0F172A" font-size="12.5" font-weight="600" class="font-sans">&lt; 1 ms UDP Jitter</text>
+    </g>
+
+    <!-- Pill 2: 100% Native Gestures -->
+    <g transform="translate(160, 0)">
+      <rect width="168" height="36" rx="10" fill="#FFFFFF" fill-opacity="0.9" stroke="#E2E8F0" stroke-width="1.2" filter="url(#shadow-soft)"/>
+      <circle cx="18" cy="18" r="4" fill="#6366F1"/>
+      <text x="32" y="23" fill="#0F172A" font-size="12.5" font-weight="600" class="font-sans">1–5 Finger Gestures</text>
+    </g>
+
+    <!-- Pill 3: Liquid Glass -->
+    <g transform="translate(340, 0)">
+      <rect width="158" height="36" rx="10" fill="#FFFFFF" fill-opacity="0.9" stroke="#E2E8F0" stroke-width="1.2" filter="url(#shadow-soft)"/>
+      <circle cx="18" cy="18" r="4" fill="#EC4899"/>
+      <text x="32" y="23" fill="#0F172A" font-size="12.5" font-weight="600" class="font-sans">Liquid Glass Optics</text>
+    </g>
+  </g>
+
+  <!-- Tech Stack Chips -->
+  <g transform="translate(68, 388)">
+    <rect width="84" height="28" rx="6" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1"/>
+    <text x="42" y="19" fill="#334155" font-size="11.5" font-weight="600" text-anchor="middle" class="font-mono">Rust Core</text>
+
+    <g transform="translate(94, 0)">
+      <rect width="90" height="28" rx="6" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1"/>
+      <text x="45" y="19" fill="#334155" font-size="11.5" font-weight="600" text-anchor="middle" class="font-mono">Swift macOS</text>
+    </g>
+
+    <g transform="translate(194, 0)">
+      <rect width="84" height="28" rx="6" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1"/>
+      <text x="42" y="19" fill="#334155" font-size="11.5" font-weight="600" text-anchor="middle" class="font-mono">Kotlin APK</text>
+    </g>
+
+    <g transform="translate(288, 0)">
+      <rect width="84" height="28" rx="6" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1"/>
+      <text x="42" y="19" fill="#334155" font-size="11.5" font-weight="600" text-anchor="middle" class="font-mono">Web / PWA</text>
+    </g>
+
+    <g transform="translate(382, 0)">
+      <rect width="78" height="28" rx="6" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1"/>
+      <text x="39" y="19" fill="#15803D" font-size="11.5" font-weight="600" text-anchor="middle" class="font-mono">Zero-Conf</text>
+    </g>
+  </g>
+
+  <!-- ================= RIGHT MOCKUP: TRACKPAD IN ACTION ================= -->
+  <g transform="translate(636, 44)" filter="url(#shadow-card)">
+    <!-- Device Frame -->
+    <rect width="500" height="388" rx="26" fill="url(#glass-card)" stroke="url(#glass-border)" stroke-width="2"/>
+    
+    <!-- Top Header Bar -->
+    <g transform="translate(20, 18)">
+      <!-- Status Light -->
+      <circle cx="12" cy="14" r="5" fill="#10B981"/>
+      <text x="26" y="18" fill="#334155" font-size="13" font-weight="600" class="font-sans">Connected to Mac</text>
+      
+      <!-- Top Control Center Pill -->
+      <rect x="290" y="0" width="112" height="28" rx="14" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1"/>
+      <text x="346" y="18" fill="#475569" font-size="11.5" font-weight="600" text-anchor="middle" class="font-sans">Control Center</text>
+
+      <!-- Fullscreen Icon Box -->
+      <rect x="412" y="0" width="28" height="28" rx="8" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1"/>
+      <path d="M420 8 L424 8 M420 8 L420 12 M432 8 L428 8 M432 8 L432 12 M420 20 L424 20 M420 20 L420 16 M432 20 L428 20 M432 20 L432 16" stroke="#64748B" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+    </g>
+
+    <!-- Main Touchpad Active Glass Lens Area -->
+    <rect x="18" y="56" width="464" height="312" rx="20" fill="url(#trackpad-lens)" stroke="#BAE6FD" stroke-width="1.2"/>
+
+    <!-- Dynamic Gestures Simulation Layer -->
+    <!-- Gesture Trail 1: Smooth 2-Finger Scroll -->
+    <path d="M120 120 C 130 180, 150 210, 165 240" fill="none" stroke="#38BDF8" stroke-width="5" stroke-linecap="round" stroke-opacity="0.35"/>
+    <path d="M165 110 C 175 170, 195 200, 210 230" fill="none" stroke="#38BDF8" stroke-width="5" stroke-linecap="round" stroke-opacity="0.35"/>
+    
+    <!-- Finger 1 Touch Contact with Liquid Ripples -->
+    <g transform="translate(165, 240)">
+      <circle cx="0" cy="0" r="28" fill="#0284C7" fill-opacity="0.10"/>
+      <circle cx="0" cy="0" r="18" fill="#38BDF8" fill-opacity="0.25"/>
+      <circle cx="0" cy="0" r="9" fill="#0284C7"/>
+      <circle cx="0" cy="0" r="4" fill="#FFFFFF"/>
+    </g>
+
+    <!-- Finger 2 Touch Contact with Liquid Ripples -->
+    <g transform="translate(210, 230)">
+      <circle cx="0" cy="0" r="28" fill="#0284C7" fill-opacity="0.10"/>
+      <circle cx="0" cy="0" r="18" fill="#38BDF8" fill-opacity="0.25"/>
+      <circle cx="0" cy="0" r="9" fill="#0284C7"/>
+      <circle cx="0" cy="0" r="4" fill="#FFFFFF"/>
+    </g>
+
+    <!-- Gesture HUD Floating Badge -->
+    <g transform="translate(270, 110)" filter="url(#shadow-soft)">
+      <rect width="182" height="48" rx="14" fill="#FFFFFF" fill-opacity="0.95" stroke="#93C5FD" stroke-width="1.2"/>
+      <text x="18" y="24" fill="#0284C7" font-size="12" font-weight="700" class="font-sans">SMOOTH SCROLL</text>
+      <text x="18" y="39" fill="#64748B" font-size="11" font-weight="500" class="font-sans">120 Hz Inertia Tracking</text>
+      <circle cx="158" cy="24" r="10" fill="#E0F2FE"/>
+      <path d="M154 22 L158 18 L162 22 M158 18 L158 30" stroke="#0284C7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    </g>
+
+    <!-- Deep Press Floating Action Bar at Bottom -->
+    <g transform="translate(142, 304)">
+      <rect width="216" height="44" rx="14" fill="#FFFFFF" fill-opacity="0.95" stroke="#0284C7" stroke-width="1.5" filter="url(#shadow-soft)"/>
+      <text x="108" y="27" fill="#0F172A" font-size="13.5" font-weight="600" text-anchor="middle" class="font-sans">Deep Press (Haptic)</text>
+    </g>
+  </g>
+</svg>

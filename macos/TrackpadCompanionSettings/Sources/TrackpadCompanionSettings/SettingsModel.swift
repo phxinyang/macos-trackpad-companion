@@ -46,7 +46,13 @@ final class SettingsModel: ObservableObject {
             guard let root = try JSONSerialization.jsonObject(with: json) as? [String: Any],
                   let config = root["config"] as? [String: Any] else { throw HelperError.invalidOutput }
             values = flatten(config)
-            configPath = root["path"] as? String ?? ""
+            let rawPath = root["path"] as? String ?? ""
+            let home = NSHomeDirectory()
+            if rawPath.hasPrefix(home) {
+                configPath = "~" + rawPath.dropFirst(home.count)
+            } else {
+                configPath = rawPath
+            }
             error = nil
         } catch { self.error = error.localizedDescription }
     }

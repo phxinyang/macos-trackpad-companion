@@ -553,7 +553,7 @@
 </div>
 
 <button id="float-btn" data-visible="false" aria-label="退出全屏并显示控制栏" title="退出全屏并显示控制栏"><span aria-hidden="true">×</span></button>
-<button id="deep-press" type="button" aria-pressed="false"><span id="deep-press-label">深按</span></button>
+<button id="deep-press" type="button" aria-pressed="false"><span id="deep-press-label">Deep Press</span></button>
 <div id="settings-backdrop" data-open="false"></div>
 <aside id="settings-sheet" role="dialog" aria-modal="true" tabindex="-1" aria-label="触控板控制中心" data-open="false" aria-hidden="true">
   <div id="sheet-grabber" aria-hidden="true"></div>
@@ -1779,7 +1779,7 @@
     deepPressButton.dataset.pressed = String(deepPressed);
     deepPressButton.setAttribute("aria-pressed", String(deepPressed));
     deepPressButton.style.setProperty("--deep-progress", String(Math.max(0, Math.min(1, progress))));
-    deepPressLabel.textContent = deepPressed ? "按下" : progress > 0 ? "确认中…" : "深按";
+    deepPressLabel.textContent = deepPressed ? (currentLang === "zh" ? "按下" : "Pressed") : progress > 0 ? (currentLang === "zh" ? "确认中…" : "Holding…") : (currentLang === "zh" ? "深按" : "Deep Press");
   }
   function stopDeepProgress() {
     if (deepProgressRaf) cancelAnimationFrame(deepProgressRaf);

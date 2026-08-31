@@ -1,12 +1,109 @@
-# Trackpad Companion
+<p align="center">
+  <img src="assets/banner.zh-CN.svg" alt="Trackpad Companion Banner" width="100%">
+</p>
 
-[English](README.md) | 简体中文
+<p align="center">
+  <a href="https://github.com/phxinyang/macos-trackpad-companion/releases"><img src="https://img.shields.io/github/v/release/phxinyang/macos-trackpad-companion?color=0284c7&style=flat-square" alt="GitHub Release"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Android%20%7C%20Web-38bdf8?style=flat-square" alt="平台: macOS | Android | Web">
+  <img src="https://img.shields.io/badge/engine-Rust%20%2B%20Swift%20%2B%20Kotlin-6366f1?style=flat-square" alt="技术栈">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10b981?style=flat-square" alt="开源协议: MIT"></a>
+</p>
 
-Trackpad Companion 是一款专为 macOS 打造的高精度触控板桥接工具。它可以将你的手机（Android 原生 App 或任何移动端浏览器）以及兼容的 Windows PTP（精确式触控板）设备，变成体验高度还原的 macOS 妙控触控板。
+<p align="center">
+  <a href="README.md">English</a> | <b>简体中文</b>
+</p>
 
-内置高精度 Rust 手势引擎，支持实时识别指针移动、轻点、平滑滚动、捏合缩放、双指旋转以及完整的三指/四指原生手势，并在 macOS 系统层合成对应的事件。
+---
 
-> **说明**：本项目为运行在用户态的系统桥接工具。它不会注册为 Apple 私有的内部触控板驱动，也不支持 Force Touch 物理压感模拟。公开 Quartz 事件具备极佳的应用兼容性；私有手势事件（如捏合、旋转）的效果取决于具体的 macOS 系统版本和目标应用。
+**Trackpad Companion（触控随航）** 是一款专为 macOS 打造的高精度多点触控板桥接套件。它可以将你的手机（Android 原生 App 或任何移动端浏览器）以及兼容的 Windows PTP（精确式触控板）设备，变成体验高度还原的 **Apple 妙控触控板**。
+
+内置零内存分配的 Rust 高精度手势引擎，支持实时识别指针移动、轻点、带惯性的平滑滚动、捏合缩放、双指旋转以及完整的三指/四指原生手势（UDP 抖动 < 1ms），并在 macOS 系统层合成对应的原生事件。
+
+> [!NOTE]
+> 本项目为运行在用户态的系统桥接工具。它不会注册为 Apple 私有的内部触控板驱动，也不支持 Force Touch 物理压感模拟。公开 Quartz 事件具备极佳的应用兼容性；私有手势事件（如捏合、旋转）的效果取决于具体的 macOS 系统版本和目标应用。
+
+---
+
+## 📱 跨端触控体验
+
+<table>
+  <tr>
+    <td width="50%" align="center"><b>Android 原生 App (120Hz UDP)</b></td>
+    <td width="50%" align="center"><b>网页端触控板 (Web 即开即用)</b></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshot-android-light-glass.png" alt="Android 原生应用 - 晨曦玻璃" width="100%"></td>
+    <td><img src="assets/screenshot-web-midnight-glass.png" alt="Web 触控板 - 夜幕玻璃" width="100%"></td>
+  </tr>
+  <tr>
+    <td><b>原生极致性能：</b>亚毫秒级 UDP 高频触控流、原生震动触感反馈、深按拖拽条与扫码瞬时配对。</td>
+    <td><b>零安装通用访问：</b>任何手机、平板或电脑浏览器通过 WebSocket 直接使用，无需安装任何客户端。</td>
+  </tr>
+</table>
+
+---
+
+## 🖥️ macOS 原生设置套件
+
+基于 SwiftUI 开发的原生设置界面，提供直观的通道管理、服务守护与系统级触控板参数同步：
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-macos-connections.png" alt="连接与配对" width="100%"></td>
+    <td width="50%"><img src="assets/screenshot-macos-clicks.png" alt="点按与点击" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>连接通道管理与二维码配对</b></td>
+    <td align="center"><b>点按与点击 / 跟踪速度与查词</b></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-macos-scroll.png" alt="滚动与缩放" width="100%"></td>
+    <td width="50%"><img src="assets/screenshot-macos-more-gestures.png" alt="更多手势" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>自然滚动方向、平滑惯性与缩放</b></td>
+    <td align="center"><b>调度中心、空间切换与系统手势</b></td>
+  </tr>
+</table>
+
+---
+
+## 🎨 液态玻璃光学主题
+
+Android 原生 App 与 Web 客户端均内置 GPU 加速的**液态玻璃（Liquid Glass）**着色器，呈现拟真色散、折射与高光光学质感：
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="assets/screenshot-android-ocean-glass.png" alt="海洋玻璃" width="100%"><br><b>海洋玻璃 (Ocean Glass)</b></td>
+    <td width="33%" align="center"><img src="assets/screenshot-android-aurora-glass.png" alt="极光玻璃" width="100%"><br><b>极光玻璃 (Aurora Glass)</b></td>
+    <td width="33%" align="center"><img src="assets/screenshot-android-sunset-glass.png" alt="日落玻璃" width="100%"><br><b>日落玻璃 (Sunset Glass)</b></td>
+  </tr>
+</table>
+
+---
+
+## 🔍 诊断面板与高级工具
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-web-tester.png" alt="触控板手势诊断仪" width="100%"></td>
+    <td width="50%"><img src="assets/screenshot-android-gestures.png" alt="macOS 手势动作面板" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Web 端原生手势交互诊断台</b></td>
+    <td align="center"><b>手势模拟与动作指令控制台</b></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-android-control-center.png" alt="Android 控制中心" width="100%"></td>
+    <td width="50%"><img src="assets/screenshot-android-deep-press.png" alt="深按条压感设置" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>移动端快捷控制中心抽屉</b></td>
+    <td align="center"><b>深按触控条与触感震动校准</b></td>
+  </tr>
+</table>
+
+---
 
 ## 支持端与特性
 
@@ -20,6 +117,8 @@ Trackpad Companion 是一款专为 macOS 打造的高精度触控板桥接工具
 
 macOS 客户端、TUI 与命令行均共用同一个 `companion-config` 工具和相同的 Rust 手势引擎，确保多端配置始终同步、手势表现完全一致。
 
+---
+
 ## 典型使用场景
 
 ### 1. Mac mini / 桌面 Mac（无实体触控板）
@@ -31,6 +130,8 @@ macOS 客户端、TUI 与命令行均共用同一个 `companion-config` 工具�
 ### 3. 免安装浏览器极速体验
 启动 `companion-net` 后，在同一局域网下的手机或平板浏览器中打开提示的 URL 即可开始使用。这是最快体验手势引擎的方式，无需安装任何移动端 App。
 
+---
+
 ## macOS 安装指南
 
 从 [GitHub Releases](https://github.com/phxinyang/macos-trackpad-companion/releases) 下载最新的 DMG 安装包，打开后将 `Trackpad Companion` 拖入 `Applications` 目录即可。
@@ -39,9 +140,12 @@ macOS 客户端、TUI 与命令行均共用同一个 `companion-config` 工具�
 * **系统要求**：支持 macOS 13 及更高版本（二进制已内置所有 Rust 网络与配置 helper）。
 * **开源分发说明**：本地构建默认采用 ad-hoc 签名。由 tag 触发的 GitHub Release 必须配置 Developer ID 签名与 Apple 公证凭据；缺少发布密钥时工作流会停止，不会上传开发包。
 
+---
+
 ## 从源码构建
 
-> 💡 **提示**：Rust 二进制文件依赖 macOS 本地系统库，请在目标 Mac 上直接编译，请勿将 Linux 构建的 ELF 产物直接复制到 macOS。
+> [!TIP]
+> Rust 二进制文件依赖 macOS 本地系统库，请在目标 Mac 上直接编译，请勿将 Linux 构建的 ELF 产物直接复制到 macOS。
 
 ```sh
 # 克隆仓库并编译核心引擎
@@ -61,7 +165,7 @@ cargo build --release
 ```
 
 构建 macOS 原生 SwiftUI 应用与 DMG 安装包：
-> 当前 PermissionFlow 依赖需要 Swift 6.2（Xcode 26 或更高版本）。
+> 当前 PermissionFlow 依赖需要 Swift 6.2（Xcode 16 或更高版本）。
 
 ```sh
 ./packaging/macos/build-app.sh
@@ -70,6 +174,8 @@ open dist/macos/Trackpad-Companion-*-macos.dmg
 ```
 
 应用包会将 `companion-net`、`companion-config` 及本地化资源打包至 `Contents/Resources`，无需用户单独配置 Homebrew 环境。
+
+---
 
 ## 连接手机与客户端
 
@@ -100,38 +206,42 @@ python3 tools/ws_probe.py --host 127.0.0.1 --mode scroll
 python3 tools/gesture_probe.py
 ```
 
-*若 UDP 服务开启了认证，请在探针命令后附加 `--token <your-token>`。*
+*如果 UDP 监听服务启用了鉴权，在测试命令末尾追加 `--token <your-token>` 即可。*
 
-## 安全机制与权限规范
+---
 
-网络监听服务能够向 Mac 注入鼠标与键盘事件，因此安全性至关重要：
+## 安全与权限控制
+
+由于网络触控服务可以在 Mac 上合成鼠标与键盘事件，安全性至关重要：
 
 ```sh
-# 自动生成随机配对 Token 并检查配置
+# 生成随机配对 Token 并检查配置
 ./target/release/companion-config ensure-token
 ./target/release/companion-config dump
 ```
 
-* **无 Token 保护**：若未配置 Token，`companion-net` **严格仅监听本地回环地址 `127.0.0.1`**；若此时尝试显式绑定非回环地址（如 `0.0.0.0`），服务会**直接拒绝启动**以防未授权访问。
-* **有 Token 保护**：配置 Token 后，服务默认监听 `0.0.0.0`，允许已携带 Token 的局域网客户端接入。
-* **脱敏规则**：配对链接与 Token 等同于操作密码。向外提交 Issue 或日志时，诊断脚本会自动脱敏敏感参数。详见 [SECURITY.md](SECURITY.md)。
+* **无 Token 安全限制**：未配置 Token 时，`companion-net` **严格仅监听 `127.0.0.1` 本地回环**；尝试显式监听非回环地址（如 `0.0.0.0`）会在**启动阶段主动拒绝**，防止未授权网络暴露。
+* **Token 局域网接入**：配置 Token 后，服务默认监听 `0.0.0.0`，允许已鉴权的局域网客户端接入。
+* **脱敏策略**：配对链接与 Token 为鉴权凭据，诊断脚本在生成日志时会自动脱敏敏感字段。详情请见 [SECURITY.md](SECURITY.md)。
 
-## 配置文件手册
+---
+
+## 配置手册
 
 默认配置文件路径：
 ```text
 $XDG_CONFIG_HOME/macos-trackpad-companion/config.toml
-# 若环境变量未设置，则回退至：~/.config/macos-trackpad-companion/config.toml
+# 若环境变量未设置，则默认回退到：~/.config/macos-trackpad-companion/config.toml
 ```
 
-配置文件缺失时会自动采用默认参数。推荐通过 macOS 界面或 TUI 交互式配置，也可使用 CLI 脚本修改：
+配置文件缺失时会自动使用默认参数。推荐通过图形界面或 TUI 交互式配置，也可使用命令行工具直接调整：
 
 ```sh
-# 查看当前解析后的完整配置
+# 查看已解析配置
 ./target/release/companion-config dump
-# 调整指针灵敏度
+# 调整光标灵敏度
 ./target/release/companion-config set --path cursor.sensitivity --value 28
-# 执行配置与环境诊断
+# 运行配置与环境诊断
 ./target/release/companion-config doctor
 ```
 
@@ -142,7 +252,7 @@ $XDG_CONFIG_HOME/macos-trackpad-companion/config.toml
 port = 4242
 web_enabled = true
 phone_enabled = true
-# token = "your-pairing-token" # 监听局域网需配置非空 Token
+# token = "your-pairing-token" # 监听非回环局域网时必填
 
 [cursor]
 sensitivity = 28.0
@@ -152,8 +262,8 @@ accel_ref = 70.0
 [scroll]
 sensitivity = 20.0
 natural = true       # 自然滚动方向
-horizontal = true    # 支持双指横向滚动
-momentum = true      # 惯性动量平滑
+horizontal = true    # 双指横向滚动
+momentum = true      # 惯性减速衰减
 
 [macos]
 sync_system_settings = true
@@ -182,56 +292,62 @@ persistent_drag_lock = true
 release_delay_ms = 500
 ```
 
-完整配置字段、独立 App 策略与手势后端说明详见 [docs/configuration.md](docs/configuration.md)。
+完整字段规范、各应用专属规则与轻扫后端选项请参阅 [docs/configuration.md](docs/configuration.md)。
 
-## 原生手势全景指南
+---
+
+## 原生手势指南
 
 - **单指手势**：
-  - **指针移动**：支持线性移动与仿 Mac 加速曲线。
-  - **点按操作**：轻点点按（Tap to Click）、双击、轻点拖移（Tap-to-Drag）以及按住拖移（Press-and-Hold Drag）。
+  - **指针移动**：线性跟踪与 macOS 加速度曲线平滑拟合。
+  - **点按动作**：轻点点按 (Tap to Click)、双击、轻点拖移 (Tap-to-Drag) 与单指长按拖拽 (Press-and-Hold Drag)。
 - **双指手势**：
-  - **平滑滚动**：高精度 2D 分阶段滚动（支持自然/反向、动量惯性衰减、Shift 横向滚动兼容映射）。
-  - **缩放与旋转**：双指捏合缩放（Pinch to Zoom）与双指旋转（Rotate，兼容 AppKit/Safari 等）。
-  - **边缘轻扫**：从右侧边缘向左滑入打开/关闭 macOS 通知中心（Right-Edge Swipe）。
-  - **智能缩放**：双指双击放大或恢复网页内容（Smart Zoom）。
+  - **平滑滚动**：高精度 2D 分阶段滚动（支持自然/反向方向、动量惯性衰减与 Shift 横滚映射）。
+  - **缩放与旋转**：捏合缩放 (Pinch-to-Zoom) 与双指旋转（兼容 AppKit、Safari 与创作类应用）。
+  - **边缘滑入**：右边缘向内轻扫唤出 macOS 通知中心 (Right-Edge Swipe)。
+  - **智能缩放**：双指双击放大或重置网页内容 (Smart Zoom)。
 - **三指手势**：
-  - **三指拖移**：带智能防抖的鼠标左键拖拽（Three-Finger Drag），支持 `persistent_drag_lock`（允许跨桌面 Space 继续拖拽）。
-  - **三指轻点**：查询词典与数据检测器（Dictionary Lookup）。
+  - **三指拖移**：带抖动抑制的左键拖拽，支持 `persistent_drag_lock`（跨全屏桌面 Space 拖动窗口）。
+  - **三指轻点**：系统词典查询与数据检测器。
 - **四指手势**：
-  - **向上轻扫**：打开调度中心（Mission Control）。
-  - **向下轻扫**：打开应用程序窗口（App Exposé）。
-  - **向左/向右轻扫**：在全屏 Space 与多个桌面之间平滑切换。
-  - **径向捏合（四指收缩）**：打开启动台（Launchpad）。
-  - **径向张开（四指散开）**：显示桌面（Show Desktop）。
-- **物理修饰键完整透传**：
-  - 键盘上的 Control、Option、Command 和 Shift 会实时合并到鼠标、滚动、缩放和旋转事件流中，保证快捷操作符合预期。
+  - **向上轻扫**：打开调度中心 (Mission Control)。
+  - **向下轻扫**：打开 App Exposé。
+  - **左右轻扫**：在全屏桌面与 Space 之间平滑切换。
+  - **向内捏合 (四指聚合)**：打开启动台 (Launchpad)。
+  - **向外张开 (四指张开)**：显示桌面 (Show Desktop)。
+- **物理修饰键穿透**：
+  - Control、Option、Command 与 Shift 修饰键实时注入鼠标、滚动、缩放与旋转事件流。
 
-## 与原生触控板的技术边界
+---
 
-为了提供清晰透明的预期，项目在此列出各项能力的实现方式与边界：
+## 原生硬件技术边界
 
-| 手势与功能 | 实现方式 | 兼容性表现 |
+为保持透明与清晰的预期，以下为各项特性的实现机制与技术边界：
+
+| 手势 / 特性 | 实现机制 | 兼容性与行为表现 |
 | --- | --- | --- |
-| **指针移动、点按、拖拽** | 公开 Quartz `CGEvent` 鼠标事件 | 全系统及所有第三方应用完美支持 |
-| **平滑双指滚动与惯性** | 公开分阶段滚动事件与数学惯性衰减 | 完美支持 Safari、Chrome、文档等应用 |
-| **双指捏合缩放、双指旋转** | 逆向提取的私有 `CGEvent` 字段注入 | 兼容主流 AppKit 与 Safari 原生应用 |
-| **桌面切换、调度中心、启动台** | 仿真 DockSwipe 与快捷调度路由 | 针对现代 macOS 版本适配合成 |
-| **Force Touch 物理压感** | 公开 `CGEvent` 无法模拟硬件压电传感器 | 不支持硬件级多级压力感应 |
+| **指针移动、点击、拖移** | 公开 Quartz `CGEvent` 鼠标事件 | 全系统及第三方应用广泛支持 |
+| **平滑滚动与动量惯性** | 公开分阶段滚动事件与数学惯性模型 | 完美支持 Safari、Chrome、文档与开发工具 |
+| **捏合缩放与旋转** | 逆向提取的私有 `CGEvent` 字段 | 兼容主流 AppKit 与 Safari 原生应用 |
+| **Space 切换、调度中心、启动台** | 模拟 DockSwipe 与系统快捷键路由 | 专为现代 macOS 版本适配 |
+| **Force Touch 物理压感** | 公开 `CGEvent` 无法模拟硬件压电传感器 | 不模拟硬件物理多级压感 |
 
-完整逆向调研报告与协议分析详见 [docs/reverse-engineering-sources.md](docs/reverse-engineering-sources.md)。
+完整的逆向工程文档与协议细节见 [docs/reverse-engineering-sources.md](docs/reverse-engineering-sources.md)。
 
-## 诊断与开发调试
+---
+
+## 诊断与开发
 
 ```sh
-# 运行环境与配置体检
+# 运行配置与环境 doctor 诊断检查
 ./target/release/companion-config doctor
 # 启动终端交互式 TUI
 ./target/release/companion-tui
-# 只读采集诊断报告（应用状态、权限、进程与端口）
+# 收集只读诊断报告（应用状态、权限、进程、端口）
 ./scripts/diagnose-mac.sh collect
-# 探测 4242 端口与网络可用性
+# 探测 4242 端口与网络连通性
 ./scripts/diagnose-mac.sh probe --port 4242
-# 前台实时 trace 抓取日志
+# 运行前台实时 trace 抓取
 ./scripts/diagnose-mac.sh trace --port 4242
 ```
 
@@ -241,28 +357,31 @@ cargo test --workspace
 cargo check --all-targets
 ```
 
-## 正式发布
+---
 
-推送版本 tag 后，GitHub Actions 会创建一个同时包含 Android 签名 APK/AAB、
-Developer ID 签名并完成公证的 macOS DMG/ZIP、自动发布说明和 `SHA256SUMS`
-的 GitHub Release。发布凭据仅保存在 GitHub Actions Secrets 中。所需密钥、
-版本字段和 tag 流程见 [docs/releasing.md](docs/releasing.md)。
+## 发布版本
 
-## 目录结构速览
+推送版本 tag 会触发构建一个包含经签名的 Android APK/AAB、Developer ID 签名及公证的 macOS DMG/ZIP、自动生成的 Release Notes 以及 `SHA256SUMS` 的 GitHub Release。签名密钥严格保存在 GitHub Actions Secrets 中。详情请见 [docs/releasing.md](docs/releasing.md)。
+
+---
+
+## 仓库结构
 
 | 目录 | 职责 |
 | --- | --- |
-| `src/` | Rust 核心守护进程、网络监听、手势状态机与 macOS 事件输出 |
-| `crates/touchpad-proto/` | 跨端共享的 ATP1 触控协议编解码库 |
-| `macos/TrackpadCompanionSettings/` | 原生 macOS SwiftUI 控制中心与状态栏 App |
-| `android/` | Android 原生 120Hz 触控 App 与测试工程 |
-| `static/` | 网页端 GPU 液态玻璃触控板与手势测试页 |
-| `packaging/macos/` | macOS 应用打包、签名与 DMG 制作脚本 |
-| `docs/` | 架构设计、协议格式、配置手册与技术调研文档 |
-| `tools/` | 协议测试探针与手势模拟工具 |
+| `src/` | Rust 核心守护进程、网络监听器、手势状态机与 macOS 事件输出 |
+| `crates/touchpad-proto/` | 共享 ATP1 触控协议编解码库 |
+| `macos/TrackpadCompanionSettings/` | 原生 macOS SwiftUI 设置应用与菜单栏守护 |
+| `android/` | Android 原生 120Hz 触控客户端与测试套件 |
+| `static/` | GPU 加速液态玻璃网页触控板与诊断测试页 |
+| `packaging/macos/` | macOS 应用打包、代码签名与 DMG 制作脚本 |
+| `docs/` | 架构设计、传输协议、配置手册与研究记录 |
+| `tools/` | 协议探针与确定性虚拟触点生成工具 |
 
-## 开源许可证
+---
 
-本项目采用 [MIT 许可证](LICENSE)。
+## 开源协议
 
-macOS 客户端通过 SwiftPM 引入了 [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow)（采用 [MIT 许可证](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE)）。各端素材与调研引用详见 `docs/` 及 `static/assets/` 下的相关文档。
+本项目采用 [MIT License](LICENSE) 开源协议。
+
+macOS 设置应用通过 SwiftPM 引入了 [PermissionFlow](https://github.com/jaywcjlove/PermissionFlow)（采用 [MIT License](https://github.com/jaywcjlove/PermissionFlow/blob/v2.11.2/LICENSE)）。第三方研究参考与资产来源详见 `docs/` 与 `static/assets/`。

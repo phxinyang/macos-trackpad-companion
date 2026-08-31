@@ -1552,6 +1552,92 @@
       new MutationObserver(sync).observe(stream, { childList: true });
       sync();
     })();
+
+    // I18n localization support
+    (function () {
+      const params = new URLSearchParams(location.search);
+      const isEn = params.get('lang') === 'en' || localStorage.getItem('atp_lang') === 'en' || (!localStorage.getItem('atp_lang') && !navigator.language?.toLowerCase().startsWith('zh'));
+      if (!isEn) return;
+      document.documentElement.lang = 'en';
+      document.title = 'Trackpad Gesture Diagnostics';
+
+      const map = [
+        ['.wordmark h1', 'Trackpad Gesture Diagnostics'],
+        ['.wordmark p', 'Interactive validation of native trackpad gestures and events'],
+        ['.back-link', '← Back to Trackpad'],
+        ['#themeButton', 'Theme'],
+        ['#modeText', 'Waiting for Input'],
+        ['#connectionText', 'Waiting for Events'],
+        ['.gauge:nth-of-type(1) dt', 'Event Rate'],
+        ['.gauge:nth-of-type(2) dt', 'Cursor'],
+        ['#testToolbar .test-toolbar-copy strong', 'Test Categories'],
+        ['#testToolbar .test-toolbar-copy span', 'Verify event reception and macOS gesture side effects.'],
+        ['nav.test-nav a[href="#cursorTest"]', 'Pointer'],
+        ['nav.test-nav a[href="#gestureTest"]', 'Gestures'],
+        ['nav.test-nav a[href="#systemTest"]', 'System Actions'],
+        ['nav.test-nav a[href="#eventLog"]', 'Event Stream'],
+        ['#btnResetAll', 'Reset All'],
+        ['.source-legend .browser', 'Browser Events'],
+        ['.source-legend .system', 'System Side Effects'],
+        ['.source-legend .simulated', 'Simulated'],
+        ['#cursorTest h2', 'Cursor Movement & Acceleration Curve'],
+        ['#cursorTest p', 'Slide slowly to check micro-steps; fling fast to inspect smooth acceleration.'],
+        ['#cursorTest .fingers', '1 Finger'],
+        ['#cursorTest figcaption', 'Target Points'],
+        ['#btnClearTrace', 'Clear Trace'],
+        ['#tapTest h2', 'Tap to Click & Secondary Click'],
+        ['#tapTest p', 'Two-finger tap registers right-click without inadvertent left-click.'],
+        ['#tapTest .fingers', '1–2 Fingers'],
+        ['#boxLeft span', 'Left Click'],
+        ['#boxRight span', 'Right Click'],
+        ['#btnResetClicks', 'Reset'],
+        ['#dragTest h2', 'Three-Finger Drag & Tap-to-Drag'],
+        ['#dragTest p', 'Hold durations under 200ms indicate a double-click rather than a drag.'],
+        ['#dragTest .fingers', '1 / 3 Fingers'],
+        ['#dragTest .window-bar span', 'Finder'],
+        ['#dragStatus', 'Drag this window'],
+        ['#dragActiveStatus', 'Idle'],
+        ['#scrollTest h2', 'Smooth Scrolling & Inertia'],
+        ['#scrollTest .fingers', '2 Fingers'],
+        ['#zoomTest h2', 'Pinch-to-Zoom & Rotation'],
+        ['#zoomTest .fingers', '2 Fingers'],
+        ['#smartZoomTest h2', 'Smart Zoom (Double Tap)'],
+        ['#smartZoomTest .fingers', '2-Finger Double Tap'],
+        ['#pageSwipeTest h2', 'Two-Finger Page Swipe'],
+        ['#pageSwipeTest .fingers', '2 Fingers'],
+        ['#spacesTest h2', 'Mission Control & Spaces Navigation'],
+        ['#spacesTest .fingers', '3-4 Fingers'],
+        ['#lookupTest h2', 'Look Up (Three-Finger Tap)'],
+        ['#lookupTest .fingers', '3 Fingers'],
+        ['#notificationTest h2', 'Notification Center Swipe'],
+        ['#notificationTest .fingers', '2 Fingers from Edge'],
+        ['#pinchTest h2', 'Launchpad & Show Desktop'],
+        ['#pinchTest .fingers', '4-5 Fingers'],
+        ['#pressHoldTest h2', 'Press-and-Hold Drag'],
+        ['#pressHoldTest .fingers', '1 Finger'],
+        ['#eventLog h2', 'Live Event Stream'],
+        ['#eventLog p', 'Captures PointerEvents, WheelEvents, gesture transitions and system callbacks'],
+        ['#btnClearLog', 'Clear Log'],
+        ['#btnCopyLog', 'Copy JSON'],
+        ['#btnPauseLog', 'Pause Stream'],
+      ];
+
+      for (const [sel, text] of map) {
+        const el = document.querySelector(sel);
+        if (el) el.textContent = text;
+      }
+
+      document.querySelectorAll('.metrics').forEach(m => {
+        m.innerHTML = m.innerHTML
+          .replace('瞬时', 'Instant')
+          .replace('峰值', 'Peak')
+          .replace('间隔', 'Interval')
+          .replace('连击', 'Streak')
+          .replace('状态', 'State')
+          .replace('位移', 'Offset')
+          .replace('按下', 'Hold');
+      });
+    })();
   </script>
 </body>
 

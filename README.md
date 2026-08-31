@@ -1,12 +1,109 @@
-# Trackpad Companion
+<p align="center">
+  <img src="assets/banner.svg" alt="Trackpad Companion Banner" width="100%">
+</p>
 
-[简体中文](README.zh-CN.md) | English
+<p align="center">
+  <a href="https://github.com/phxinyang/macos-trackpad-companion/releases"><img src="https://img.shields.io/github/v/release/phxinyang/macos-trackpad-companion?color=0284c7&style=flat-square" alt="GitHub Release"></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Android%20%7C%20Web-38bdf8?style=flat-square" alt="Platform: macOS | Android | Web">
+  <img src="https://img.shields.io/badge/engine-Rust%20%2B%20Swift%20%2B%20Kotlin-6366f1?style=flat-square" alt="Engine">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-10b981?style=flat-square" alt="License: MIT"></a>
+</p>
 
-Trackpad Companion is a high-precision touch bridge crafted for macOS. It transforms your mobile phone (native Android App or any mobile browser) and compatible Windows PTP (Precision Touchpad) devices into an authentic Apple Magic Trackpad experience.
+<p align="center">
+  <b>English</b> | <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-Powered by a high-precision Rust gesture engine, it detects pointer movements, clicks, smooth scrolling, pinch-to-zoom, two-finger rotation, and full 3/4-finger native gestures in real time, synthesizing corresponding macOS system events.
+---
 
-> **Note**: This is a userspace bridge. It does not register as Apple's proprietary internal trackpad driver and cannot simulate Force Touch physical piezoelectric pressure levels. Public Quartz events offer broad application compatibility; private gestures (e.g. pinch, rotate) depend on macOS version and target application support.
+**Trackpad Companion** is a high-precision multi-touch bridge crafted for macOS. It transforms your phone (native Android App or any mobile browser) and compatible Windows PTP (Precision Touchpad) devices into an authentic **Apple Magic Trackpad**.
+
+Powered by a zero-allocation Rust gesture engine, it detects pointer movements, taps, momentum-assisted smooth scrolling, pinch-to-zoom, two-finger rotation, and full 3/4-finger macOS native gestures in real time (< 1ms UDP jitter), synthesizing corresponding system events on macOS.
+
+> [!NOTE]
+> This is a userspace bridge. It does not register as Apple's proprietary internal trackpad driver and cannot simulate Force Touch physical piezoelectric pressure levels. Public Quartz events offer broad application compatibility; private gestures (e.g. pinch, rotate) depend on macOS version and target application support.
+
+---
+
+## 📱 Cross-Platform Experience
+
+<table>
+  <tr>
+    <td width="50%" align="center"><b>Android Native App (120Hz UDP)</b></td>
+    <td width="50%" align="center"><b>Web Touchpad (Zero-Install Browser)</b></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screenshot-android-light-glass.png" alt="Android Native App - Morning Glass" width="100%"></td>
+    <td><img src="assets/screenshot-web-midnight-glass.png" alt="Web Touchpad - Midnight Glass" width="100%"></td>
+  </tr>
+  <tr>
+    <td><b>Native Performance:</b> Sub-millisecond UDP streaming, custom haptic feedback, deep-press drag bar, and instant QR pairing.</td>
+    <td><b>Universal Access:</b> Runs on any mobile or desktop browser via WebSockets without installing any application.</td>
+  </tr>
+</table>
+
+---
+
+## 🖥️ macOS Native Settings App
+
+The native SwiftUI settings app provides intuitive controls, connection supervisors, and live synchronization with macOS system preferences:
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-macos-connections-en.png" alt="Connections &amp; Pairing" width="100%"></td>
+    <td width="50%"><img src="assets/screenshot-macos-clicks-en.png" alt="Point &amp; Click" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Connections &amp; Network Channels</b></td>
+    <td align="center"><b>Point &amp; Click / Tracking Speed</b></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-macos-scroll-en.png" alt="Scroll &amp; Zoom" width="100%"></td>
+    <td width="50%"><img src="assets/screenshot-macos-more-gestures-en.png" alt="More Gestures" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Scroll Direction, Inertia &amp; Zoom</b></td>
+    <td align="center"><b>Mission Control, Spaces &amp; System Gestures</b></td>
+  </tr>
+</table>
+
+---
+
+## 🎨 Liquid Glass Themes
+
+Both the Android app and Web client feature GPU-accelerated **Liquid Glass** shaders with real-time chromatic aberration, refraction, and optical dispersion:
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="assets/screenshot-android-ocean-glass.png" alt="Ocean Glass" width="100%"><br><b>Ocean Glass</b></td>
+    <td width="33%" align="center"><img src="assets/screenshot-android-aurora-glass.png" alt="Aurora Glass" width="100%"><br><b>Aurora Glass</b></td>
+    <td width="33%" align="center"><img src="assets/screenshot-android-sunset-glass.png" alt="Sunset Glass" width="100%"><br><b>Sunset Glass</b></td>
+  </tr>
+</table>
+
+---
+
+## 🔍 Diagnostics & Advanced Tools
+
+<table>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-web-tester.png" alt="Trackpad Gesture Diagnostics" width="100%"></td>
+    <td width="50%"><img src="assets/screenshot-android-gestures.png" alt="macOS Gesture Command Panel" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Interactive Web Gesture Diagnostics</b></td>
+    <td align="center"><b>Gesture Simulation &amp; Command Panel</b></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="assets/screenshot-android-control-center.png" alt="Android Control Center" width="100%"></td>
+    <td width="50%"><img src="assets/screenshot-android-deep-press.png" alt="Deep Press Settings" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Quick Control Center Drawer</b></td>
+    <td align="center"><b>Deep Press Bar Haptic Calibration</b></td>
+  </tr>
+</table>
+
+---
 
 ## Supported Surfaces & Features
 
@@ -20,6 +117,8 @@ Powered by a high-precision Rust gesture engine, it detects pointer movements, c
 
 The macOS app, TUI, and CLI share the same `companion-config` helper and Rust gesture engine, ensuring synchronized settings and consistent gesture behavior across all clients.
 
+---
+
 ## Common Use Cases
 
 ### 1. Mac mini / Headless Mac (No Physical Trackpad)
@@ -31,6 +130,8 @@ Run `companion` to directly read HID digitizer input. The hardware must expose a
 ### 3. Zero-Install Instant Browser Experience
 Start `companion-net` and open the printed URL on any mobile device on the same local network. This is the fastest way to test the gesture engine without installing any mobile application.
 
+---
+
 ## macOS Installation Guide
 
 Download the latest DMG installer from [GitHub Releases](https://github.com/phxinyang/macos-trackpad-companion/releases), open it, and drag `Trackpad Companion` to your `Applications` folder.
@@ -39,9 +140,12 @@ Download the latest DMG installer from [GitHub Releases](https://github.com/phxi
 * **System Requirements**: macOS 13 or newer (the application bundle embeds all Rust network and configuration helpers).
 * **Open Source Distribution**: Local builds use ad-hoc signing. Tag-triggered GitHub Releases require Developer ID signing and Apple notarization credentials; missing release secrets stop publication instead of uploading a development package.
 
+---
+
 ## Build from Source
 
-> 💡 **Tip**: Rust binaries depend on macOS system frameworks; please compile directly on your target Mac instead of copying Linux-built ELF binaries.
+> [!TIP]
+> Rust binaries depend on macOS system frameworks; please compile directly on your target Mac instead of copying Linux-built ELF binaries.
 
 ```sh
 # Clone repository and build core engine
@@ -61,7 +165,7 @@ Run the network listener daemon:
 ```
 
 Build the native macOS SwiftUI app and DMG installer:
-> The current PermissionFlow dependency requires Swift 6.2 (Xcode 26 or newer).
+> The current PermissionFlow dependency requires Swift 6.2 (Xcode 16 or newer).
 
 ```sh
 ./packaging/macos/build-app.sh
@@ -70,6 +174,8 @@ open dist/macos/Trackpad-Companion-*-macos.dmg
 ```
 
 The app bundle packages `companion-net`, `companion-config`, and localization assets into `Contents/Resources`, eliminating any Homebrew dependency for end users.
+
+---
 
 ## Connect Phone & Clients
 
@@ -102,6 +208,8 @@ python3 tools/gesture_probe.py
 
 *If the UDP listener has authentication enabled, append `--token <your-token>` to the probe command.*
 
+---
+
 ## Security & Permissions
 
 Because network listeners can synthesize mouse and keyboard events on your Mac, security is paramount:
@@ -115,6 +223,8 @@ Because network listeners can synthesize mouse and keyboard events on your Mac, 
 * **Tokenless Protection**: Without a configured token, `companion-net` **strictly binds to `127.0.0.1` loopback only**; attempting an explicit non-loopback bind (e.g. `0.0.0.0`) is **actively rejected at startup** to prevent unauthorized network exposure.
 * **Token-Protected LAN**: With a configured token, the listener defaults to `0.0.0.0`, allowing authenticated LAN clients to connect.
 * **Redaction Policy**: Pairing links and tokens act as access keys. Diagnostic scripts automatically redact sensitive credentials when generating logs. See [SECURITY.md](SECURITY.md).
+
+---
 
 ## Configuration Manual
 
@@ -184,6 +294,8 @@ release_delay_ms = 500
 
 For complete field specifications, per-application policies, and swipe backend options, see [docs/configuration.md](docs/configuration.md).
 
+---
+
 ## Native Gestures Guide
 
 - **1-Finger Gestures**:
@@ -206,6 +318,8 @@ For complete field specifications, per-application policies, and swipe backend o
 - **Physical Modifier Keys Passthrough**:
   - Control, Option, Command, and Shift modifiers are merged into mouse, scroll, zoom, and rotate event streams in real time.
 
+---
+
 ## Technical Boundaries with Native Hardware
 
 To provide clear, transparent expectations, here is how each capability is implemented alongside its technical boundaries:
@@ -219,6 +333,8 @@ To provide clear, transparent expectations, here is how each capability is imple
 | **Force Touch Pressure Levels** | Public `CGEvent` cannot simulate hardware piezoelectric sensors | Does not emulate physical pressure levels |
 
 Complete reverse-engineering documentation and protocol details are available in [docs/reverse-engineering-sources.md](docs/reverse-engineering-sources.md).
+
+---
 
 ## Diagnostics & Development
 
@@ -241,13 +357,13 @@ cargo test --workspace
 cargo check --all-targets
 ```
 
+---
+
 ## Releases
 
-Pushing a version tag builds one GitHub Release containing the signed Android
-APK/AAB, the Developer ID signed and notarized macOS DMG/ZIP, generated release
-notes, and `SHA256SUMS`. Release credentials remain in GitHub Actions Secrets.
-See [docs/releasing.md](docs/releasing.md) for required secrets, version fields,
-and the tag procedure.
+Pushing a version tag builds one GitHub Release containing the signed Android APK/AAB, the Developer ID signed and notarized macOS DMG/ZIP, generated release notes, and `SHA256SUMS`. Release credentials remain in GitHub Actions Secrets. See [docs/releasing.md](docs/releasing.md) for required secrets, version fields, and the tag procedure.
+
+---
 
 ## Repository Map
 
@@ -261,6 +377,8 @@ and the tag procedure.
 | `packaging/macos/` | macOS app packaging, code signing, and DMG installer scripts |
 | `docs/` | Architecture design, wire protocols, configuration manuals, and research notes |
 | `tools/` | Protocol probes and deterministic synthetic touch senders |
+
+---
 
 ## License
 

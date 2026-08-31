@@ -730,6 +730,8 @@ class MainActivity : Activity() {
             }
         }
         prefs = getSharedPreferences("touchpad", MODE_PRIVATE)
+        val lang = intent.getStringExtra("lang") ?: prefs.getString("language", null)
+        if (lang != null) I18n.overrideLanguage = lang
         applyPairingIntent(intent)
         wallpaperBitmap = loadWallpaper()
         sender = UdpSender()
@@ -1231,6 +1233,19 @@ class MainActivity : Activity() {
 
         immersive()
         excludeSystemGestures(rootFrame)
+
+        val autoOpen = intent.getStringExtra("open")
+        if (autoOpen != null) {
+            rootFrame.postDelayed({
+                when (autoOpen) {
+                    "control_center" -> showControlCenterDialog()
+                    "gestures" -> showGestureTestDialog()
+                    "themes" -> showThemeDialog()
+                    "deep_press" -> showDeepPressSettingsDialog()
+                    "connection" -> showConnectionDialog()
+                }
+            }, 350)
+        }
     }
 
     private fun connectToMac(host: String, portText: String, tokenText: String, probeWeb: Boolean = true) {
