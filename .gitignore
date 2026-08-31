@@ -68,3 +68,6 @@ notarytool-credentials.json
 
 # Local-only wallpaper research assets
 /static/private-wallpapers/
+
+# Local internal research & notes
+/notes/
